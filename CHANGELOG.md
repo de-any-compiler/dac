@@ -456,6 +456,95 @@ round-trip), FR-6 (DLL imports + exports preserved through `Import`,
 PE shares the in-tree stress test through `load_from_bytes` and the
 5-minute manual fuzz gate is matched by a dedicated PE target.
 
+#### B1.3 — Architecture trait + x86-64 decoder (2026-06-01)
+
+First step out of the binary-parser layer: the `dac-arch` trait surface
+lands, and `dac-arch-x86` rides on top of `iced-x86` (ADR-0004 closes)
+to decode every byte of the workspace's ELF and PE `.text` fixtures
+end-to-end. Downstream passes see only the arch-neutral
+`DecodedInstruction` view; iced types stay inside the decoder module so
+the choice is contained to one crate.
+
+- `dac-arch`:
+  - `Architecture` trait per ARCHITECTURE.md §7: `name`, `isa`,
+    `pointer_size`, `endianness`, `decoder`, `register_file`. `Send +
+    Sync` so the pass manager can hand instances across cores
+    (NFR-7).
+  - `InstructionDecoder` trait with `decode_one(bytes, address) ->
+    Result<DecodedInstruction, DecodeError>` and `iter(bytes, address)
+    -> Box<dyn Iterator<Item = DecodedInstruction>>`. The iterator
+    contract is "consume the whole buffer, emit invalid records inline,
+    never stall"; the single-shot path errors only on empty input.
+  - `DecodedInstruction { address, length, bytes, mnemonic, operands,
+    flow, valid }` — the boundary at which iced (or any future decoder)
+    stops being visible. `bytes` is captured so the lifter (B1.4) can
+    mint a `Bytes` evidence node without holding a slice into the
+    section buffer (I-2).
+  - `ControlFlow` enum: `Sequential`, `ConditionalBranch { target }`,
+    `UnconditionalBranch { target }`, `IndirectBranch`, `Call { target }`,
+    `IndirectCall`, `Return`, `Interrupt`, `Invalid`. Direct branches
+    carry their resolved target VA when iced computes one; indirect
+    variants surface as the `Indirect*` arms with no target.
+  - `DecodeError::Truncated { offset }` covers the "empty buffer"
+    failure mode of the single-shot API. Invalid encodings are
+    surfaced through `DecodedInstruction::valid = false`, not errors.
+  - `Endianness`, `Isa { I386, X86_64, Aarch64 }`.
+  - `Register`, `RegisterId`, `RegisterClass`, `RegisterFile` — flat
+    register catalogue with id-based lookup, case-insensitive name
+    lookup, and parent links for sub-register aliases.
+  - 6 unit tests cover the catalogue and `Isa` names.
+- `dac-arch-x86`:
+  - `X86_64` and `I386` zero-sized `Architecture` impls.
+  - `IcedDecoder` implementing `InstructionDecoder` for 16/32/64-bit
+    iced. `decode_one` errors on empty input and surfaces invalid
+    encodings as `valid = false` records; the linear-sweep `iter`
+    re-creates a fresh `iced_x86::Decoder` per step (cheap), defensively
+    clamps `length` to remaining buffer for trailing partial
+    instructions, and is guaranteed to terminate (consumes every byte
+    of the input).
+  - Register files for both bitnesses: 16 GPRs + 32/16/8 aliases + RIP +
+    RFLAGS for x86-64; 8 GPRs + 16/8-low/8-high aliases + EIP + EFLAGS
+    for i386. Sub-register parents point at the 64- or 32-bit base.
+    Vector / FP registers land with the lifter once it models them.
+  - 19 unit tests cover snapshot decodes (`mov rax, rbx`, `ret`, direct
+    + indirect call, conditional + unconditional short branch, indirect
+    branch), the iterator (known sequence with full consumption,
+    progress past invalid bytes), the empty-input error path, the
+    invalid-encoding degradation path, and the i386 vs x86-64 bitness
+    split.
+- `crates/dac-arch-x86/tests/text_roundtrip.rs` — the B1.3 done-when.
+  Two integration tests (`elf_hello_text_round_trips`,
+  `pe_hello_text_round_trips`) load the shared ELF and PE fixtures
+  through `dac-binfmt`, locate `.text`, run the decoder iterator across
+  every byte, and assert: full byte consumption, strictly increasing
+  addresses, ≥ 10 instructions, ≥ 95% validity, at least one `ret`,
+  at least one `call` (direct or indirect).
+- `crates/dac-arch-x86/fuzz/`:
+  - libFuzzer crate scoped out of the parent workspace with its own
+    empty `[workspace]` block (mirrors the binfmt fuzz layout).
+  - Single target `fuzz_x86_decode` runs both `decode_one` and the
+    linear-sweep iterator for both `X86_64` and `I386`, with a length-
+    safety cap on iteration so adversarial inputs cannot OOM the
+    fuzzer. Run via
+    `cargo install cargo-fuzz && cargo +nightly fuzz run fuzz_x86_decode -- -max_total_time=300`
+    from `crates/dac-arch-x86/`. The 5-minute total-time cap matches
+    the B1.3 done-when. The deterministic snapshot path is covered by
+    in-tree unit tests; this target covers the open-ended NFR-4-style
+    robustness invariant for the decoder.
+- `DECISIONS.md`: ADR-0004 closes on `iced-x86` with the full rationale,
+  the rejected alternatives (`yaxpeax-x86`, `capstone-rs`, hand-rolled),
+  and the boundary the choice draws (iced types do not leak past
+  `dac-arch-x86`).
+- `Cargo.toml`: `iced-x86 = { version = "1.21", default-features =
+  false, features = ["std", "decoder", "instr_info", "intel"] }` added
+  to `[workspace.dependencies]`.
+
+Closes: ADR-0004 (x86 decoder library choice). Sets up the
+Instruction-IR + lifter work in B1.4 by giving it a stable
+`DecodedInstruction` to consume and a register file to bind operand
+names against. Continues I-6 (decoder degrades to `(bad)` on invalid
+input rather than inventing semantics).
+
 ### Milestone 2 — Core decompilation
 *(not started)*
 

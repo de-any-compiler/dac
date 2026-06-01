@@ -49,6 +49,7 @@ dac-recovery = { path = "crates/dac-recovery", version = "0.1.0-pre" }
 dac-verify = { path = "crates/dac-verify", version = "0.1.0-pre" }
 
 # External runtime deps.
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "intel"] }
 object = { version = "0.36", default-features = false, features = ["read", "std"] }
 thiserror = "2"
 tracing = "0.1"

@@ -105,6 +105,11 @@ version = "0.1.0-pre"
 [[package]]
 name = "dac-arch-x86"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-arch",
+ "dac-binfmt",
+ "iced-x86",
+]
 
 [[package]]
 name = "dac-artifact"
@@ -270,6 +275,15 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "iced-x86"
+version = "1.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b"
+dependencies = [
+ "lazy_static",
+]
 
 [[package]]
 name = "id-arena"

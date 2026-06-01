@@ -1,0 +1,27 @@
+[package]
+name = "dac-arch-x86-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+dac-arch = { path = "../../dac-arch" }
+dac-arch-x86 = { path = ".." }
+
+# Make this Cargo.toml its own workspace root so the parent dac workspace
+# does not pull libfuzzer-sys (nightly-only at runtime) into stable CI
+# builds. Run fuzz with `cargo +nightly fuzz run <target>` from
+# `crates/dac-arch-x86/`.
+[workspace]
+members = []
+
+[[bin]]
+name = "fuzz_x86_decode"
+path = "fuzz_targets/fuzz_x86_decode.rs"
+test = false
+doc = false
+bench = false

@@ -35,13 +35,6 @@ Goal: load an ELF or PE, decode x86-64, lift to Instruction IR, recover
 functions, and emit `-O0` textual output that is a faithful annotated
 disassembly-style listing.
 
-### B1.3 — Architecture trait + x86-64 decoder
-- `dac-arch` defines `Architecture`, `InstructionDecoder`, `RegisterFile`.
-- `dac-arch-x86` implements decode for x86 and x86-64 (use `iced-x86` —
-  ADR-0004).
-- Snapshot tests against known instruction sequences.
-- **Done when:** decoder round-trips a real `.text` section.
-
 ### B1.4 — Instruction IR + x86-64 lifter
 - `dac-ir::instr`: arch-neutral instruction representation with provenance
   (I-2).

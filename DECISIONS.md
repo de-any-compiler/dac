@@ -144,20 +144,75 @@ through whatever vocabulary `dac-binfmt` exposes.
 
 ---
 
-## ADR-0004 — x86 decoder library: TBD (placeholder)
+## ADR-0004 — x86 decoder library: `iced-x86`
 
-**Status:** Open. Closes in B1.3.
+**Status:** Accepted (closed in B1.3, 2026-06-01).
 
-**Context.** Shortlist: `iced-x86` (Intel-style, fast, well-maintained),
-`yaxpeax-x86` (more general, decode + encode), `capstone-rs` (FFI to
-Capstone, broad arch coverage).
+**Context.** `dac-arch-x86` needs an x86 / x86-64 decoder. Three Rust-
+visible options were shortlisted:
 
-**Decision.** Deferred. Working assumption: `iced-x86` for x86 because of
-its decoder accuracy and instruction-info API, with `yaxpeax` as the fallback
-if licensing or feature gaps appear.
+- **`iced-x86`** — Intel-style decoder + formatter, instruction-info
+  (`FlowControl`, `near_branch_target`, register reads/writes), fast.
+- **`yaxpeax-x86`** — Rust-native decoder + encoder, more uniform across
+  the `yaxpeax-arch` family.
+- **`capstone-rs`** — FFI binding to Capstone, broad architecture
+  coverage, battle-tested.
 
-**Consequences.** The architecture trait (`dac-arch`) hides the choice from
-the rest of the pipeline. Switching later is local.
+**Decision.** Use `iced-x86` (`1.21`, features `std`, `decoder`,
+`instr_info`, `intel`).
+
+**Reasoning.**
+
+1. **Flow-control + branch-target metadata is first-class.** iced exposes
+   `instr.flow_control()` and `instr.near_branch_target()` directly, and
+   they map cleanly onto dac-arch's [`ControlFlow`] (`Sequential`,
+   `ConditionalBranch { target }`, `IndirectCall`, …). CFG construction in
+   B2.1 picks this up unmodified. `yaxpeax-x86` exposes equivalent
+   information but the projection takes more work; `capstone-rs` wraps
+   the C `cs_detail` API behind FFI.
+2. **Explicit invalid-encoding reporting.** iced returns an `Instruction`
+   with `is_invalid()` set on unrecognized bytes — the trait surface can
+   surface that as `valid: false` with `(bad)` text, which matches I-6
+   ("degrade, don't invent").
+3. **Rust-native.** `capstone-rs` requires shipping a system C dependency
+   and an FFI boundary at every build site. iced-x86 keeps
+   `dac-arch-x86` a pure Rust crate, so cross-compiling stays a `cargo
+   build --target ...` away.
+4. **Coverage breadth.** iced covers every modern Intel/AMD opcode
+   including AVX-512, AMX, the 2024 APX extensions, plus 16/32/64-bit
+   modes — far more than dac needs at M1 but enough that we will not
+   outgrow the decoder.
+5. **License.** `iced-x86` is MIT — compatible with dac's Apache-2.0
+   (ADR-0001).
+
+**Alternatives considered.**
+
+- **`yaxpeax-x86`.** Strong design and Rust-native, and the multi-arch
+  family is attractive for when AArch64 lands (M5). The deciding
+  factor was the more direct flow-control surface in iced; if `dac-arch`
+  ever needs to host two decoders side-by-side for cross-checking,
+  yaxpeax is the obvious second.
+- **`capstone-rs`.** Battle-tested across architectures and the canonical
+  choice for many RE tools. Rejected here because the FFI + libcapstone
+  build dependency does not pay for itself on an x86-only target, and
+  the instruction-info surface is wrapped behind `cs_detail` rather than
+  exposed as Rust enums.
+- **Hand-rolled.** Out of scope by a wide margin; a decompiler-grade
+  x86-64 decoder is months of careful work and is exactly what iced
+  already is.
+
+**Consequences.**
+
+- `iced_x86` types stay inside `dac-arch-x86::decoder`. Downstream crates
+  depend only on `dac_arch::{InstructionDecoder, DecodedInstruction,
+  ControlFlow, …}`, so swapping decoders later is contained to one
+  module.
+- The B1.4 lifter is free to consume iced's `Instruction` directly for
+  accurate operand semantics, while still emitting the arch-neutral
+  Instruction IR.
+- iced uses internal `unsafe` for performance; that is allowed by
+  workspace lints (`unsafe_code = "warn"` only checks first-party code,
+  and `dac-arch-x86` itself stays `#![forbid(unsafe_code)]`).
 
 ---
 
