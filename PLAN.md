@@ -25,15 +25,6 @@ invariants in [ARCHITECTURE.md](./ARCHITECTURE.md).
 Goal: a Cargo workspace that builds, tests, lints, and has the basic
 plumbing every later batch will use. No analysis yet.
 
-### B0.2 — Logging, errors, and panic policy
-- `tracing` everywhere. Per-pass spans, JSON output when `--json` is set.
-- A single project `Error` enum in `dac-core`. No `unwrap` in non-test code.
-- Panic policy: parsers/decoders never panic on malformed input (NFR-4); they
-  return errors. `xtask ci` runs a fuzz smoke check on a tiny corpus to
-  enforce this.
-- **Done when:** running dac on `/dev/urandom` returns a clean error instead
-  of crashing, and is covered by a test.
-
 ### B0.3 — Core types, evidence graph, confidence lattice
 - `dac-core`: `Confidence`, `Source`, `EvidenceId`, `EvidenceGraph` (I-3).
 - Property tests for lattice meet/join laws.

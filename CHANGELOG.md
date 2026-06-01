@@ -51,6 +51,50 @@ time the workflow runs in CI.
 
 Closes: NFR-19 (cross-platform CI scaffolding).
 
+#### B0.2 — Logging, errors, and panic policy (2026-06-01)
+
+Tracing infrastructure, project-wide `Error` enum, and the panic-policy
+smoke test that proves dac returns a clean error on garbage input rather
+than crashing (NFR-4). End-to-end check: `dac` invoked on a 4 KiB random
+buffer exits with code 1, not a signal.
+
+- `dac-core`:
+  - `Error` enum (`thiserror`, `#[non_exhaustive]`) with `Io`,
+    `UnsupportedFormat`, `MalformedBinary { format, reason }`,
+    `InvariantViolation`, `Other` variants; `Result<T>` alias.
+  - `init_tracing(json: bool)` sets up `tracing_subscriber` with
+    `EnvFilter` (defaults to `info`, honors `RUST_LOG`) and toggles
+    JSON output. Idempotent — safe in tests.
+- `dac-binfmt`:
+  - `BinaryFormat` (`Elf` / `Pe` / `MachO`) with `name()`.
+  - `BinaryModel { format, size }` (placeholder; full fields land
+    with B1.1).
+  - `detect_format(&[u8])` does magic-byte detection for ELF, PE
+    (DOS-stub-relative PE header pointer), and Mach-O (thin LE/BE +
+    fat, both endians).
+  - `load_from_bytes(&[u8])` wraps detection and returns a
+    `BinaryModel` or `Error::UnsupportedFormat`.
+  - Smoke test runs 512 deterministic-PRNG inputs through both
+    entrypoints; asserts no panic.
+- `dac-cli`:
+  - Hand-rolled arg parser: `<input>`, `--json`, `--help`/`-h`.
+  - Reads the input file, calls `load_from_bytes`, emits structured
+    `tracing` events on success and failure.
+  - Exit codes: `0` (success), `1` (clean failure), `2` (usage error).
+  - Integration tests (`crates/dac-cli/tests/cli.rs`) cover: random-byte
+    input → exit 1; ELF magic → exit 0; no-args → exit 2; `--help` →
+    exit 0. All run as part of `cargo test --workspace`, which is the
+    `xtask ci` fuzz smoke per the batch spec.
+- `Cargo.toml`: `[workspace.dependencies]` centralizes versions for
+  internal crates and the new external deps (`tracing`,
+  `tracing-subscriber` w/ `env-filter` + `fmt` + `json`, `thiserror`,
+  `rand`, `assert_cmd`, `tempfile`).
+
+Closes: NFR-4 (safe handling of malformed binaries — for the format
+detector layer). Lays the tracing groundwork for FR-29 / NFR-8 / spec
+§10.1 `--json`. Spec §13.7-style prompt-template versioning is not yet
+in scope; B4.x will use the `tracing` infrastructure for AI provenance.
+
 
 ### Milestone 1 — Foundation
 *(not started)*

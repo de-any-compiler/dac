@@ -29,6 +29,35 @@ authors = ["dac contributors"]
 rust-version = "1.85"
 repository = "https://github.com/farkasau/dac"
 
+[workspace.dependencies]
+# Internal crates.
+dac-ai = { path = "crates/dac-ai", version = "0.1.0-pre" }
+dac-analysis = { path = "crates/dac-analysis", version = "0.1.0-pre" }
+dac-api = { path = "crates/dac-api", version = "0.1.0-pre" }
+dac-arch = { path = "crates/dac-arch", version = "0.1.0-pre" }
+dac-arch-x86 = { path = "crates/dac-arch-x86", version = "0.1.0-pre" }
+dac-artifact = { path = "crates/dac-artifact", version = "0.1.0-pre" }
+dac-backend-c = { path = "crates/dac-backend-c", version = "0.1.0-pre" }
+dac-backend-cpp = { path = "crates/dac-backend-cpp", version = "0.1.0-pre" }
+dac-binfmt = { path = "crates/dac-binfmt", version = "0.1.0-pre" }
+dac-core = { path = "crates/dac-core", version = "0.1.0-pre" }
+dac-ir = { path = "crates/dac-ir", version = "0.1.0-pre" }
+dac-knowledge = { path = "crates/dac-knowledge", version = "0.1.0-pre" }
+dac-lift = { path = "crates/dac-lift", version = "0.1.0-pre" }
+dac-plugin = { path = "crates/dac-plugin", version = "0.1.0-pre" }
+dac-recovery = { path = "crates/dac-recovery", version = "0.1.0-pre" }
+dac-verify = { path = "crates/dac-verify", version = "0.1.0-pre" }
+
+# External runtime deps.
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
+# Dev / test deps.
+assert_cmd = "2"
+rand = "0.8"
+tempfile = "3"
+
 [workspace.lints.rust]
 unsafe_code = "warn"
 unreachable_pub = "warn"

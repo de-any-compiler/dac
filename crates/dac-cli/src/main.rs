@@ -1,12 +1,106 @@
 //! `dac` — command-line frontend.
 //!
-//! Status: stub. Real CLI surface lands with batch `B0.5`.
+//! Status: B0.2 wires the binary to `dac-binfmt::load_from_bytes` via
+//! `dac-core`'s `Error` and tracing. Full CLI surface (`-O`, `--target`,
+//! `--emit-*`, plugins, …) lands with B0.5.
 
 #![forbid(unsafe_code)]
 
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use dac_binfmt::{load_from_bytes, BinaryModel};
+use dac_core::init_tracing;
+
 fn main() -> ExitCode {
-    eprintln!("dac: not yet implemented (see PLAN.md, batch B0.5)");
-    ExitCode::from(2)
+    let args = match parse_args(std::env::args_os().skip(1)) {
+        Ok(args) => args,
+        Err(msg) => {
+            eprintln!("dac: {msg}");
+            print_usage();
+            return ExitCode::from(2);
+        }
+    };
+
+    if args.show_help {
+        print_usage();
+        return ExitCode::SUCCESS;
+    }
+
+    init_tracing(args.json);
+
+    let Some(input) = args.input else {
+        eprintln!("dac: missing input binary path");
+        print_usage();
+        return ExitCode::from(2);
+    };
+
+    match run(&input) {
+        Ok(model) => {
+            tracing::info!(
+                format = %model.format.name(),
+                size = model.size,
+                path = %input.display(),
+                "loaded input"
+            );
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            tracing::error!(
+                error = %err,
+                path = %input.display(),
+                "failed to load input"
+            );
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run(path: &Path) -> dac_core::Result<BinaryModel> {
+    let bytes = std::fs::read(path)?;
+    load_from_bytes(&bytes)
+}
+
+#[derive(Debug, Default)]
+struct Args {
+    input: Option<PathBuf>,
+    json: bool,
+    show_help: bool,
+}
+
+fn parse_args<I>(iter: I) -> std::result::Result<Args, String>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = Args::default();
+    for arg in iter {
+        let s = arg.to_string_lossy();
+        match s.as_ref() {
+            "--json" => args.json = true,
+            "--help" | "-h" => args.show_help = true,
+            other if other.starts_with('-') => {
+                return Err(format!("unknown option: {other}"));
+            }
+            _ => {
+                if args.input.is_some() {
+                    return Err("multiple input paths not supported".into());
+                }
+                args.input = Some(PathBuf::from(arg));
+            }
+        }
+    }
+    Ok(args)
+}
+
+fn print_usage() {
+    eprintln!(
+        "\
+Usage: dac <input> [--json] [--help]
+
+  <input>   Path to the binary to analyze.
+  --json    Emit machine-readable JSON diagnostics.
+  --help    Print this message.
+"
+    );
 }

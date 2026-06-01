@@ -8,5 +8,11 @@ authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 
+[dependencies]
+dac-core.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
+
 [lints]
 workspace = true
