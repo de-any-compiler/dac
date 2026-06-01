@@ -146,6 +146,74 @@ production lands as later batches populate them). Sets up the
 provenance machinery the pass manager (B0.4) and AI delta protocol
 (M4) build on.
 
+#### B0.4 — Pass manager skeleton (2026-06-01)
+
+The skeleton orchestrator every later batch hangs off (invariant I-5
+and NFR-9). `dac-core` gains a `Pass` trait, a topological scheduler,
+and a `PassManager` that caches outputs into the new `dac-artifact`
+content-addressed store. The `--deterministic` flag is wired through
+to the manager and rejects `NonDeterministic` passes at registration.
+
+- `dac-core::pass`:
+  - `Pass` trait (`id`, `inputs`, `outputs`, `determinism`, `run`).
+  - `PassId(&'static str)` and `ArtifactKind(&'static str)` newtypes —
+    open by design so out-of-tree and test pipelines can declare
+    their own kinds.
+  - `Determinism` enum (`Pure` / `SeededPure` / `NonDeterministic`).
+  - `PassContext` with `input(kind) -> Option<&[u8]>` and
+    `produce(kind, bytes)`; writes to undeclared kinds are dropped.
+  - `ArtifactStore` thin wrapper over `HashMap<ArtifactKind, Vec<u8>>`
+    threaded through the pipeline.
+  - `PassManager::new()` (lax) and `PassManager::deterministic()`
+    (NFR-9). `register` rejects non-deterministic passes in the latter
+    mode with a structured `Error::PassManager` message.
+  - `with_settings_hash(u64)` partitions the cache so `-O1` and `-O2`
+    runs cannot collide.
+  - Topological scheduler (Kahn) with deterministic root tiebreak by
+    registration order. Surfaces cycles, missing producers, duplicate
+    producers, and self-input/output passes through `Error::PassManager`.
+  - Cache key is the byte concatenation
+    `pass_id || 0 || input_hash_le || settings_hash_le`. Input hash is
+    an inline FNV-1a-64 over `(kind, bytes)*` in declared order — a
+    stable in-process hash, replaceable later when on-disk caching
+    needs cross-process stability.
+  - Cache value is a length-prefixed `(kind, bytes)*` blob; nothing
+    else reads the format.
+  - `RunReport { passes: Vec<(PassId, PassOutcome)> }` with
+    `executed()`, `cached()`, and `fully_cached()` helpers.
+  - `Error::PassManager(String)` covers cycles, missing/duplicate
+    producers, deterministic-mode violations, and corrupt-cache
+    decode errors.
+- `dac-artifact`:
+  - `ArtifactCache` — in-memory `HashMap<Vec<u8>, Vec<u8>>` with
+    `get` / `put` / `len` / `is_empty`. The cache is intentionally
+    opaque: it stores and retrieves; the pass manager owns key
+    construction. On-disk persistence lands later.
+- `dac-cli`:
+  - `--deterministic` flag parsed and surfaced through tracing. The
+    pipeline plumbing (passing the flag into a real `PassManager`)
+    lands once the CLI starts driving pipelines in B1.6; the
+    rejection of non-deterministic passes is fully covered by
+    `dac-core` unit tests today.
+  - Two new integration tests: `--deterministic` is accepted on a
+    valid input, and unknown flags still exit `2`.
+- `dac-api`: re-exports the pass-manager surface
+  (`Pass`, `PassContext`, `PassId`, `ArtifactKind`, `Determinism`,
+  `PassManager`, `ArtifactStore`, `PassOutcome`, `RunReport`,
+  `ArtifactCache`).
+
+The toy-pipeline done-when is covered by
+`dac-core::pass::tests::three_pass_pipeline_runs_and_caches`: three
+`Pure` passes (`alpha → beta → gamma`) run once with counter `= 3`,
+then a fresh store + same cache replays every pass from cache with
+counter still `= 3` and all three outputs restored.
+
+Closes: I-5 (pass declares inputs/outputs/determinism, manager
+enforces), NFR-9 (`--deterministic` rejects non-deterministic
+passes), NFR-5 (cache stub keyed by
+`hash(pass_id || input_hash || settings_hash)`). Sets up the
+plumbing the first real passes (B1.x) drop into.
+
 
 ### Milestone 1 — Foundation
 *(not started)*

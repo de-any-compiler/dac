@@ -94,6 +94,7 @@ version = "0.1.0-pre"
 name = "dac-api"
 version = "0.1.0-pre"
 dependencies = [
+ "dac-artifact",
  "dac-core",
 ]
 
@@ -141,6 +142,7 @@ dependencies = [
 name = "dac-core"
 version = "0.1.0-pre"
 dependencies = [
+ "dac-artifact",
  "proptest",
  "thiserror",
  "tracing",

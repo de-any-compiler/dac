@@ -25,14 +25,6 @@ invariants in [ARCHITECTURE.md](./ARCHITECTURE.md).
 Goal: a Cargo workspace that builds, tests, lints, and has the basic
 plumbing every later batch will use. No analysis yet.
 
-### B0.4 — Pass manager skeleton
-- `Pass` trait, `PassContext`, `Determinism` enum (ARCHITECTURE §6).
-- Topological scheduler with cycle detection.
-- Content-addressed cache stub in `dac-artifact` (NFR-5).
-- `--deterministic` flag wired to reject `NonDeterministic` passes (NFR-9).
-- **Done when:** a toy pipeline of three fake passes runs, caches, and
-  re-runs from cache in a unit test.
-
 ### B0.5 — CLI surface (`dac --help`)
 - `dac` binary with all flags from spec §10.1 declared (most are stubs).
 - `--version` prints version + build id (NFR-10).

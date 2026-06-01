@@ -9,6 +9,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+dac-artifact.workspace = true
 dac-core.workspace = true
 
 [lints]

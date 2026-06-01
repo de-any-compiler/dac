@@ -31,6 +31,11 @@ pub enum Error {
     #[error("invariant violation: {0}")]
     InvariantViolation(String),
 
+    /// The pass manager rejected a pipeline configuration (cycle, missing
+    /// producer, duplicate producer, `--deterministic` violation, …).
+    #[error("pass manager: {0}")]
+    PassManager(String),
+
     /// Catch-all. Prefer a structured variant whenever possible.
     #[error("{0}")]
     Other(String),

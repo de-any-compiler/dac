@@ -59,3 +59,29 @@ fn dac_help_exits_zero() {
         .assert()
         .success();
 }
+
+#[test]
+fn dac_accepts_deterministic_flag() {
+    let mut buf = vec![0u8; 64];
+    buf[..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
+
+    let mut file = NamedTempFile::new().expect("create tempfile");
+    file.write_all(&buf).expect("write tempfile");
+
+    Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--deterministic")
+        .arg(file.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn dac_rejects_unknown_flag_with_exit_2() {
+    Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--nonsense")
+        .assert()
+        .failure()
+        .code(2);
+}
