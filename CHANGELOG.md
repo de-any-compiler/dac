@@ -95,6 +95,57 @@ detector layer). Lays the tracing groundwork for FR-29 / NFR-8 / spec
 §10.1 `--json`. Spec §13.7-style prompt-template versioning is not yet
 in scope; B4.x will use the `tracing` infrastructure for AI provenance.
 
+#### B0.3 — Core types, evidence graph, confidence lattice (2026-06-01)
+
+The provenance + confidence substrate every later batch depends on
+(invariants I-2 and I-3). Confidence is a product lattice over a numeric
+value and a totally ordered source class; the evidence graph is an
+append-only directed graph whose handles travel with IR nodes.
+
+- `dac-core::confidence`:
+  - `Source` enum (`Speculative < Derived < UserHint < Observed`) with
+    `name()` for diagnostics. The order is total; contradictions
+    between sources are modeled with `EdgeKind::Contradicts` edges,
+    not by re-ranking variants.
+  - `Confidence { value: f32, source: Source }`. `new` clamps `value`
+    to `[0.0, 1.0]`, maps `NaN` to `0.0`, and normalizes `-0.0`. After
+    construction every value lies on a totally ordered numeric axis.
+  - `join` / `meet` are componentwise max / min. Partial-order
+    `PartialOrd` impl: `a ≤ b` iff both axes are `≤`; incomparable
+    cases yield `None`.
+  - Property tests (`proptest`) for idempotence, commutativity,
+    associativity, absorption, monotonicity, and the
+    least-upper-bound / greatest-lower-bound laws on comparable pairs.
+- `dac-core::evidence`:
+  - `EvidenceId(NonZeroU32)` so `Option<EvidenceId>` has the same size
+    as `EvidenceId` when threaded through IR nodes.
+  - `EvidenceNode` variants for `Bytes`, `Instruction`, `IrNode`,
+    `KnowledgeFact`, `UserHint`, `AiSuggestion { prompt_hash }`. Inner
+    ids are opaque `u64` until their owning crates exist (B1.x / B2.x).
+  - `IrLayer` (`Instruction` / `Cfg` / `Ssa` / `Semantic` / `Source`)
+    addresses which IR an `IrNode` points into.
+  - `EdgeKind`: `Supports` / `Contradicts` / `Refines`.
+  - `EvidenceGraph` is append-only — facts are superseded with
+    `Contradicts` / `Refines` edges, never deleted, so the audit
+    trail for `--debug` and `--emit-report` stays intact.
+  - Unit tests cover sequential handles, foreign-handle safety,
+    insertion-order edge ordering, self-loops, and round-trip
+    payloads.
+- `dac-api`: re-exports `Confidence`, `Source`, `EvidenceGraph`,
+  `EvidenceId`, `EvidenceNode`, `IrLayer`, `Edge`, `EdgeKind`, plus
+  `Error` / `Result`. This is the start of the stable public surface
+  (FR-41); the wider surface fills in batch-by-batch.
+- `docs/confidence-lattice.md`: long-form treatment of the algebra,
+  the laws, and how the lattice meshes with the evidence graph. Linked
+  from `ARCHITECTURE.md §5`.
+- `Cargo.toml`: `proptest = "1"` added to `[workspace.dependencies]`
+  as a dev dep.
+
+Closes: I-2, I-3 (graph + lattice plumbing in place; concrete fact
+production lands as later batches populate them). Sets up the
+provenance machinery the pass manager (B0.4) and AI delta protocol
+(M4) build on.
+
 
 ### Milestone 1 — Foundation
 *(not started)*

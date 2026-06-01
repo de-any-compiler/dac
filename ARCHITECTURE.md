@@ -200,7 +200,10 @@ pub struct Confidence {
 
 Combination rules (lattice meet/join) are defined in `dac-core` and are
 deterministic. A `UserHint` outranks `Speculative`. `Observed` outranks
-everything else for facts the user has not contradicted.
+everything else for facts the user has not contradicted. See
+[`docs/confidence-lattice.md`](./docs/confidence-lattice.md) for the
+algebra, the laws, and how the lattice interacts with the evidence
+graph.
 
 ---
 

@@ -25,12 +25,6 @@ invariants in [ARCHITECTURE.md](./ARCHITECTURE.md).
 Goal: a Cargo workspace that builds, tests, lints, and has the basic
 plumbing every later batch will use. No analysis yet.
 
-### B0.3 — Core types, evidence graph, confidence lattice
-- `dac-core`: `Confidence`, `Source`, `EvidenceId`, `EvidenceGraph` (I-3).
-- Property tests for lattice meet/join laws.
-- Public `dac-api` re-export surface (placeholder).
-- **Done when:** the lattice has a docs page and property tests pass.
-
 ### B0.4 — Pass manager skeleton
 - `Pass` trait, `PassContext`, `Determinism` enum (ARCHITECTURE §6).
 - Topological scheduler with cycle detection.
