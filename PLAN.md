@@ -35,15 +35,6 @@ Goal: load an ELF or PE, decode x86-64, lift to Instruction IR, recover
 functions, and emit `-O0` textual output that is a faithful annotated
 disassembly-style listing.
 
-### B1.1 — Binary model and ELF parser
-- `dac-binfmt` façade with `BinaryModel`.
-- ELF parser (use `goblin` or `object` — picked in ADR-0003) producing
-  sections, segments, symbols, imports, exports, relocations, strings
-  (FR-3, FR-5, FR-6).
-- Fuzz target `fuzz_elf_parse` (NFR-4).
-- **Done when:** the ELF parser round-trips a sample `hello-world`,
-  `libc.so.6`, and a stripped binary; fuzz target runs 5 min without crashes.
-
 ### B1.2 — PE parser
 - Same shape as B1.1 for PE.
 - Fuzz target `fuzz_pe_parse`.

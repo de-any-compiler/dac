@@ -2,9 +2,11 @@
 //!
 //! Closes the B0.2 done-when (dac returns a clean error on random input,
 //! never crashes) and the B0.5 done-when (`dac --help` matches a snapshot
-//! that mirrors spec §10.1).
+//! that mirrors spec §10.1). After B1.1 the `success`-path tests use a
+//! real ELF fixture so they exercise the full parser.
 
 use std::io::Write;
+use std::path::PathBuf;
 
 use assert_cmd::Command;
 use rand::rngs::StdRng;
@@ -13,12 +15,17 @@ use tempfile::NamedTempFile;
 
 const HELP_SNAPSHOT: &str = include_str!("snapshots/help.txt");
 
-fn elf_tempfile() -> NamedTempFile {
-    let mut buf = vec![0u8; 64];
-    buf[..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
-    let mut file = NamedTempFile::new().expect("create tempfile");
-    file.write_all(&buf).expect("write tempfile");
-    file
+fn fixture_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("fixtures")
+        .join(name)
+}
+
+fn elf_fixture() -> PathBuf {
+    fixture_path("hello-x86_64")
 }
 
 #[test]
@@ -39,13 +46,27 @@ fn dac_returns_clean_error_on_random_input() {
 }
 
 #[test]
-fn dac_recognizes_elf_magic() {
-    let file = elf_tempfile();
+fn dac_parses_elf_fixture() {
+    let path = elf_fixture();
+    Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg(&path)
+        .assert()
+        .success();
+}
+
+#[test]
+fn dac_rejects_elf_magic_without_valid_header() {
+    let mut buf = vec![0u8; 64];
+    buf[..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
+    let mut file = NamedTempFile::new().expect("create tempfile");
+    file.write_all(&buf).expect("write tempfile");
     Command::cargo_bin("dac")
         .expect("dac binary present")
         .arg(file.path())
         .assert()
-        .success();
+        .failure()
+        .code(1);
 }
 
 #[test]
@@ -129,11 +150,11 @@ fn dac_short_version_matches_long_version() {
 
 #[test]
 fn dac_accepts_deterministic_flag() {
-    let file = elf_tempfile();
+    let path = elf_fixture();
     Command::cargo_bin("dac")
         .expect("dac binary present")
         .arg("--deterministic")
-        .arg(file.path())
+        .arg(&path)
         .assert()
         .success();
 }
@@ -150,7 +171,7 @@ fn dac_rejects_unknown_flag_with_exit_2() {
 
 #[test]
 fn dac_accepts_full_spec_flag_surface() {
-    let file = elf_tempfile();
+    let path = elf_fixture();
     Command::cargo_bin("dac")
         .expect("dac binary present")
         .args([
@@ -178,19 +199,19 @@ fn dac_accepts_full_spec_flag_surface() {
             "--plugin",
             "/tmp/dac-test-plugin.so",
         ])
-        .arg(file.path())
+        .arg(&path)
         .assert()
         .success();
 }
 
 #[test]
 fn dac_accepts_each_opt_level() {
-    let file = elf_tempfile();
+    let path = elf_fixture();
     for level in ["-O0", "-O1", "-O2", "-O3"] {
         Command::cargo_bin("dac")
             .expect("dac binary present")
             .arg(level)
-            .arg(file.path())
+            .arg(&path)
             .assert()
             .success();
     }
@@ -198,12 +219,12 @@ fn dac_accepts_each_opt_level() {
 
 #[test]
 fn dac_accepts_each_format_value() {
-    let file = elf_tempfile();
+    let path = elf_fixture();
     for fmt in ["elf", "pe", "mach-o", "auto"] {
         Command::cargo_bin("dac")
             .expect("dac binary present")
             .args(["--format", fmt])
-            .arg(file.path())
+            .arg(&path)
             .assert()
             .success();
     }

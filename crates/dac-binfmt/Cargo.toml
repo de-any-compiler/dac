@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 dac-core.workspace = true
+object.workspace = true
 
 [dev-dependencies]
 rand.workspace = true

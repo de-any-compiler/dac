@@ -265,7 +265,113 @@ off of.
 
 
 ### Milestone 1 — Foundation
-*(not started)*
+
+#### B1.1 — Binary model and ELF parser (2026-06-01)
+
+Format-agnostic `BinaryModel` vocabulary plus a real ELF parser. ADR-0003
+closes on `object` (see [DECISIONS.md](./DECISIONS.md)); every later
+format (PE in B1.2, Mach-O later) bridges into the same `BinaryModel`
+shape, so downstream crates never see format-specific types.
+
+- `dac-binfmt::model`:
+  - `BinaryFormat`, `Architecture`, `Endian`, `Bits`, `Permissions`.
+  - `Section { name, address, size, file_offset, perms, kind }` with
+    `SectionKind` covering text / read-only data / data / bss / TLS /
+    metadata / note / other / unknown.
+  - `Segment { name, address, file_offset, file_size, mem_size, perms }`
+    (program-header view; `name` carries the parser's `PT_*` label when
+    available).
+  - `Symbol { name, address, size, kind, binding, section, source,
+    undefined }` with `SymbolKind` (text / data / section / file / TLS
+    / label / unknown), `SymbolBinding` (local / global / weak / unique),
+    `SymbolSource` (`Symtab` for `.symtab`, `Dynsym` for `.dynsym`).
+  - `Import { name, library }` and `Export { name, address }` capture
+    the dynamic linkage view.
+  - `Relocation { section: Option<usize>, offset, kind, symbol, addend }`
+    with `RelocationKind` (absolute / relative / GOT-relative /
+    PLT-relative / glob / copy / TLS / unknown). `section` is `None`
+    when a dynamic relocation patches an address outside every recorded
+    section; `offset` is bytes-into-section for static relocations and
+    a virtual address for dynamic ones.
+  - `StringRef { section, offset, value }` for printable-ASCII runs
+    ≥ 4 bytes, NUL-terminated, scanned from read-only-data sections.
+  - `BinaryModel` aggregates all of the above plus `format`, `architecture`,
+    `endian`, `bits`, `entry`, `size`, and `needed_libraries` (DT_NEEDED
+    sonames on ELF; the same field carries PE DLL imports and Mach-O
+    `LC_LOAD_DYLIB` install names once those parsers land).
+- `dac-binfmt::elf`:
+  - Wraps `object::File` and maps everything into the model types.
+    Static `.rela.<section>` entries (relocatable objects) flow through
+    per-section `relocations()`; dynamic `.rela.dyn` / `.rela.plt`
+    entries (executables / shared libraries) flow through
+    `Object::dynamic_relocations()`.
+  - `map_relocation_flags` maps the common x86-64 and AArch64 `R_TYPE`
+    families (`R_X86_64_RELATIVE`, `R_X86_64_GLOB_DAT`, `R_X86_64_PLT32`,
+    GOT-relative, copy, TLS, absolute, PC-relative; `R_AARCH64_ABS*`,
+    `R_AARCH64_GLOB_DAT`, `R_AARCH64_RELATIVE`). Unknown types collapse
+    to `RelocationKind::Unknown`; raw type fidelity stays inside
+    `object` for now.
+  - String scan walks `SectionKind::ReadOnlyData` sections, emits any
+    NUL-terminated printable-ASCII run ≥ 4 bytes as a `StringRef`. Code
+    and writable sections are intentionally skipped to suppress
+    relocation / opcode false positives.
+  - All error paths return `Error::MalformedBinary { format: "ELF", reason }`;
+    no `unwrap` / `expect` outside test code.
+- `dac-binfmt::lib`:
+  - `load_from_bytes` now dispatches: ELF → full parse, PE / Mach-O →
+    `UnsupportedFormat` until B1.2 / later. Format detection
+    (`detect_format`) keeps the cheap-path magic check that was added
+    in B0.2.
+  - 10 unit tests cover the boundary cases (empty input, ELF magic
+    without a valid header → `MalformedBinary`, PE / Mach-O magic →
+    `UnsupportedFormat`, 512 deterministic-PRNG inputs → no panic).
+- `dac-binfmt::fuzz`:
+  - libFuzzer crate at `crates/dac-binfmt/fuzz/`, scoped out of the
+    parent workspace via its own empty `[workspace]` block.
+  - Single target `fuzz_elf_parse` hits both `detect_format` and
+    `load_from_bytes`. Run via
+    `cargo install cargo-fuzz && cargo +nightly fuzz run fuzz_elf_parse -- -max_total_time=300`
+    from `crates/dac-binfmt/`; the 5-minute total-time cap matches the
+    B1.1 done-when. The in-tree 512-iteration deterministic-PRNG smoke
+    keeps the same invariant green in stable CI.
+- `tests/fixtures/` (workspace-root, shared across crates):
+  - `hello-x86_64` — PIE executable, dynamic, with `.symtab`.
+  - `hello-x86_64-stripped` — same input `strip -s`-ed.
+  - `libsample.so` — shared library exporting `sample_add`,
+    `sample_greeting`, `sample_value` plus an embedded string literal.
+  - `README.md` documenting the source and build recipe so the fixtures
+    are reproducible.
+- `crates/dac-binfmt/tests/elf.rs` — round-trip integration tests:
+  hello-x86_64 shape (entry, sections, segments, `.text`), `main` in
+  `.symtab`, `libc.so` in `needed_libraries`, `write` in imports;
+  stripped variant has zero `Symtab` symbols but keeps `Dynsym`;
+  `libsample.so` exposes the three exports with the right `SymbolKind`
+  and surfaces the embedded string; relocations all resolve to valid
+  symbol indices when symbol-bound. A best-effort `system_libc_parses_when_present`
+  probes `/lib/x86_64-linux-gnu/libc.so.6` and friends — runs on Linux
+  CI, skips silently elsewhere.
+- `dac-cli`:
+  - The `dac_recognizes_elf_magic` test (which fed 64 magic-bytes-only
+    bytes) is replaced by `dac_parses_elf_fixture` against the real
+    fixture, plus a negative `dac_rejects_elf_magic_without_valid_header`
+    that asserts the new parser produces a clean exit-1, not a panic.
+  - Success-path tracing now emits `arch`, `sections`, `segments`,
+    `symbols`, `imports`, `exports`, `relocations`, `strings`,
+    `needed_libraries`, and `entry` alongside `format` / `size`. The
+    full-flag-surface test still passes; tests that needed an ELF input
+    now point at the shared fixture.
+- `DECISIONS.md`: ADR-0003 closes with the rationale, the rejected
+  alternatives, and the boundary the choice draws (`object` types do
+  not leak past `dac-binfmt`).
+- `Cargo.toml`: `object = { version = "0.36", default-features = false,
+  features = ["read", "std"] }` added to `[workspace.dependencies]`.
+
+Closes: FR-3 (ELF supported in the initial release; PE / Mach-O follow),
+FR-5 (stripped and unstripped binaries both round-trip), FR-6
+(import / export information preserved through `Import`, `Export`,
+`Symbol`, and `needed_libraries`), partial NFR-4 (parser robustness
+covered by the in-tree stress test and the fuzz target — the 5-minute
+fuzz run remains a manual gate per the B1.1 done-when).
 
 ### Milestone 2 — Core decompilation
 *(not started)*

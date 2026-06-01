@@ -94,19 +94,53 @@ language-agnostic up to source IR) constrain both.
 
 ---
 
-## ADR-0003 — Binary parser library: TBD (placeholder)
+## ADR-0003 — Binary parser library: `object`
 
-**Status:** Open. Closes in B1.1.
+**Status:** Accepted (closed in B1.1, 2026-06-01).
 
-**Context.** Need to pick between `goblin` (single crate, multi-format) and
-`object` (split crates, lower-level). Both are mature.
+**Context.** `dac-binfmt` needs to parse ELF, PE, and Mach-O. Two mature
+Rust crates fit: `goblin` (single crate, format-specific types per format)
+and `object` (trait-based, uniform read API). The choice is load-bearing
+because every later layer (lifters, recovery passes, backends) reads
+through whatever vocabulary `dac-binfmt` exposes.
 
-**Decision.** Deferred. The shortlist:
-- `goblin` — easier ergonomics, covers ELF / PE / Mach-O.
-- `object` — more flexible, used widely in the Rust toolchain.
+**Decision.** Use `object` (version `0.36`, `read` + `std` features only).
 
-**Consequences.** Either is replaceable behind the `dac-binfmt` façade.
-The cost of switching later is moderate, so this is not a blocking decision.
+**Reasoning.** Three properties make `object` the better fit for dac:
+
+1. **Trait-uniform reads.** `Object`, `ObjectSection`, `ObjectSegment`,
+   `ObjectSymbol`, and the relocation traits expose the same shape across
+   ELF / PE / Mach-O. That maps almost 1:1 onto `BinaryModel`'s
+   format-agnostic vocabulary, so PE (B1.2) and Mach-O reuse the same
+   bridge code instead of growing a parallel path.
+2. **Rustc / cargo lineage.** `object` is the parser used by the Rust
+   toolchain itself. It has been adversarially exercised on every linker
+   input the Rust ecosystem has seen, which is the strongest available
+   answer to NFR-4 (safe handling of malformed binaries).
+3. **`#![no_std]`-friendly with `default-features = false`.** dac is `std`
+   today, but keeping the parser core `no_std` capable matters for the
+   embedded/firmware use case the spec leaves room for.
+
+**Alternatives considered.**
+- **`goblin`** — simpler call surface, but every format gets its own
+  type, so the façade ends up reimplementing the trait-uniformity that
+  `object` already provides. The split would push format-specific glue
+  into PE (B1.2) and beyond.
+- **Hand-rolled parsers.** Strongest invariants in theory; in practice a
+  decompiler-grade ELF/PE/Mach-O parser is a year of work and is exactly
+  what `object` already is. Rejected as scope.
+
+**Consequences.**
+- `object` types never leak past `dac-binfmt`. Downstream crates depend
+  only on the `BinaryModel` vocabulary, so swapping parsers later is
+  contained to one crate.
+- `object::Object::dynamic_relocations()` is the source of truth for
+  shared-library / executable relocations. Static (`.o`) relocations
+  arrive through per-section `relocations()`; the model accommodates
+  both by making `Relocation::section` optional and using `offset` for
+  either a section-relative offset or a virtual address.
+- The crate's `read` feature set is enough; `write` and the format-
+  specific compile-time features stay off.
 
 ---
 

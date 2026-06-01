@@ -2,47 +2,22 @@
 //!
 //! Part of the dac workspace. See `ARCHITECTURE.md` in the workspace root.
 //!
-//! Status: B0.2 lands magic-byte format detection and the panic-policy
-//! smoke test. Full ELF parsing lands with B1.1, PE with B1.2.
+//! Status: B0.2 landed magic-byte format detection. B1.1 adds the full
+//! ELF parser on top of `object` (ADR-0003) and the shared `BinaryModel`
+//! vocabulary that PE (B1.2) and Mach-O will plug into the same way.
 
 #![forbid(unsafe_code)]
 
+mod elf;
+mod model;
+
 use dac_core::{Error, Result};
 
-/// A binary executable format dac recognizes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryFormat {
-    /// ELF (Linux, BSD, embedded).
-    Elf,
-    /// Portable Executable (Windows).
-    Pe,
-    /// Mach-O (macOS, iOS).
-    MachO,
-}
-
-impl BinaryFormat {
-    /// Human-readable name suitable for diagnostics.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Elf => "ELF",
-            Self::Pe => "PE",
-            Self::MachO => "Mach-O",
-        }
-    }
-}
-
-/// Minimal placeholder for the binary model.
-///
-/// Real fields (sections, symbols, imports, relocations, strings) land
-/// with B1.1.
-#[derive(Debug)]
-pub struct BinaryModel {
-    /// Detected format.
-    pub format: BinaryFormat,
-    /// Size of the input in bytes.
-    pub size: usize,
-}
+pub use model::{
+    Architecture, BinaryFormat, BinaryModel, Bits, Endian, Export, Import, Permissions, Relocation,
+    RelocationKind, Section, SectionKind, Segment, StringRef, Symbol, SymbolBinding, SymbolKind,
+    SymbolSource,
+};
 
 /// Identify the binary format of `bytes` by inspecting magic numbers.
 ///
@@ -83,16 +58,18 @@ pub fn detect_format(bytes: &[u8]) -> Result<BinaryFormat> {
     Err(Error::UnsupportedFormat)
 }
 
-/// Construct a minimal [`BinaryModel`] from the input bytes.
+/// Construct a [`BinaryModel`] from the input bytes.
 ///
-/// At B0.2 this only identifies the format. Field-level parsing
-/// (sections, symbols, etc.) lands with B1.1.
+/// For ELF inputs, returns a fully populated `BinaryModel` with sections,
+/// segments, symbols, imports, exports, relocations, strings, and needed
+/// libraries (B1.1). PE and Mach-O inputs return
+/// [`Error::UnsupportedFormat`] until their parsers land (B1.2 / later).
 pub fn load_from_bytes(bytes: &[u8]) -> Result<BinaryModel> {
     let format = detect_format(bytes)?;
-    Ok(BinaryModel {
-        format,
-        size: bytes.len(),
-    })
+    match format {
+        BinaryFormat::Elf => elf::parse(bytes),
+        BinaryFormat::Pe | BinaryFormat::MachO => Err(Error::UnsupportedFormat),
+    }
 }
 
 #[cfg(test)]
@@ -142,7 +119,6 @@ mod tests {
 
     #[test]
     fn three_byte_input_is_unsupported_without_panic() {
-        // Exercise the short-buffer paths in PE/Mach-O detection.
         for b in [
             &[0x7F, b'E', b'L'][..],
             &[b'M', b'Z', 0][..],
@@ -153,10 +129,43 @@ mod tests {
         }
     }
 
+    /// Magic bytes without a valid ELF header reach the full `object`
+    /// parser; that parser returns an error rather than panicking, and
+    /// dac surfaces it as [`Error::MalformedBinary`].
+    #[test]
+    fn elf_magic_without_valid_header_is_malformed() {
+        let mut buf = vec![0u8; 16];
+        buf[..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
+        match load_from_bytes(&buf) {
+            Err(Error::MalformedBinary { format, .. }) => assert_eq!(format, "ELF"),
+            other => panic!("expected MalformedBinary, got {other:?}"),
+        }
+    }
+
+    /// PE and Mach-O are not yet parsed — but format detection still
+    /// succeeds, so the error must be [`Error::UnsupportedFormat`] from
+    /// the load step rather than a panic or misclassified error.
+    #[test]
+    fn pe_and_macho_return_unsupported_format() {
+        let mut pe = vec![0u8; 0x80];
+        pe[..2].copy_from_slice(b"MZ");
+        pe[0x3C..0x40].copy_from_slice(&0x40_u32.to_le_bytes());
+        pe[0x40..0x44].copy_from_slice(b"PE\0\0");
+        assert!(matches!(
+            load_from_bytes(&pe),
+            Err(Error::UnsupportedFormat)
+        ));
+
+        let macho = vec![0xCF, 0xFA, 0xED, 0xFE, 0, 0, 0, 0];
+        assert!(matches!(
+            load_from_bytes(&macho),
+            Err(Error::UnsupportedFormat)
+        ));
+    }
+
     /// Smoke check: feed deterministic random bytes through the format
-    /// detector and assert that no input causes a panic (NFR-4). This is
-    /// the placeholder for the per-parser cargo-fuzz targets that land in
-    /// B1.1 / B1.2.
+    /// detector and assert that no input causes a panic (NFR-4). The full
+    /// parser is exercised by the libfuzzer target in `fuzz/`.
     #[test]
     fn random_input_never_panics() {
         let mut rng = StdRng::seed_from_u64(0xDAC0_5EED);

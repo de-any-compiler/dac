@@ -79,7 +79,17 @@ fn main() -> ExitCode {
         Ok(model) => {
             tracing::info!(
                 format = %model.format.name(),
+                arch = %model.architecture.name(),
                 size = model.size,
+                sections = model.sections.len(),
+                segments = model.segments.len(),
+                symbols = model.symbols.len(),
+                imports = model.imports.len(),
+                exports = model.exports.len(),
+                relocations = model.relocations.len(),
+                strings = model.strings.len(),
+                needed_libraries = model.needed_libraries.len(),
+                entry = ?model.entry,
                 deterministic = args.deterministic,
                 path = %input.display(),
                 "loaded input"
