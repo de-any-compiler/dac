@@ -3,7 +3,8 @@
 //! Closes the B0.2 done-when (dac returns a clean error on random input,
 //! never crashes) and the B0.5 done-when (`dac --help` matches a snapshot
 //! that mirrors spec §10.1). After B1.1 the `success`-path tests use a
-//! real ELF fixture so they exercise the full parser.
+//! real ELF fixture so they exercise the full parser; B1.2 adds a PE
+//! fixture path to cover the second format dispatch.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -28,6 +29,10 @@ fn elf_fixture() -> PathBuf {
     fixture_path("hello-x86_64")
 }
 
+fn pe_fixture() -> PathBuf {
+    fixture_path("hello-x86_64.exe")
+}
+
 #[test]
 fn dac_returns_clean_error_on_random_input() {
     let mut rng = StdRng::seed_from_u64(0xDAC0_5EED);
@@ -48,6 +53,16 @@ fn dac_returns_clean_error_on_random_input() {
 #[test]
 fn dac_parses_elf_fixture() {
     let path = elf_fixture();
+    Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg(&path)
+        .assert()
+        .success();
+}
+
+#[test]
+fn dac_parses_pe_fixture() {
+    let path = pe_fixture();
     Command::cargo_bin("dac")
         .expect("dac binary present")
         .arg(&path)

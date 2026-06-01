@@ -2,14 +2,18 @@
 //!
 //! Part of the dac workspace. See `ARCHITECTURE.md` in the workspace root.
 //!
-//! Status: B0.2 landed magic-byte format detection. B1.1 adds the full
+//! Status: B0.2 landed magic-byte format detection. B1.1 added the full
 //! ELF parser on top of `object` (ADR-0003) and the shared `BinaryModel`
-//! vocabulary that PE (B1.2) and Mach-O will plug into the same way.
+//! vocabulary. B1.2 plugs PE into the same bridge — `elf.rs` and `pe.rs`
+//! now both delegate to `bridge::parse_object`, so every model field stays
+//! in lock-step across formats. Mach-O follows the same pattern later.
 
 #![forbid(unsafe_code)]
 
+mod bridge;
 mod elf;
 mod model;
+mod pe;
 
 use dac_core::{Error, Result};
 
@@ -60,15 +64,17 @@ pub fn detect_format(bytes: &[u8]) -> Result<BinaryFormat> {
 
 /// Construct a [`BinaryModel`] from the input bytes.
 ///
-/// For ELF inputs, returns a fully populated `BinaryModel` with sections,
-/// segments, symbols, imports, exports, relocations, strings, and needed
-/// libraries (B1.1). PE and Mach-O inputs return
-/// [`Error::UnsupportedFormat`] until their parsers land (B1.2 / later).
+/// ELF inputs (B1.1) and PE inputs (B1.2) both produce fully populated
+/// [`BinaryModel`]s with sections, segments, symbols, imports, exports,
+/// relocations, strings, and needed libraries — the two formats share the
+/// generic walk in [`bridge`]. Mach-O still returns
+/// [`Error::UnsupportedFormat`] until its parser lands.
 pub fn load_from_bytes(bytes: &[u8]) -> Result<BinaryModel> {
     let format = detect_format(bytes)?;
     match format {
         BinaryFormat::Elf => elf::parse(bytes),
-        BinaryFormat::Pe | BinaryFormat::MachO => Err(Error::UnsupportedFormat),
+        BinaryFormat::Pe => pe::parse(bytes),
+        BinaryFormat::MachO => Err(Error::UnsupportedFormat),
     }
 }
 
@@ -142,25 +148,31 @@ mod tests {
         }
     }
 
-    /// PE and Mach-O are not yet parsed — but format detection still
-    /// succeeds, so the error must be [`Error::UnsupportedFormat`] from
-    /// the load step rather than a panic or misclassified error.
+    /// Mach-O has no parser yet; calls to [`load_from_bytes`] must surface
+    /// the dispatch decision as [`Error::UnsupportedFormat`] rather than
+    /// panicking or being misclassified.
     #[test]
-    fn pe_and_macho_return_unsupported_format() {
-        let mut pe = vec![0u8; 0x80];
-        pe[..2].copy_from_slice(b"MZ");
-        pe[0x3C..0x40].copy_from_slice(&0x40_u32.to_le_bytes());
-        pe[0x40..0x44].copy_from_slice(b"PE\0\0");
-        assert!(matches!(
-            load_from_bytes(&pe),
-            Err(Error::UnsupportedFormat)
-        ));
-
+    fn macho_returns_unsupported_format() {
         let macho = vec![0xCF, 0xFA, 0xED, 0xFE, 0, 0, 0, 0];
         assert!(matches!(
             load_from_bytes(&macho),
             Err(Error::UnsupportedFormat)
         ));
+    }
+
+    /// A hand-built MZ + `PE\0\0` stub passes [`detect_format`] but is
+    /// otherwise empty. The full PE parser must reject it cleanly through
+    /// [`Error::MalformedBinary`] with the `"PE"` tag, not panic.
+    #[test]
+    fn pe_magic_without_valid_header_is_malformed() {
+        let mut pe = vec![0u8; 0x80];
+        pe[..2].copy_from_slice(b"MZ");
+        pe[0x3C..0x40].copy_from_slice(&0x40_u32.to_le_bytes());
+        pe[0x40..0x44].copy_from_slice(b"PE\0\0");
+        match load_from_bytes(&pe) {
+            Err(Error::MalformedBinary { format, .. }) => assert_eq!(format, "PE"),
+            other => panic!("expected MalformedBinary, got {other:?}"),
+        }
     }
 
     /// Smoke check: feed deterministic random bytes through the format

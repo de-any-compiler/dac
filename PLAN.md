@@ -35,12 +35,6 @@ Goal: load an ELF or PE, decode x86-64, lift to Instruction IR, recover
 functions, and emit `-O0` textual output that is a faithful annotated
 disassembly-style listing.
 
-### B1.2 — PE parser
-- Same shape as B1.1 for PE.
-- Fuzz target `fuzz_pe_parse`.
-- **Done when:** PE parser handles a sample `notepad.exe` and a stripped
-  console exe; auto-detection (FR-2) picks ELF vs PE correctly.
-
 ### B1.3 — Architecture trait + x86-64 decoder
 - `dac-arch` defines `Architecture`, `InstructionDecoder`, `RegisterFile`.
 - `dac-arch-x86` implements decode for x86 and x86-64 (use `iced-x86` —

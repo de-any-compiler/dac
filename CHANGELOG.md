@@ -373,6 +373,89 @@ FR-5 (stripped and unstripped binaries both round-trip), FR-6
 covered by the in-tree stress test and the fuzz target — the 5-minute
 fuzz run remains a manual gate per the B1.1 done-when).
 
+#### B1.2 — PE parser (2026-06-01)
+
+Second binary format wired into the [`BinaryModel`] vocabulary. `elf.rs`
+and the new `pe.rs` both delegate to a shared `bridge::parse_object`, so
+every model field stays in lock-step across formats and the format-
+specific work collapses to two thin modules. ADR-0003 (`object`)
+continues to hold for PE: `Object::sections() / segments() / symbols() /
+imports() / exports()` already drive the generic walk; the PE-specific
+bits are confined to `IMAGE_SCN_MEM_*` permission decoding and the
+`IMAGE_REL_AMD64_*` / `IMAGE_REL_I386_*` / `IMAGE_REL_ARM64_*` relocation
+tables.
+
+- `dac-binfmt::bridge` (new):
+  - `parse_object(bytes, format, format_tag)` is the generic walk. It
+    builds sections / segments / symbols / imports / exports / static and
+    (ELF-only) dynamic relocations / strings / `needed_libraries`. The
+    same code that produces an ELF `BinaryModel` now produces a PE one
+    after dispatching through `bridge::parse_object(bytes, BinaryFormat::Pe, "PE")`.
+  - `section_permissions` and `segment_permissions` understand both
+    `SectionFlags::Elf { sh_flags }` and `SectionFlags::Coff { characteristics }`
+    (and the matching `SegmentFlags` arms). PE permissions read from the
+    canonical `IMAGE_SCN_MEM_READ` / `IMAGE_SCN_MEM_WRITE` /
+    `IMAGE_SCN_MEM_EXECUTE` bits.
+  - `map_relocation_flags(flags, arch)` takes the architecture because
+    COFF relocation type spaces overlap across `IMAGE_FILE_MACHINE_*`
+    targets (each starts at `0x0000`). Per-arch tables map the common
+    AMD64 / i386 / ARM64 reloc kinds (`ADDR64`, `ADDR32`, `ADDR32NB`,
+    `REL32*`, `BRANCH26`/19/14, `SECTION` / `SECREL` / `SECREL7`).
+  - PE base relocations (`.reloc`) are intentionally not surfaced here:
+    they describe image rebasing rather than symbol bindings, and the
+    import table already covers the symbol-resolution view.
+- `dac-binfmt::elf` and `dac-binfmt::pe`:
+  - Both are now ≤ a dozen lines: each calls
+    `bridge::parse_object(bytes, BinaryFormat::Elf, "ELF")` or
+    `(bytes, BinaryFormat::Pe, "PE")` respectively. New fields on
+    `BinaryModel` land once in the bridge and reach both formats.
+- `dac-binfmt::lib`:
+  - `load_from_bytes` now dispatches PE → `pe::parse`. Mach-O still
+    returns `Error::UnsupportedFormat` until its parser lands.
+  - The hand-built MZ + `PE\0\0` stub test now asserts
+    `Error::MalformedBinary { format: "PE", .. }` instead of
+    `UnsupportedFormat`, matching the new behaviour.
+- `tests/fixtures/` (workspace-root):
+  - `hello-x86_64.exe` — PE32+ console exe, debug stripped, COFF symbol
+    table kept (~40 KiB). Built with mingw-w64 16.x:
+    `x86_64-w64-mingw32-gcc -Os -ffunction-sections -fdata-sections
+    -Wl,--gc-sections hello_pe.c` then `--strip-debug`.
+  - `hello-x86_64-stripped.exe` — same with `--strip-all` (~16 KiB).
+  - `sample.dll` — PE32+ DLL with `sample_add`, `sample_greeting`,
+    `sample_value` exports plus an embedded string literal (~30 KiB).
+  - `README.md` updated to document the build recipe alongside the ELF
+    entries.
+- `crates/dac-binfmt/tests/pe.rs` — 10 round-trip integration tests
+  cover: PE32+ shape (entry, sections, segments, `.text`); canonical
+  section names (`.text` / `.data` / `.rdata` / `.idata`); `IMAGE_SCN_*`
+  permissions on `.text` (R+X) and `.data` (R+W); `main` in the COFF
+  symbol table on the unstripped fixture; `KERNEL32.dll` in
+  `needed_libraries`; stripped variant carries zero symbols but keeps
+  its imports; DLL exports include all three names; DLL function
+  symbols (`sample_add`, `sample_greeting`) surface with
+  `SymbolKind::Text`; embedded string lands in the `StringRef` set;
+  FR-2 auto-detection sends PE and ELF buffers to the right parser.
+- `crates/dac-cli/tests/cli.rs` — adds `dac_parses_pe_fixture`, which
+  runs `dac` against `hello-x86_64.exe` and asserts a clean exit. The
+  full-flag-surface test continues to use the ELF fixture; both formats
+  are now covered through the CLI end-to-end.
+- `crates/dac-binfmt/fuzz/`:
+  - New target `fuzz_pe_parse` driving both `detect_format` and
+    `load_from_bytes`. Run via
+    `cargo +nightly fuzz run fuzz_pe_parse -- -max_total_time=300`
+    from `crates/dac-binfmt/`. The 5-minute total-time cap satisfies
+    the B1.2 done-when. The in-tree 512-iteration deterministic-PRNG
+    smoke in the lib unit tests continues to keep NFR-4 green in stable
+    CI for both ELF and PE paths.
+
+Closes: FR-2 (auto-detection of ELF vs PE proven by
+`pe_fixture_is_auto_detected_and_dispatched`), FR-3 (PE supported in the
+initial release alongside ELF), FR-5 (stripped and unstripped PE both
+round-trip), FR-6 (DLL imports + exports preserved through `Import`,
+`Export`, and `needed_libraries`). Continues NFR-4 (parser robustness):
+PE shares the in-tree stress test through `load_from_bytes` and the
+5-minute manual fuzz gate is matched by a dedicated PE target.
+
 ### Milestone 2 — Core decompilation
 *(not started)*
 

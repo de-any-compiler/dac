@@ -13,7 +13,7 @@ dac-binfmt = { path = ".." }
 
 # Make this Cargo.toml its own workspace root so the parent dac workspace
 # does not pull libfuzzer-sys (nightly-only at runtime) into stable CI
-# builds. Run fuzz with `cargo +nightly fuzz run fuzz_elf_parse` from
+# builds. Run fuzz with `cargo +nightly fuzz run <target>` from
 # `crates/dac-binfmt/`.
 [workspace]
 members = []
@@ -21,6 +21,13 @@ members = []
 [[bin]]
 name = "fuzz_elf_parse"
 path = "fuzz_targets/fuzz_elf_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_pe_parse"
+path = "fuzz_targets/fuzz_pe_parse.rs"
 test = false
 doc = false
 bench = false
