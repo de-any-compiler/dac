@@ -1,0 +1,43 @@
+Usage: dac <input-binary> [options]
+
+dac lifts ELF / PE / Mach-O binaries to high-level source. See the
+requirements specification (§10.1) for the source of truth on these flags;
+most are parsed today and become active milestone by milestone.
+
+Reconstruction level:
+  -O0                       Faithful annotated listing of lifted IR.
+  -O1                       Best-effort low-level reconstruction.
+  -O2                       Structured reconstruction with idioms.
+  -O3                       AI-assisted semantic reconstruction.
+
+Input:
+      --arch <arch>         Override the auto-detected architecture.
+      --format <fmt>        Input format: elf, pe, mach-o, or auto
+                            (default: auto).
+      --plugin <path>       Load a dynamic analysis or backend plugin.
+
+Output:
+      --target <lang>       Target language: c or cpp (default: c).
+      --output <path>       Write reconstructed source to <path>.
+      --emit-ir             Export intermediate representation artifacts.
+      --emit-cfg            Export control-flow graphs (DOT).
+      --emit-report         Export the analysis report.
+      --emit-annotations    Export annotations alongside the source.
+
+AI:
+      --no-ai               Disable all AI providers.
+      --ai-provider <name>  Use AI provider <name>.
+
+Execution:
+      --deterministic       Reject pipelines that register a
+                            non-deterministic pass (NFR-9).
+      --threads <n>         Limit analysis to <n> threads.
+
+Diagnostics:
+      --json                Emit machine-readable JSON diagnostics.
+      --debug               Verbose traces (defaults filter to debug
+                            level when RUST_LOG is unset).
+
+Meta:
+  -V, --version             Print dac version and build id and exit.
+  -h, --help                Print this message and exit.

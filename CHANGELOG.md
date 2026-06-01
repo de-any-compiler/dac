@@ -214,6 +214,55 @@ passes), NFR-5 (cache stub keyed by
 `hash(pass_id || input_hash || settings_hash)`). Sets up the
 plumbing the first real passes (B1.x) drop into.
 
+#### B0.5 — CLI surface (2026-06-01)
+
+Full `dac` CLI declared from spec §10.1. Every flag in the spec is now
+parsed and validated; most do not yet drive behavior and become active
+milestone by milestone. `dac --help` is a stable snapshot, guarded by an
+integration test, and `dac --version` reports `dac <version> (<build-id>)`
+for NFR-10.
+
+- `dac-cli`:
+  - Flags parsed: `-O0`/`-O1`/`-O2`/`-O3`, `--arch <a>`, `--format <fmt>`,
+    `--target <lang>`, `--output <path>`, `--emit-ir`, `--emit-cfg`,
+    `--emit-report`, `--emit-annotations`, `--no-ai`,
+    `--ai-provider <name>`, `--deterministic`, `--threads <n>`,
+    `--json`, `--debug`, `--plugin <path>`, `--version`/`-V`,
+    `--help`/`-h`.
+  - `Format` and `Target` are typed enums; invalid values fail at parse
+    time with exit `2`. `--threads` is parsed as a positive `u32`; `0`
+    or non-numeric values exit `2`. `--arch`, `--output`,
+    `--ai-provider`, `--plugin` are accepted as opaque values for now.
+  - `--help`/`-h` prints the snapshot to stdout (not stderr) and exits
+    `0`. `--version`/`-V` prints `dac <CARGO_PKG_VERSION> (<BUILD_ID>)`
+    and exits `0`.
+  - `BUILD_ID` resolves from the compile-time `DAC_BUILD_ID` env var,
+    defaulting to `"dev"` for local builds. CI / release builds inject
+    the commit SHA. This is the first piece of NFR-10 reproducibility
+    metadata; pipeline runs will pick it up once they have a manifest
+    (B1.6).
+  - Errors print a one-line hint (`dac: try \`dac --help\` for usage.`)
+    rather than dumping the whole help text on every typo.
+  - `tracing::debug!` at startup records the parsed argument set, so
+    `--debug` (and `RUST_LOG=debug`) trace runs surface every flag.
+- `dac-core::init_tracing` now takes `(json, debug)`. When `RUST_LOG`
+  is unset, `debug = true` defaults the filter to `"debug"` instead of
+  `"info"`. Existing callers updated; idempotence test now exercises
+  all four combinations.
+- `crates/dac-cli/tests/snapshots/help.txt` is the golden help text,
+  included into the binary via `include_str!` and into the test via
+  the same macro, so the binary cannot drift from the test.
+- `crates/dac-cli/tests/cli.rs` grows to 18 integration tests covering:
+  the help / short-help snapshot, version + short-version equality and
+  format, the full §10.1 flag surface accepted together, each `-O`
+  level, every `--format` value, and exit-`2` paths for invalid
+  `--format` / `--target` / `--threads` and missing values.
+
+Closes: NFR-10 (tool version + build id surfaced through `--version`;
+the reproducibility manifest emitted alongside pipeline runs lands
+with B1.6). Lays the spec-§10.1 surface every later batch hangs flags
+off of.
+
 
 ### Milestone 1 — Foundation
 *(not started)*

@@ -25,12 +25,7 @@ invariants in [ARCHITECTURE.md](./ARCHITECTURE.md).
 Goal: a Cargo workspace that builds, tests, lints, and has the basic
 plumbing every later batch will use. No analysis yet.
 
-### B0.5 — CLI surface (`dac --help`)
-- `dac` binary with all flags from spec §10.1 declared (most are stubs).
-- `--version` prints version + build id (NFR-10).
-- `--json` switches output to machine-readable.
-- **Done when:** `dac --help` matches spec §10.1 and a snapshot test
-  guards it.
+*All M0 batches complete — see [CHANGELOG.md](./CHANGELOG.md).*
 
 ---
 
