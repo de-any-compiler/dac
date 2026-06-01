@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dac-api",
+    "crates/dac-core",
+    "crates/dac-cli",
+    "crates/dac-binfmt",
+    "crates/dac-arch",
+    "crates/dac-arch-x86",
+    "crates/dac-ir",
+    "crates/dac-lift",
+    "crates/dac-analysis",
+    "crates/dac-recovery",
+    "crates/dac-knowledge",
+    "crates/dac-ai",
+    "crates/dac-backend-c",
+    "crates/dac-backend-cpp",
+    "crates/dac-verify",
+    "crates/dac-plugin",
+    "crates/dac-artifact",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0-pre"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["dac contributors"]
+rust-version = "1.85"
+repository = "https://github.com/farkasau/dac"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

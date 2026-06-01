@@ -21,7 +21,36 @@ batch-based development model from [PLAN.md](./PLAN.md).
 ## [Unreleased]
 
 ### Milestone 0 — Project skeleton
-*(in progress — no batches landed yet)*
+
+#### B0.1 — Workspace bootstrap (2026-06-01)
+
+Cargo workspace with the 17-crate layout from `ARCHITECTURE.md` §2, plus
+`xtask`. All crates compile as stubs and `cargo xtask ci` is green locally
+on Linux. CI matrix runs on Linux / macOS / Windows in
+`.github/workflows/ci.yml`; cross-platform confirmation lands the first
+time the workflow runs in CI.
+
+- Workspace `Cargo.toml` with `resolver = "2"`, workspace-wide
+  `version`/`edition`/`license`/`rust-version`, and workspace lints
+  (`rust_2018_idioms`, `clippy::all`).
+- `rust-toolchain.toml` pinned to `stable` with `rustfmt` + `clippy`.
+- `rustfmt.toml`, `clippy.toml` (`msrv = "1.85"`), `deny.toml` (license +
+  source allow-lists; not yet wired into `xtask ci`).
+- `.cargo/config.toml` aliases `cargo xtask` to `cargo run --package xtask`.
+- `xtask` crate with subcommands `ci` / `fmt` / `clippy` / `test` / `help`.
+  `ci` runs `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, and `cargo test --workspace` in order.
+- GitHub Actions workflow runs `cargo xtask ci` on
+  `ubuntu-latest` / `macos-latest` / `windows-latest`, with
+  `Swatinem/rust-cache@v2`.
+- License chosen: Apache-2.0 (ADR-0001 closed in
+  [DECISIONS.md](./DECISIONS.md)). Canonical text in `LICENSE`.
+- Each stub crate carries `#![forbid(unsafe_code)]` and `[lints] workspace
+  = true`. `dac-cli` is the `dac` binary; for now it prints a "not yet
+  implemented" message and exits 2.
+
+Closes: NFR-19 (cross-platform CI scaffolding).
+
 
 ### Milestone 1 — Foundation
 *(not started)*

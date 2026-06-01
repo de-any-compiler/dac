@@ -1,0 +1,16 @@
+[package]
+name = "dac-cli"
+description = "Command-line frontend for dac (the `dac` binary)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dac"
+path = "src/main.rs"
+
+[lints]
+workspace = true

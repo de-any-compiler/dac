@@ -25,16 +25,6 @@ invariants in [ARCHITECTURE.md](./ARCHITECTURE.md).
 Goal: a Cargo workspace that builds, tests, lints, and has the basic
 plumbing every later batch will use. No analysis yet.
 
-### B0.1 — Workspace bootstrap
-- Cargo workspace with the crate layout from `ARCHITECTURE.md` §2.
-- `rust-toolchain.toml` pinned to a stable Rust.
-- `rustfmt.toml`, `clippy.toml`, `deny.toml` (cargo-deny).
-- `xtask` crate with at least `xtask ci` running fmt + clippy + test.
-- CI workflow (GitHub Actions) running `xtask ci` on Linux/macOS/Windows
-  (NFR-19).
-- Pick license (ADR-0001 in [DECISIONS.md](./DECISIONS.md)).
-- **Done when:** `cargo xtask ci` is green on all three platforms.
-
 ### B0.2 — Logging, errors, and panic policy
 - `tracing` everywhere. Per-pass spans, JSON output when `--json` is set.
 - A single project `Error` enum in `dac-core`. No `unwrap` in non-test code.

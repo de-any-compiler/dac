@@ -9,24 +9,40 @@ supersedes the old one; do not edit history.
 
 ---
 
-## ADR-0001 — License: deferred to first tagged release
+## ADR-0001 — License: Apache-2.0
 
-**Status:** Open. Must be closed before any 0.1.0 tag.
+**Status:** Accepted, 2026-06-01.
 
-**Context.** dac is open-source-bound but the license has not been chosen.
-Options under consideration: Apache-2.0 (single license), MIT/Apache-2.0 dual,
-MPL-2.0. The decision affects how third parties embed dac.
+**Context.** dac is open-source-bound; the license needed to be chosen
+before any code merged so that contributions land under a known license.
+Options considered: Apache-2.0 (single license), MIT/Apache-2.0 dual,
+MPL-2.0, GPL-3.0.
 
-**Decision.** Defer to before the first tagged release. Default working
-assumption: Apache-2.0 with patent grant, to keep the door open for ecosystem
-adoption. Revisit when contributors start arriving.
+**Decision.** Apache-2.0. The canonical text is at
+[`LICENSE`](./LICENSE) in the workspace root. Every crate's `Cargo.toml`
+declares `license = "Apache-2.0"` via `workspace.package`.
 
-**Consequences.** Until this ADR closes, no contributor agreement is in
-force and external contributions should be limited to issues and design
-discussion.
+**Consequences.**
 
-**Alternatives.** GPL-3.0 was discussed and rejected to maximize embedding
-in commercial tools — dac is meant to be a *foundation*, not a moat.
+- Patent grant covers contributors and downstream embedders, which matters
+  for a tool that touches reverse-engineered binaries.
+- Compatible with the major Rust crates in the ecosystem we plan to depend
+  on (`goblin`, `object`, `iced-x86`, `yaxpeax`, `capstone-rs`).
+- Section 5 of the license (Contributions) means we do not yet need a
+  separate CLA; sign-off (`git commit -s`) is sufficient for now.
+- A future move to MIT/Apache-2.0 dual licensing is still possible without
+  contributor re-permission since Apache-2.0 covers the redistribution case.
+
+**Alternatives considered.**
+
+- **MIT/Apache-2.0 dual.** The Rust ecosystem default. Slightly more
+  permissive. Rejected for now to keep the licensing story simple and to
+  retain the patent grant unambiguously.
+- **MPL-2.0.** Weak copyleft at the file level. Rejected because it
+  complicates embedding in proprietary tools — dac is meant to be a
+  foundation other tools embed.
+- **GPL-3.0.** Rejected for the same reason: it would prevent commercial
+  embedding and shrink the audience.
 
 ---
 

@@ -1,0 +1,12 @@
+[package]
+name = "dac-binfmt"
+description = "Binary format parsing (ELF, PE, Mach-O) for dac."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
