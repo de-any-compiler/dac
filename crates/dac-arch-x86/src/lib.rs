@@ -2,30 +2,35 @@
 //!
 //! Part of the dac workspace. See `ARCHITECTURE.md` in the workspace root.
 //!
-//! ## What B1.3 ships
+//! ## What ships when
 //!
-//! - [`X86_64`] and [`I386`] zero-sized [`dac_arch::Architecture`] impls.
-//! - [`IcedDecoder`] — an [`dac_arch::InstructionDecoder`] that wraps
-//!   `iced-x86` (ADR-0004). The iced types stay inside this module; the
-//!   trait surface exposes only the arch-neutral
-//!   [`dac_arch::DecodedInstruction`] view.
-//! - Register-file metadata for both bitnesses (GPRs and their aliases,
-//!   plus instruction-pointer / flags). Vector / FP registers come in
-//!   later batches as the lifter starts to need them.
+//! - **B1.3.** [`X86_64`] and [`I386`] zero-sized
+//!   [`dac_arch::Architecture`] impls; [`IcedDecoder`] —
+//!   an [`dac_arch::InstructionDecoder`] that wraps `iced-x86`
+//!   (ADR-0004). Register-file metadata for both bitnesses.
+//! - **B1.4 (this batch).** [`IcedLifter`] — an
+//!   [`dac_arch::InstructionLifter`] that projects iced instructions
+//!   onto [`dac_ir::instr::InstructionIr`]. Same iced containment
+//!   posture as the decoder: only the arch-neutral surface escapes
+//!   this crate.
 //!
-//! The lifter (`B1.4`) will live in this crate too and consume the
-//! iced `Instruction` directly for accurate operand semantics, while
-//! still emitting the arch-neutral Instruction IR.
+//! Both the decoder and the lifter live behind trait objects on
+//! `Architecture`; downstream passes hold a `Box<dyn Architecture>`
+//! and never need to know which ISA is underneath.
 
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types)]
 
 mod decoder;
+mod lifter;
 mod registers;
 
-use dac_arch::{Architecture, Endianness, InstructionDecoder, Isa, RegisterFile};
+use dac_arch::{
+    Architecture, Endianness, InstructionDecoder, InstructionLifter, Isa, RegisterFile,
+};
 
 pub use decoder::IcedDecoder;
+pub use lifter::IcedLifter;
 
 /// 64-bit Intel / AMD architecture backend.
 #[derive(Debug, Default, Clone, Copy)]
@@ -50,6 +55,10 @@ impl Architecture for X86_64 {
 
     fn decoder(&self) -> Box<dyn InstructionDecoder> {
         Box::new(IcedDecoder::new(64))
+    }
+
+    fn lifter(&self) -> Box<dyn InstructionLifter> {
+        Box::new(IcedLifter::new(64))
     }
 
     fn register_file(&self) -> &RegisterFile {
@@ -80,6 +89,10 @@ impl Architecture for I386 {
 
     fn decoder(&self) -> Box<dyn InstructionDecoder> {
         Box::new(IcedDecoder::new(32))
+    }
+
+    fn lifter(&self) -> Box<dyn InstructionLifter> {
+        Box::new(IcedLifter::new(32))
     }
 
     fn register_file(&self) -> &RegisterFile {

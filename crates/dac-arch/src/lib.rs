@@ -14,19 +14,23 @@
 //!
 //! ## What lands when
 //!
-//! - **B1.3 (this batch).** [`Architecture`], [`InstructionDecoder`],
+//! - **B1.3.** [`Architecture`], [`InstructionDecoder`],
 //!   [`DecodedInstruction`], [`ControlFlow`], [`Endianness`], [`Isa`],
 //!   [`RegisterFile`].
-//! - **B1.4.** `InstructionLifter` trait (decoder → Instruction IR).
+//! - **B1.4 (this batch).** [`InstructionLifter`] trait + [`Coverage`]
+//!   report. The `Architecture` trait grows a [`lifter`] method (ARCHITECTURE
+//!   §7).
 //! - **B2.5.** `CallingConvention` shape consumed by convention
 //!   inference.
 
 #![forbid(unsafe_code)]
 
 mod decoder;
+mod lifter;
 mod registers;
 
 pub use decoder::{ControlFlow, DecodeError, DecodedInstruction, InstructionDecoder};
+pub use lifter::{Coverage, InstructionLifter};
 pub use registers::{Register, RegisterClass, RegisterFile, RegisterId};
 
 /// Byte ordering of integer-typed values in memory and registers.
@@ -93,6 +97,11 @@ pub trait Architecture: Send + Sync {
     /// Construct a fresh instruction decoder. Each call returns an owned
     /// decoder so callers can hand it to a pass without lifetime drama.
     fn decoder(&self) -> Box<dyn InstructionDecoder>;
+
+    /// Construct a fresh instruction lifter. Like [`decoder`](Self::decoder),
+    /// callers receive an owned trait object so the lifter can be moved
+    /// across pass boundaries without dragging arch-specific lifetimes.
+    fn lifter(&self) -> Box<dyn InstructionLifter>;
 
     /// Register file metadata. The reference is `'static`-equivalent —
     /// implementations typically return a `&'static RegisterFile` lazily

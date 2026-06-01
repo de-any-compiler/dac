@@ -35,17 +35,6 @@ Goal: load an ELF or PE, decode x86-64, lift to Instruction IR, recover
 functions, and emit `-O0` textual output that is a faithful annotated
 disassembly-style listing.
 
-### B1.4 — Instruction IR + x86-64 lifter
-- `dac-ir::instr`: arch-neutral instruction representation with provenance
-  (I-2).
-- `dac-arch-x86` lifter for the common subset (movs, arithmetic, control
-  transfers, calls, returns).
-- Coverage report: which opcodes are lifted vs not.
-- Unsupported opcodes lift to an `Opaque` node so later passes still see
-  CFG edges (I-6).
-- **Done when:** lifter coverage on the sample corpus's `.text` is ≥ 95%
-  by instruction count.
-
 ### B1.5 — Function discovery
 - `dac-recovery::functions`: discover functions from symbols, from entry
   point, from call edges, and from prologue heuristics (FR-9).

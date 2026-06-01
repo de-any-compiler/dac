@@ -545,6 +545,112 @@ Instruction-IR + lifter work in B1.4 by giving it a stable
 names against. Continues I-6 (decoder degrades to `(bad)` on invalid
 input rather than inventing semantics).
 
+#### B1.4 — Instruction IR + x86-64 lifter (2026-06-01)
+
+First arch-neutral IR layer (`ARCHITECTURE.md` §4) plus an iced-backed
+lifter that projects decoded x86 / x86-64 instructions onto it.
+Coverage on the workspace's ELF and PE `.text` fixtures clears 98.5%
+— comfortably above the 95% gate — with `hlt`, conditional set/move
+(`sete`, `setne`, `cmove`), SSE moves (`movaps`, `movsd`, `movups`,
+`unpcklpd`), `cdqe`, `cmpxchg`, `xchg`, and `fninit` landing as
+`Opaque` for later batches to model. CFG construction (B2.1) and
+function discovery (B1.5) still see every byte through the decoder's
+`ControlFlow` projection, so the opaques do not break downstream
+passes (I-6).
+
+- `dac-ir::instr` (new):
+  - `InstructionIr { address, length, op }` — the per-instruction
+    node. Address + length together name the byte span the node was
+    lifted from, which is the provenance hook an orchestrator turns
+    into `EvidenceNode::Bytes` + `EvidenceNode::IrNode` edges
+    (I-2). `is_lifted` is `false` only for `Opaque` so it is the
+    predicate `Coverage` counts against; `byte_range` returns the
+    half-open span the orchestrator needs.
+  - `Operation` — closed enum: `Move`, `LoadAddress`, `Add`, `Sub`,
+    `Mul`, `Div`, `And`, `Or`, `Xor`, `Shl`, `Shr`, `Sar`, `Not`,
+    `Neg`, `Compare`, `Test`, `Push`, `Pop`, `Jump { target,
+    condition }`, `Call { target }`, `Return`, `Nop`, `Interrupt
+    { vector }`, `Syscall`, `Opaque { mnemonic }`. New ops land as
+    new variants; existing consumers must explicitly handle them.
+  - `Operand` — typed operand vocabulary: `Register { name,
+    size_bits }`, `Immediate { value, size_bits }`, `Memory { base,
+    index, scale, displacement, size_bits, segment }`, `Branch
+    { target }`. Register names are lowercase canonical strings that
+    match `RegisterFile::by_name`; the IR stays decoupled from any
+    ISA's register catalogue.
+  - `Target { Direct(u64), Indirect(Operand) }` and `Condition` (17
+    arch-neutral codes covering the x86 `Jcc` set: `Equal`,
+    `NotEqual`, signed `Less`/`Less­Equal`/`Greater`/`GreaterEqual`,
+    unsigned `Below`/`BelowEqual`/`Above`/`AboveEqual`, `Sign`,
+    `NotSign`, `Overflow`, `NotOverflow`, `Parity`, `NotParity`,
+    `CxZero`). `Condition` carries a `Display` impl using the
+    shortest canonical name (`eq`, `ne`, `b`, `ae`, …).
+  - 5 unit tests cover `is_lifted` / `byte_range` for both lifted and
+    opaque records, `Condition::Display`, `Target::Indirect`'s
+    addressing-form preservation, and the wrapping-overflow
+    `byte_range` contract at the top of `u64`.
+- `dac-arch`:
+  - `InstructionLifter` trait: `lift(bytes, address) ->
+    InstructionIr`. Pure (no mutable evidence-graph state); callers
+    that want a sweep pair it with `InstructionDecoder::iter`. Always
+    returns IR — unsupported opcodes land as `Operation::Opaque`
+    rather than errors, so function discovery and CFG construction
+    never have to skip an instruction.
+  - `Coverage { total, lifted, opaque, opaque_mnemonics: BTreeMap }`
+    — fold one record at a time via `record`, surface the ratio with
+    `lifted_fraction`. `Display` impl emits the report with opaque
+    mnemonics in lexicographic order (NFR-9: deterministic).
+  - `Architecture` trait grows `fn lifter(&self) -> Box<dyn
+    InstructionLifter>`, matching ARCHITECTURE.md §7. Crate gains a
+    `dac-ir` dependency so the lifter trait can reference the IR
+    types.
+  - 3 unit tests cover the empty-coverage zero-fraction edge case,
+    lifted-vs-opaque counting + opaque histogram, and the
+    sort-stability invariant on the `Display` impl.
+- `dac-arch-x86`:
+  - `IcedLifter` implementing `InstructionLifter` for 16/32/64-bit
+    iced. Matching order: syscalls up-front (iced does not put them
+    under `FlowControl::Interrupt`), control flow via
+    `instr.flow_control()` (single source of truth, mirrors the
+    decoder's `ControlFlow` projection), then per-mnemonic for the
+    common arithmetic / data-movement / stack subset. Three-form
+    `imul` projects onto a single `Mul { dst, src }` arm. `inc` and
+    `dec` lower to `Add` / `Sub` of immediate `1`. `endbr32` /
+    `endbr64` land as `Nop`. Empty input lifts to a zero-length
+    `Opaque { mnemonic: "(empty)" }` so iterators that pair the
+    lifter with the decoder never see a panic. Invalid encodings
+    land as `Opaque { mnemonic: "(bad)" }` matching the decoder's
+    degradation policy (I-6).
+  - 19 unit tests cover snapshot lifts (`mov rax, rbx`, `lea` with
+    memory operand, direct + indirect call, conditional branch with
+    signed code, unconditional branch, `ret`, `push` / `pop`, `add`
+    with immediate, `xor` self-zero, `inc` lowered to `add 1`,
+    `cmp` + `jne` sequence, `syscall`, `int3` with vector, `nop` +
+    `endbr64` parity, invalid `0x06` → `(bad)`, unmodelled `addss`
+    → `Opaque`), the empty-input edge case, and the `Architecture::
+    lifter` trait-object path.
+  - `IcedLifter` exported alongside `IcedDecoder`; the lifter is
+    wired into both `X86_64.lifter()` and `I386.lifter()`.
+- `crates/dac-arch-x86/tests/lift_coverage.rs` — the B1.4 done-when.
+  Two integration tests (`elf_hello_meets_coverage_floor`,
+  `pe_hello_meets_coverage_floor`) load the shared ELF and PE
+  fixtures through `dac-binfmt`, run the decoder iterator across
+  every byte of `.text`, lift each record, and assert the resulting
+  `Coverage::lifted_fraction` clears `0.95`. The `Coverage` value's
+  `Display` impl is included in the assertion message so a regression
+  surfaces the per-mnemonic histogram alongside the percentage.
+- `Cargo.toml`: `dac-ir` added as a dependency to both `dac-arch`
+  (so the lifter trait can name `InstructionIr`) and `dac-arch-x86`
+  (so the iced lifter can produce one).
+
+Closes: I-2 (instruction IR nodes carry the byte span that an
+orchestrator wires into the evidence graph), I-6 (unsupported
+opcodes degrade to `Opaque` so passes still see CFG edges). Closes
+the B1.4 done-when by clearing 98.5% lifter coverage on the sample
+corpus's `.text`. Sets up B1.5 (function discovery) by giving it
+both control-flow classification (from the decoder) and a typed
+operand view (from the lifter) per instruction.
+
 ### Milestone 2 — Core decompilation
 *(not started)*
 

@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 dac-arch = { workspace = true }
+dac-ir = { workspace = true }
 iced-x86 = { workspace = true }
 
 [dev-dependencies]
