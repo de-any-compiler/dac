@@ -49,12 +49,14 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-**Recommended execution order before M4:** B3.8 → B3.9 → B3.10 → B3.6 →
-B3.7. Rationale: every M2/M3 recovery pass exists in `dac-recovery` /
-`dac-analysis` today, but nothing fires on real binaries because the
-`InstructionIr → RawFunction` bridge that feeds `construct_ssa` was
-never built. Until B3.8 lands, both backends emit stub bodies, B3.6's
-hints have nothing to retype, and B3.7's names have nothing to rename.
+**Recommended execution order before M4:** B3.10 → B3.6 → B3.7.
+Rationale: every M2/M3 recovery pass exists in `dac-recovery` /
+`dac-analysis` today; B3.8 + B3.9 already wired the
+`InstructionIr → RawFunction → SsaFunction → SemFunction →
+C AST` bridge into `--target c -O1`. B3.10 surfaces the recovered
+calling conventions / types / switch tables / struct fields in the
+emitted source — which is what gives B3.6's hints a typed surface
+to retype, and B3.7's names a real local-binding to rename.
 
 ### B3.6 — User hints / signatures
 - TOML or JSON file: per-function signatures, struct definitions, type
@@ -69,35 +71,6 @@ hints have nothing to retype, and B3.7's names have nothing to rename.
 - Deterministic only at this milestone — no AI yet.
 - **Done when:** generated names beat `v1, v2, v3` on the corpus per a
   measurable rubric (heuristic-name coverage %).
-
-### B3.9 — End-to-end pipeline orchestration in `dac-cli`
-- Wire B3.8's bridge into the actual `--target c -O1` / `--target cpp -O1`
-  reconstruction path so emitted source carries real bodies, not the
-  current `/* lifter→SSA bridge pending */` stubs.
-- Per recovered function, run the full pipeline in `dac-cli`: bytes →
-  `InstructionIr` (via `dac-arch-x86`) → `RawFunction` (B3.8 bridge) →
-  `Cfg` / `DominatorTree` / `PostDominatorTree` / `LoopForest` (already
-  exist) → `SsaFunction` (already exists) → `SemFunction` (already
-  exists) → C / C++ AST (already exists) → emit.
-- Replace stub-body emission in `render_c_unit` and `render_cpp_unit`
-  with real lowered bodies. Functions the bridge can't handle today
-  (Opaque-heavy, irreducible-CFG with high `goto_count`) degrade
-  gracefully back to the stub with an explicit reason in the leading
-  comment — keeps I-6 honest.
-- Thread `dac-recovery::FunctionSet` into the C backend's
-  `NameResolver` so `Call` lowers to `function_name(...)` instead of
-  `((void (*)())0xNN)(...)`.
-- Extend `--report` (B0.3 / B3.4) with a per-binary lift-coverage %:
-  how many recovered functions got real bodies vs. degraded to stubs.
-- Closes: FR-21 round-trip on real binaries (this is the deferred
-  follow-up explicitly recorded in the B2.8 CHANGELOG entry). NFR-9
-  (the orchestration is `Determinism::Pure` because every constituent
-  pass already is).
-- **Done when:** the `hello-static-x86_64-o1-c` golden case regenerates
-  with a recognizable `main` body in `source.c`, the round-trip
-  compile gate (`o1_target_c_round_trips_through_system_compiler`)
-  stays green, and the `--report` output names a non-zero lift
-  coverage on the corpus.
 
 ### B3.10 — Recovery facts → emitted source
 - Close the "facts in `dac-recovery` side tables don't surface in the
@@ -152,6 +125,14 @@ they are listed here so they stay visible.
 - **Subreg-aliasing correctness in the bridge** (B3.8 follow-up).
   Refine the lossy full-register-write rule into the precise x86_64
   model (32-bit writes zero the upper 32; 16/8-bit writes preserve).
+- **C++ body lowering** (B3.9 follow-up). The C++ AST in
+  `dac-backend-cpp::ast` only describes class hierarchies and
+  free-function signatures; member and free-function *bodies*
+  remain `/* dac C++ stub */` stubs because the AST has no
+  block/stmt node yet. Extending the AST (plus the matching
+  emit/lowering rules) lets the C-side `SsaFunction → SemFunction`
+  shape feed the C++ printer the same way it now feeds the C
+  printer.
 - **Mach-O parser** (FR-3). The format is detected and the model has a
   `BinaryFormat::MachO` variant, but no parser populates it.
 

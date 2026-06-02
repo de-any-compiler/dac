@@ -25,6 +25,8 @@ use dac_arch::{Coverage, InstructionDecoder, InstructionLifter};
 use dac_binfmt::{BinaryModel, Section};
 use dac_recovery::{Function, FunctionSet, SourceMask};
 
+use crate::lift::LiftStats;
+
 /// Per-function summary in the analysis report.
 #[derive(Debug, Clone)]
 pub(crate) struct FunctionSummary {
@@ -45,6 +47,7 @@ pub(crate) struct Report {
     pub from_call: u64,
     pub from_prologue: u64,
     pub coverage: Coverage,
+    pub lift: LiftStats,
     pub functions: Vec<FunctionSummary>,
 }
 
@@ -58,6 +61,7 @@ impl Report {
         decoder: &dyn InstructionDecoder,
         lifter: &dyn InstructionLifter,
         functions: &FunctionSet,
+        lift: LiftStats,
     ) -> Self {
         let exec_sections: Vec<&Section> = model
             .sections
@@ -77,6 +81,7 @@ impl Report {
             from_call: functions.stats.from_call,
             from_prologue: functions.stats.from_prologue,
             coverage,
+            lift,
             functions: summaries,
         }
     }
@@ -158,6 +163,15 @@ pub(crate) fn render_report_text(r: &Report) -> String {
         out,
         ";; lift cover.: {} / {} ({:.2}% lifted, {} opaque)",
         cov.lifted, cov.total, pct, cov.opaque,
+    );
+    let lift_pct = r.lift.fraction() * 100.0;
+    let _ = writeln!(
+        out,
+        ";; body cover.: {} / {} ({:.2}% real bodies, {} stubs)",
+        r.lift.real,
+        r.lift.total(),
+        lift_pct,
+        r.lift.stub,
     );
     out.push('\n');
     out.push_str("functions:\n");
@@ -283,7 +297,14 @@ mod tests {
         let model = empty_model();
         let mut g = EvidenceGraph::new();
         let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
-        let r = Report::build(&model, &[0u8; 0x10], &NullDecoder, &OpaqueLifter, &set);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
         assert_eq!(r.function_count, 1);
         assert_eq!(r.from_entry, 1);
         // NullDecoder yields no instructions, so coverage stays empty.
@@ -295,7 +316,14 @@ mod tests {
         let model = empty_model();
         let mut g = EvidenceGraph::new();
         let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
-        let r = Report::build(&model, &[0u8; 0x10], &NullDecoder, &OpaqueLifter, &set);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
         let s = render_report_text(&r);
         assert!(s.contains(";; functions:   1"));
         assert!(s.contains("0x0000000000001000"));
@@ -307,7 +335,14 @@ mod tests {
         let model = empty_model();
         let mut g = EvidenceGraph::new();
         let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
-        let r = Report::build(&model, &[0u8; 0x10], &NullDecoder, &OpaqueLifter, &set);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
         let a = render_report_text(&r);
         let b = render_report_text(&r);
         assert_eq!(a, b);

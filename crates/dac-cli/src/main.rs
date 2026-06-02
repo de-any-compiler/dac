@@ -20,6 +20,7 @@
 #![forbid(unsafe_code)]
 
 mod annotations;
+mod lift;
 mod listing;
 mod manifest;
 mod report;
@@ -33,12 +34,15 @@ use std::process::ExitCode;
 
 use dac_analysis::cfg::{build_cfgs, render_dot_all};
 use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, resolve_subject};
-use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter};
+use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter, RegisterFile};
 use dac_arch_x86::X86_64;
 use dac_backend_c::ast::{
     Block as CBlock, CType, Function as CFunction, Item as CItem, Stmt as CStmt, TranslationUnit,
 };
-use dac_backend_c::{default_includes as c_default_includes, emit as c_emit};
+use dac_backend_c::{
+    default_includes as c_default_includes, emit as c_emit, lower_function as c_lower_function,
+    NameResolver as CNameResolver,
+};
 use dac_backend_cpp::{
     class_recovery::recover_classes as recover_cpp_classes,
     default_includes as cpp_default_includes, emit as cpp_emit, lower_unit as cpp_lower_unit,
@@ -51,6 +55,7 @@ use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
     InputStamp, SettingsStamp, ToolStamp,
 };
+use crate::lift::{lift_all, LiftOutcome, LiftStats};
 use crate::listing::{render_listing, ListingOptions};
 use crate::manifest::{
     render_manifest_json, Manifest, ManifestInput, ManifestSettings, ManifestTool,
@@ -180,6 +185,29 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 &functions,
                 &ListingOptions::default(),
             );
+            // The B3.9 orchestrator runs the per-function lift exactly
+            // once and shares the outcomes with both the `--target c`
+            // source emitter and the optional `--emit-report` so the
+            // two views agree on which functions ended up with a real
+            // body. `-O0` and `--target cpp` paths don't need it; the
+            // call is cheap enough on the corpus that the
+            // unconditional cost is worth the simplicity.
+            let lift_outcomes = if args.opt != OptLevel::O0 || args.emit_report {
+                Some(lift_all(
+                    &functions,
+                    &model,
+                    &bytes,
+                    b.decoder.as_ref(),
+                    b.lifter.as_ref(),
+                    b.register_file,
+                ))
+            } else {
+                None
+            };
+            let lift_stats = lift_outcomes
+                .as_deref()
+                .map(LiftStats::from)
+                .unwrap_or_default();
             if args.emit_report {
                 let r = Report::build(
                     &model,
@@ -187,6 +215,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                     b.decoder.as_ref(),
                     b.lifter.as_ref(),
                     &functions,
+                    lift_stats,
                 );
                 report_text = Some(render_report_text(&r));
             } else {
@@ -204,6 +233,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 &input_label,
                 &model,
                 &functions,
+                lift_outcomes.as_deref(),
                 &annotations_doc,
                 Some(&mut graph),
             );
@@ -255,6 +285,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 &input_label,
                 &model,
                 &empty_set,
+                None,
                 &annotations_doc,
                 Some(&mut empty_graph),
             );
@@ -341,19 +372,24 @@ fn unsupported_arch_callgraph(model: &BinaryModel) -> String {
 /// Decide whether the `--target` / `-O` combination wants a C
 /// translation unit, and if so build it.
 ///
-/// B2.8 wires the C backend end-to-end at `-O1` (and above) for
-/// `--target c`. The lifter → `RawFunction` bridge needed to feed the
-/// structurer from real x86-64 bytes is not yet a batch in PLAN.md, so
-/// the per-function body lowers to a stub (a leading comment with the
-/// recovered metadata + `return;`). The top-of-unit comment makes the
-/// degradation explicit so a reader knows why the bodies are empty;
-/// the unit is still valid C so the round-trip compile gate
-/// (`dac_backend_c::try_compile`) holds on the corpus.
+/// B3.9 wires the C backend end-to-end at `-O1` (and above): the
+/// per-function pipeline runs `build_cfg → lift_function →
+/// construct_ssa → structure → lower_function` for every recovered
+/// function. Functions whose CFG cannot be built (no recovered `end`
+/// address, byte range outside an executable section, empty after
+/// decode) fall back to a stub body whose leading comment records
+/// the reason — I-6: the unit is still valid C so the round-trip
+/// compile gate (`dac_backend_c::try_compile`) holds on the corpus.
+///
+/// `--target cpp` continues to emit class-shaped stubs because the
+/// C++ AST does not model bodies. Extending the AST to carry lowered
+/// bodies is on the B3 follow-up shelf in PLAN.md.
 fn render_source_text(
     args: &Args,
     input_label: &str,
     model: &BinaryModel,
     functions: &FunctionSet,
+    lift_outcomes: Option<&[LiftOutcome]>,
     annotations: &AnnotationDoc,
     graph: Option<&mut EvidenceGraph>,
 ) -> Option<String> {
@@ -365,6 +401,7 @@ fn render_source_text(
             input_label,
             model,
             functions,
+            lift_outcomes,
             annotations,
             args.debug,
         )),
@@ -382,35 +419,28 @@ fn render_c_unit(
     input_label: &str,
     model: &BinaryModel,
     functions: &FunctionSet,
+    lift_outcomes: Option<&[LiftOutcome]>,
     annotations: &AnnotationDoc,
     debug: bool,
 ) -> String {
+    let resolver = build_c_name_resolver(functions);
+    // The orchestrator returns outcomes in the same order as
+    // `functions.functions`; the zip below guarantees the i-th entry
+    // pairs with the i-th function. When the orchestrator was skipped
+    // (no callers requested it), every function degrades to a stub
+    // with the same reason — this keeps the matching call sites
+    // simple while preserving the I-6 visible-degradation contract.
     let items: Vec<CItem> = functions
         .functions
         .iter()
-        .map(|f| {
-            let name = f
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("fn_{:x}", f.address));
-            let name = sanitize_c_identifier(&name);
+        .enumerate()
+        .map(|(i, f)| {
+            let outcome = lift_outcomes.and_then(|os| os.get(i));
             let annot = annotations
                 .functions
                 .iter()
                 .find(|a| a.address == f.address);
-            let leading_comment = Some(function_leading_comment(f, annot, debug));
-            CItem::Function(CFunction {
-                name,
-                return_type: CType::Void,
-                params: Vec::new(),
-                locals: Vec::new(),
-                body: CBlock {
-                    stmts: vec![CStmt::Comment(
-                        "lifter→SSA bridge pending; body intentionally empty".into(),
-                    )],
-                },
-                leading_comment,
-            })
+            CItem::Function(lower_one_c_function(f, outcome, annot, &resolver, debug))
         })
         .collect();
     let mut includes = c_default_includes();
@@ -425,18 +455,100 @@ fn render_c_unit(
     c_emit(&unit)
 }
 
-/// Build the leading comment for a recovered function. Always lists
-/// the recovered address range and joined-discovery confidence; when
-/// `--debug` is requested, also embeds the per-fact "Why this name?"
+/// Build the C-side [`CNameResolver`] from the recovered function
+/// set. Every recovered function whose recovered name (or synthesised
+/// `fn_<addr>` placeholder) sanitises to a valid C identifier lands
+/// in the resolver keyed by its virtual address; the C backend then
+/// lowers `Call { target: Some(addr), … }` to a named call instead of
+/// the `((void (*)())0xNN)(…)` fallback.
+fn build_c_name_resolver(functions: &FunctionSet) -> CNameResolver {
+    let mut r = CNameResolver::new();
+    for f in &functions.functions {
+        let raw = f
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("fn_{:x}", f.address));
+        let name = sanitize_c_identifier(&raw);
+        r.insert(f.address, name);
+    }
+    r
+}
+
+/// Lower a single recovered function to a C AST [`CFunction`].
+///
+/// `outcome` is the per-function orchestrator result (B3.9). On
+/// [`LiftOutcome::Real`] we delegate to
+/// [`dac_backend_c::lower_function`] and post-process the result's
+/// name through [`sanitize_c_identifier`] so symbols like `_start`
+/// or PLT thunks still produce valid C identifiers. On
+/// [`LiftOutcome::Stub`] (or a missing outcome) we keep the B2.8
+/// stub-body shape — empty params, `void` return, a single
+/// `lifter→SSA bridge pending` comment — and surface the degradation
+/// reason in the leading comment so a reader knows *why* the body is
+/// stubbed (I-6).
+fn lower_one_c_function(
+    f: &dac_recovery::Function,
+    outcome: Option<&LiftOutcome>,
+    annot: Option<&FunctionAnnotation>,
+    resolver: &CNameResolver,
+    debug: bool,
+) -> CFunction {
+    let raw_name = f
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("fn_{:x}", f.address));
+    let sanitized = sanitize_c_identifier(&raw_name);
+    match outcome {
+        Some(LiftOutcome::Real { ssa, sem }) => {
+            let mut lowered = c_lower_function(ssa, sem, resolver);
+            // `lower_function` derives the name from `sem.function_name`
+            // (the recovered symbol); sanitise to keep emitted C
+            // syntactically valid for symbols that contain `@`, `.`
+            // and friends.
+            lowered.name = sanitized;
+            // Replace the structurer's auto-generated leading comment
+            // (a duplicate of the address line plus the structurer
+            // stats) with a single unified head that carries the
+            // recovered-function provenance + structuring stats. The
+            // `--debug` block from the annotation channel is appended
+            // when requested.
+            lowered.leading_comment = Some(real_body_leading_comment(f, sem, annot, debug));
+            lowered
+        }
+        outcome => {
+            let reason = match outcome {
+                Some(LiftOutcome::Stub { reason }) => reason.clone(),
+                _ => "orchestrator did not run for this function".into(),
+            };
+            CFunction {
+                name: sanitized,
+                return_type: CType::Void,
+                params: Vec::new(),
+                locals: Vec::new(),
+                body: CBlock {
+                    stmts: vec![CStmt::Comment(format!(
+                        "lifter→SSA bridge pending: {reason}"
+                    ))],
+                },
+                leading_comment: Some(stub_body_leading_comment(f, annot, debug)),
+            }
+        }
+    }
+}
+
+/// Build the leading comment for a recovered function whose body
+/// degraded to a stub (no recovered end, `build_cfg` failed, …).
+/// Lists the recovered address range and joined-discovery
+/// confidence; with `--debug` embeds the per-fact "Why this name?"
 /// / "Why this return type?" trail from the annotation channel
 /// (spec §12, FR-25).
-fn function_leading_comment(
+fn stub_body_leading_comment(
     f: &dac_recovery::Function,
     annot: Option<&FunctionAnnotation>,
     debug: bool,
 ) -> String {
     let mut s = format!(
-        "dac-recovered function stub\n\
+        "dac-recovered function\n\
          address: {:#x}\n\
          end: {}\n\
          confidence: {:.2} ({:?})",
@@ -456,15 +568,60 @@ fn function_leading_comment(
     s
 }
 
+/// Build the leading comment for a recovered function whose body
+/// was lifted end-to-end. Combines the recovered-function header
+/// (address / end / discovery confidence) with the structurer's
+/// own stats (source blocks visited, gotos emitted, label count,
+/// irreducible flag) so the reader can trace both halves of the
+/// pipeline from one block. With `--debug`, also embeds the
+/// annotation channel's "Why this name? / type?" trail.
+fn real_body_leading_comment(
+    f: &dac_recovery::Function,
+    sem: &dac_ir::sem::SemFunction,
+    annot: Option<&FunctionAnnotation>,
+    debug: bool,
+) -> String {
+    let mut s = format!(
+        "dac-recovered function\n\
+         address: {:#x}\n\
+         end: {}\n\
+         confidence: {:.2} ({:?})\n\
+         source_blocks: {}\n\
+         goto_count: {}\n\
+         label_count: {}\n\
+         irreducible: {}",
+        f.address,
+        f.end
+            .map(|e| format!("{e:#x}"))
+            .unwrap_or_else(|| "?".to_string()),
+        f.confidence.value(),
+        f.confidence.source(),
+        sem.stats.source_blocks,
+        sem.stats.goto_count,
+        sem.stats.label_count,
+        sem.stats.irreducible,
+    );
+    if debug {
+        if let Some(a) = annot {
+            s.push_str("\n\n");
+            s.push_str(&render_function_debug_block(a));
+        }
+    }
+    s
+}
+
 /// Render the `--target cpp` translation unit at `-O1`+.
 ///
 /// Runs symbol-driven class recovery on the binary's symbol table
 /// (B3.5, FR-21), feeds the recovered table plus the recovered
 /// function set through `dac-backend-cpp::lower_unit`, and prepends a
 /// banner comment + the canonical C++ includes. The translation
-/// unit's per-member / per-free-function bodies remain stubs because
-/// the lifter → `RawFunction` bridge is still pending — see
-/// [`render_c_unit`] for the matching commitment on the C side.
+/// unit's per-member / per-free-function bodies remain stubs at
+/// B3.9 because the C++ AST in `dac-backend-cpp::ast` does not
+/// model function bodies — extending it to thread the SSA →
+/// SemFunction shape the C side now consumes is on the B3
+/// follow-up shelf in PLAN.md. See [`render_c_unit`] for the C-side
+/// path where B3.9 wired the bridge through end-to-end.
 fn render_cpp_unit(
     input_label: &str,
     model: &BinaryModel,
@@ -526,6 +683,13 @@ fn sanitize_c_identifier(name: &str) -> String {
 struct Backend {
     decoder: Box<dyn InstructionDecoder>,
     lifter: Box<dyn InstructionLifter>,
+    /// Held as `'static` so the lift orchestrator can thread it into
+    /// `dac-lift::lift_function` without dragging an `Architecture`
+    /// lifetime parameter through the CLI's plumbing. The trait method
+    /// returns `&Self::Output` with elided lifetimes; calling the
+    /// underlying lazy-init function directly recovers the `'static`
+    /// the implementation actually has.
+    register_file: &'static RegisterFile,
 }
 
 fn pick_backend(model: &BinaryModel) -> Option<Backend> {
@@ -533,9 +697,24 @@ fn pick_backend(model: &BinaryModel) -> Option<Backend> {
         Architecture::X86_64 => Some(Backend {
             decoder: X86_64.decoder(),
             lifter: X86_64.lifter(),
+            register_file: x86_64_register_file_static(),
         }),
         _ => None,
     }
+}
+
+/// Borrow the x86-64 register file with its real `'static` lifetime.
+///
+/// `Architecture::register_file` returns `&RegisterFile` with the
+/// elided `&self` lifetime — the trait can't promise `'static` because
+/// not every arch's register file is interned. The x86-64 backend's
+/// register file is `OnceLock`-backed and the `Architecture` value
+/// itself is zero-sized, so we promote a `X86_64` to `static` and
+/// hand back the trait-method's borrow; the borrow checker sees
+/// `&'static self` and therefore `&'static RegisterFile`.
+fn x86_64_register_file_static() -> &'static RegisterFile {
+    static ARCH: X86_64 = X86_64;
+    ARCH.register_file()
 }
 
 fn unsupported_arch_listing(input_name: &str, model: &BinaryModel) -> String {

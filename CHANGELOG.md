@@ -2717,6 +2717,132 @@ across 10 cases still match without regeneration (the C / C++
 backends still emit stubs because the orchestrator-side wiring
 is B3.9's job).
 
+#### B3.9 — End-to-end pipeline orchestration in `dac-cli` (2026-06-02)
+
+The B2.8 / B3.4 / B3.5 deferral trail closed: `--target c -O1`
+now emits real lowered bodies instead of the
+`/* lifter→SSA bridge pending */` stubs. The CLI runs the full
+deterministic pipeline once per recovered function
+(`build_cfg → InstructionIr → lift_function → construct_ssa →
+DominatorTree / PostDominatorTree / LoopForest → structure →
+lower_function → emit`) and the recovered `FunctionSet` is now
+threaded into the C backend's `NameResolver` so direct calls
+resolve to `function_name(…)` instead of the
+`((void (*)())0xNN)(…)` fallback.
+
+##### New code
+
+- **`dac-cli` crate.**
+  - `crates/dac-cli/src/lift.rs` — new module. `LiftOutcome` enum
+    (`Real { ssa, sem }` / `Stub { reason }`), `LiftStats`
+    aggregator, `lift_all` / `lift_one` orchestrator. The
+    orchestrator runs every constituent pass in fixed order so
+    NFR-9 holds: same bytes in → identical `LiftOutcome` vectors
+    out, byte-for-byte.
+  - `crates/dac-cli/src/main.rs`:
+    - `pick_backend` now returns a `&'static RegisterFile`
+      alongside the decoder + lifter, recovered through a small
+      `x86_64_register_file_static` helper that promotes a
+      `static X86_64` to make the trait method's elided lifetime
+      compatible with `'static`.
+    - `render_source_text` takes the orchestrator's per-function
+      outcome slice and threads it into `render_c_unit`.
+    - `render_c_unit` now consumes `lift_outcomes`: on
+      `LiftOutcome::Real { ssa, sem }` it calls
+      `dac_backend_c::lower_function` and then post-processes the
+      `name` through `sanitize_c_identifier` so symbols like
+      `_GLOBAL__sub_I_…` still produce valid C; on
+      `LiftOutcome::Stub` it falls back to the B2.8 stub shape
+      and writes the degradation reason into the body's leading
+      comment (I-6, FR-21).
+    - `build_c_name_resolver` constructs the
+      `BTreeMap<u64, String>` consumed by
+      `dac_backend_c::lower::call_expr` so every recovered VA
+      resolves to its sanitised symbol.
+    - `real_body_leading_comment` builds a unified per-function
+      comment that combines the recovered-function head
+      (`address` / `end` / `confidence`) with the structurer's
+      stats (`source_blocks` / `goto_count` / `label_count` /
+      `irreducible`). `stub_body_leading_comment` (renamed from
+      the previous `function_leading_comment`) covers the
+      degraded path.
+  - `crates/dac-cli/src/report.rs` — `Report` now carries a
+    `LiftStats` and `render_report_text` prints a
+    `;; body cover.: {real} / {total} ({pct:.2}% real bodies, {stub} stubs)`
+    line directly below the existing instruction-level `lift cover.`
+    line.
+
+- **`dac-backend-c` crate.**
+  - `crates/dac-backend-c/src/emit.rs` — `Expr::Call` now wraps
+    every target in an arity-matched
+    `long long (*)(long long, …)` cast. The recovered calling
+    convention (B2.5 `dac_recovery::infer_calling_convention`)
+    is not yet threaded into the C lowering pass, so every
+    recovered function lowers with an empty parameter list
+    (`void f(void)`) while the bridge (B3.8) reads all six SysV
+    AMD64 call-arg registers at every call site. Modern C
+    (C23) interprets empty function-pointer parens `()` as
+    `(void)`, so the K&R-style fallback the original B2.8
+    `AddrLit` rendering relied on no longer accepts variadic
+    actuals. The arity-matched cast keeps the round-trip `cc`
+    gate green regardless of whether the result is assigned
+    (`v0 = call(…)`) or discarded (`call(…);`) — the return
+    spelling is `long long` for both cases. `Expr::AddrLit`
+    now renders as the bare integer literal; the
+    Call-context cast is synthesised in the emit's call branch.
+
+##### Wiring + plumbing
+
+- `crates/dac-cli/Cargo.toml` adds the `dac-lift` workspace dep
+  used by the new orchestrator.
+
+##### Tests
+
+- 2 new unit tests in `dac-cli/src/lift.rs`
+  (`lift_stats_round_trip`, `empty_outcomes_have_zero_fraction`).
+- Every existing C/C++ end-to-end test stays green
+  (`o1_target_c_*` × 3, `o1_target_cpp_*` × 4) including the
+  round-trip-compile gates against the system `cc` / `c++`.
+- `cargo xtask ci` clean: fmt + clippy + 25 golden outputs
+  across 10 cases match after `cargo xtask golden update` for
+  the three drifted outputs:
+  - `hello-elf-o0-report/report.txt` — gained the new
+    `;; body cover.: 9 / 9 (100.00% real bodies, 0 stubs)`
+    line.
+  - `hello-elf-o1-c/source.c` — every recovered function now
+    has a real lowered body. `main` lifts to an `int64_t main(void)`
+    with a recognisable structure (the leading-comment trail
+    surfaces the recovered SSA-value count, the address
+    range, and the structurer's irreducible / goto-count
+    statistics).
+  - `hello-pe-o1-c/source.c` — same story on the PE corpus
+    (162 KB of real C bodies for `__mingw_invalidParameterHandler`
+    and friends).
+
+##### Deferrals — recorded as B3 follow-up shelf entries
+
+- **C++ body lowering.** The C++ AST in
+  `dac-backend-cpp::ast` does not yet model function bodies;
+  `--target cpp` continues to emit class-shape stubs. Extending
+  the AST + emit to consume the C-side `SsaFunction →
+  SemFunction` shape lands as the B3.9 follow-up
+  ("C++ body lowering" entry in the B3 follow-up shelf in
+  PLAN.md). The C++ docstring on `render_cpp_unit` is updated
+  to surface this.
+- **Signature recovery.** All emitted C functions still use
+  `void f(void)` signatures; the arity-matched call-target cast
+  is the I-6 honest workaround until B3.10 threads
+  `dac_recovery::infer_calling_convention` →
+  `pick_best` → `InferredSignature` through the C lowering pass.
+
+Closes B3.9. Closes FR-21 round-trip on real binaries (the
+follow-up explicitly recorded in the B2.8 CHANGELOG entry).
+Closes NFR-9 because every constituent pass is `Determinism::Pure`
+and the orchestrator's iteration order matches `FunctionSet`'s
+address-sorted layout — `cargo xtask ci`'s
+`hello-elf-o1-c/source.c` golden regenerates byte-identically
+on two runs.
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

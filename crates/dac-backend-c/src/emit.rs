@@ -264,16 +264,29 @@ fn render_expr(expr: &Expr) -> String {
             format!("(*(({ty_ptr})({})))", render_expr(address))
         }
         Expr::Call { target, args } => {
+            // Until B3.10 plumbs `dac-recovery::infer_calling_convention`
+            // through the C lowering, every recovered function lowers
+            // with an empty parameter list (`void f(void)`) while the
+            // bridge (B3.8) reads all six SysV AMD64 call-arg
+            // registers at every call site. The recovered arity at
+            // the call therefore doesn't match the declared
+            // signature, *and* modern C interprets empty function-
+            // pointer parens `()` as `(void)` under C23 — so a
+            // K&R-style cast no longer accepts variadic actuals.
+            // Cast every call target through an arity-matched
+            // `void (*)(long long, …)` signature so the compiler
+            // accepts the call regardless of what the callee
+            // ultimately turns out to be. B3.10 collapses the cast
+            // back into a typed direct call once the recovered
+            // convention reaches the emitter.
             let mut s = String::new();
-            // Direct-call variables don't need extra parens; AddrLit and
-            // binary expressions get wrapped to make precedence
-            // unambiguous.
-            match target.as_ref() {
-                Expr::Var(name) => s.push_str(name),
-                _ => {
-                    let _ = write!(&mut s, "({})", render_expr(target));
-                }
-            }
+            let callee = match target.as_ref() {
+                Expr::Var(name) => name.clone(),
+                Expr::AddrLit(addr) => format!("{addr:#x}"),
+                _ => render_expr(target),
+            };
+            let sig = render_call_target_cast(args.len());
+            let _ = write!(&mut s, "(({sig}){callee})");
             s.push('(');
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
@@ -285,9 +298,10 @@ fn render_expr(expr: &Expr) -> String {
             s
         }
         Expr::AddrLit(addr) => {
-            // Render as `((void (*)())0xNNNN)` so the compiler accepts
-            // a call through it.
-            format!("((void (*)()){addr:#x})")
+            // Bare `AddrLit` outside of a `Call` lowers to the
+            // integer literal so an `int64_t` slot can hold it. The
+            // `Call` path above synthesises its own cast.
+            format!("{addr:#x}")
         }
         Expr::Opaque(text) => {
             // Compile-safe placeholder. Wrapping in `(int)0` so the
@@ -296,6 +310,31 @@ fn render_expr(expr: &Expr) -> String {
             format!("(/* opaque: {} */ 0)", sanitize_comment(text))
         }
     }
+}
+
+/// Build the function-pointer cast used in front of every call
+/// target. Until B3.10 plumbs the recovered calling convention
+/// through to the emitter, the cast is purely arity-matched: every
+/// argument slot is `long long` and the return type is `long long`
+/// so the cast value is type-compatible whether the call's result is
+/// assigned to an `int64_t` local (`v0 = call(…)`) or discarded
+/// (`call(…);`). Returning `void` here would break the assignment
+/// case; returning a wider integer is safe in both call sites
+/// because the C compiler accepts implicit narrowing/discarding of
+/// the result. The arg-list spelling is `(void)` for zero args.
+fn render_call_target_cast(argc: usize) -> String {
+    if argc == 0 {
+        return "long long (*)(void)".to_string();
+    }
+    let mut s = String::from("long long (*)(");
+    for i in 0..argc {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        s.push_str("long long");
+    }
+    s.push(')');
+    s
 }
 
 fn render_binary_op(op: BinaryOp) -> &'static str {
