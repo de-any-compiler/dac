@@ -10,19 +10,28 @@
 //!   evidence graph as a `Cfg`-layer [`dac_core::EvidenceNode::IrNode`]
 //!   supported by a [`dac_core::EvidenceNode::Bytes`] node covering its
 //!   byte span.
-//! - **B2.4 (this batch).** [`stack`] — stack-frame recovery (FR-12):
-//!   identify stack locals, incoming stack arguments, and (on Windows
-//!   x64) the home/shadow space, from SSA address arithmetic anchored
-//!   at the function's entry `rsp`.
+//! - **B2.4.** [`stack`] — stack-frame recovery (FR-12): identify
+//!   stack locals, incoming stack arguments, and (on Windows x64)
+//!   the home/shadow space, from SSA address arithmetic anchored at
+//!   the function's entry `rsp`.
+//! - **B2.5 (this batch).** [`convention`] — calling-convention
+//!   inference (FR-13). Scores candidate ABIs from
+//!   `dac-knowledge` against observed argument-register reads,
+//!   return-register definitions, and the stack-frame layout from
+//!   B2.4.
 //! - **B3.2.** struct / array recovery.
 //! - **B3.3.** idiom recognition.
 //! - **B3.7.** variable-naming heuristics.
 
 #![forbid(unsafe_code)]
 
+pub mod convention;
 pub mod functions;
 pub mod stack;
 
+pub use convention::{
+    infer_calling_convention, pick_best, ConventionMatch, InferredSignature, RegisterArg, StackArg,
+};
 pub use functions::{
     discover_functions, DiscoveryStats, Function, FunctionSet, SourceMask, CALL_EDGE_CONFIDENCE,
     ENTRY_CONFIDENCE, PROLOGUE_CONFIDENCE, SYMBOL_CONFIDENCE,

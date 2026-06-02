@@ -43,13 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.5 — Calling convention inference
-- Use `dac-knowledge` calling-convention table (SysV x86-64, Win64) to
-  match observed register usage (FR-13).
-- Confidence based on how many signature constraints are satisfied.
-- **Done when:** convention inference matches symbol-derived ground truth
-  ≥ 95% on the sample corpus.
-
 ### B2.6 — Type lattice + propagation
 - Initial type lattice: `Unknown`, `IntN`, `Ptr<T>`, `Struct{…}`, `Array<T,n>`,
   `Top`.

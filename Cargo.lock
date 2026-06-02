@@ -201,6 +201,7 @@ dependencies = [
  "dac-binfmt",
  "dac-core",
  "dac-ir",
+ "dac-knowledge",
 ]
 
 [[package]]

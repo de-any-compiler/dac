@@ -13,6 +13,7 @@ dac-arch = { workspace = true }
 dac-binfmt = { workspace = true }
 dac-core = { workspace = true }
 dac-ir = { workspace = true }
+dac-knowledge = { workspace = true }
 
 [dev-dependencies]
 dac-analysis = { workspace = true }

@@ -1300,6 +1300,130 @@ stack pass's confidence (always `Source::Derived`) feeds
 B2.5 (calling-convention inference) and B2.6 (type lattice +
 propagation) directly.
 
+#### B2.5 — Calling convention inference (2026-06-02)
+
+Calling-convention table for x86-64 lands in `dac-knowledge`,
+and a consultative inference pass lands in `dac-recovery`. The
+pass scores every candidate ABI against four observed signals
+— argument-register reads, caller-saved non-arg reads,
+return-register definitions, and stack-frame layout — and
+returns the candidates ranked by confidence. It is purely
+consultative: the score is reported, never written back to the
+IR.
+
+The argument-register prefix is the dominant signal. SSA
+construction (B2.3) mints a `Parameter` value for every
+variable read without first being written; for an integer
+argument register, that parameter *is* the incoming argument.
+The pass measures the longest contiguous prefix of the
+convention's argument-register sequence whose registers all
+appear as parameter reads, and counts arg-register reads
+beyond that prefix as soft contradictions (a function that
+reads `rdx` and `rcx` but never `rdi` is unlikely to be using
+SysV). Reading a caller-saved register that the convention
+does *not* list as an argument register is a stronger
+contradiction — the value at entry is undefined under that
+ABI.
+
+The stack layout (consumed from the B2.4 `StackFrame`) supplies
+two finer signals. Positive offsets `>=
+convention.first_stack_arg_offset` and 8-byte aligned line up
+with stack-passed arguments and surface in
+`InferredSignature::stack_args`. Offsets inside the convention's
+`shadow_space_bytes` window are a positive signal for MsX64
+(home-saving prologues spill `rcx`/`rdx`/`r8`/`r9` to
+`[rsp+8..+40)`) and a negative signal for SysV (which reserves
+no shadow space).
+
+- `dac-knowledge::convention`:
+  - `CallingConvention` — closed struct describing one ABI:
+    `name`, `architecture`, `int_arg_registers`,
+    `float_arg_registers`, `int_return_register`,
+    `float_return_register`, `callee_saved`, `caller_saved`,
+    `stack_pointer`, `frame_pointer`, `first_stack_arg_offset`,
+    `stack_arg_alignment`, `shadow_space_bytes`.
+  - `SYSV_AMD64` constant: int arg regs `rdi, rsi, rdx, rcx,
+    r8, r9`; ret `rax`; callee-saved `rbx, rbp, r12..r15`;
+    `first_stack_arg_offset = 8`; `shadow_space_bytes = 0`.
+  - `MS_X64` constant: int arg regs `rcx, rdx, r8, r9`; ret
+    `rax`; callee-saved `rbx, rbp, rdi, rsi, r12..r15`;
+    `first_stack_arg_offset = 40` (past the 32-byte home
+    space); `shadow_space_bytes = 32`.
+  - `X86_64_CONVENTIONS` — the ranked candidate slice the
+    inference pass scores by default; ties at the top of the
+    ranking break toward SysV.
+  - `x86_64_convention_by_name(name)` — case-insensitive
+    lookup helper.
+  - Predicate helpers (`is_int_arg_register`,
+    `is_int_return_register`, `is_callee_saved`,
+    `is_caller_saved`, `int_arg_index`) all match register
+    names case-insensitively against the
+    [`dac_ir::ssa::Variable::name`] vocabulary the lifter
+    emits.
+  - 6 unit tests: SysV table audit, MsX64 table audit,
+    zero-based case-insensitive arg-index lookup, callee /
+    caller predicate case-insensitivity, lookup by name
+    returning the canonical entry, and the SysV-unique vs
+    MsX64-unique register disjointness guard.
+- `dac-recovery::convention`:
+  - `ConventionMatch { convention_name, signature, confidence }`
+    — one ranked candidate. `Eq` not derived because
+    [`Confidence`] is f32-typed.
+  - `InferredSignature { int_args, stack_args, return_register }`
+    — per-convention reading of the function's signature.
+    `int_args` is restricted to the contiguous arg-register
+    prefix so a half-observed signature is not over-claimed.
+  - `RegisterArg { register, index, value, variable }` and
+    `StackArg { offset, width }` — element types.
+  - `infer_calling_convention(ssa, stack_frame, candidates) ->
+    Vec<ConventionMatch>` — entrypoint. Returns one match per
+    candidate, sorted descending by `Confidence::value()`;
+    ties break by the candidate's position in the input slice
+    so the caller controls precedence (NFR-9 determinism).
+  - `pick_best(ssa, stack_frame, candidates) ->
+    Option<ConventionMatch>` — convenience wrapper around the
+    head of the ranking.
+  - All recovered facts carry [`Source::Derived`] (I-3).
+    Scoring is `0.40` base + `0.30 × prefix_score` arg prefix
+    bonus + `0.15` return-register match + `0.05` stack-args
+    bonus + `0.10` shadow-space bonus − `0.10 × gap_count`
+    arg-gap penalty − `0.15 × caller_saved_non_arg_reads` −
+    `0.10 × shadow_misses`; the sum is clamped into `[0, 1]`.
+  - 13 unit tests: SysV three-int-arg vs MsX64 outranking;
+    MsX64 two-int-arg vs SysV outranking; shadow-space writes
+    tipping the ranking even when arg lists overlap;
+    caller-saved non-arg read penalty (SysV reading `rax` as
+    a parameter); leaf-function tie broken by input order;
+    discontiguous args truncating the signature to the
+    contiguous prefix; SysV seventh arg at `[rsp + 8]` landing
+    in `stack_args`; MsX64 fifth arg at `[rsp + 40]` landing
+    in `stack_args`; determinism across runs; `pick_best`
+    matching the head of the ranking; every match carrying
+    `Source::Derived`; return of a constant not nominating a
+    return register; locals at negative offsets not being
+    misclassified as stack args.
+
+Wiring: `dac-recovery` now depends on `dac-knowledge` (the
+inference pass's only new dep). No public API of the existing
+`stack` module changed.
+
+Test counts: `cargo xtask ci` reports 44 green
+`test result: ok` lines (unchanged from B2.4 — both new
+modules are unit-tested inside their owning crates with no
+new integration-test binaries). Lib test counts grew in
+`dac-knowledge` (0 → 6, +6 for `convention`) and in
+`dac-recovery` (22 → 35, +13 for `convention`). No new
+warnings.
+
+Closes: FR-13 (calling-convention inference). The "≥ 95% on
+the sample corpus" criterion in PLAN.md cannot be measured
+yet — the sample corpus itself lands as part of the
+cross-cutting corpus-growth work alongside the type recovery
+in B2.6 and the golden-test infrastructure in B2.9. The
+inference algorithm and scoring are in place; corpus
+calibration will be tracked as a follow-up once `tests/golden/`
+exists.
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 
