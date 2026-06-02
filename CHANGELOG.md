@@ -2391,6 +2391,155 @@ Jump-table entry resolution (the deferred follow-up from B3.3)
 similarly waits for `.rodata` reading; the `evidence` chain
 shape it will use is the deliverable here.
 
+#### B3.5 — C++ backend (`-O2`) (2026-06-02)
+
+C++ target-language backend lands as `dac-backend-cpp`, closing
+FR-21's C++ slice and the relevant parts of spec §6. The recovery
+side is symbol-driven at this batch: Itanium-mangled symbols
+(`_ZN…`, `_ZNK…`, `_Z…`, `_ZTV…`, `_ZTI…`) feed a flat
+`RecoveredClasses` table that the lowering pass turns into a
+`TranslationUnit` of `class <Name> { … };` shapes. The B3.5
+"done when" rubric — *a sample C++ binary with a small class
+hierarchy decompiles to C++ that compiles* — is closed by
+`o1_target_cpp_round_trips_through_system_compiler`, which pipes
+the emitted `.cpp` through `c++ -std=c++17 -c -` on the
+`cpp-hierarchy-x86_64` fixture (a 3-class Animal / Dog / Cat
+hierarchy with virtual `speak()`).
+
+- `dac-backend-cpp` (now non-stub):
+  - `mangle` — a minimal Itanium-ABI reader covering nested-name
+    methods (`_ZN…E…`), const members (`_ZNK…`), ctor / dtor
+    variants (`C[123]E…`, `D[012]E…`), free functions
+    (`_Z<name>…`), and the four special data symbols every
+    polymorphic class produces (`_ZTV`, `_ZTI`, `_ZTS`, `_ZTT`).
+    Templates, substitutions in the nested name, and operator
+    overloads are explicit deferrals — the reader returns `None`
+    and the recovery degrades by leaving the symbol on the free-
+    function pile rather than guessing. 11 unit tests pin the
+    accepted grammar and the `None`-on-garbled-input behaviour.
+  - `class_recovery::recover_classes` — symbol-driven class
+    discovery (FR-21). Member-function symbols populate a class
+    bag; `_ZTV<class>` symbols promote the class to polymorphic
+    (`has_vtable = true`); `_ZTI<class>` records typeinfo. Ctor
+    and dtor variants land as distinct `RecoveredMember` entries
+    sorted by `(MemberSortKey, address, mangled)`. Each class
+    mints an `IrNode { layer: Source }` node in the
+    `EvidenceGraph` (I-2) and links every member function's
+    evidence handle into it via a `Supports` edge; polymorphic
+    classes additionally link a `KnowledgeFact(FNV1a64(qualified
+    name))` node to record the "we believe this is polymorphic
+    because we saw a `_ZTV*` symbol" signal. 9 unit tests pin
+    every path: single-method class, vtable promotion, ctor /
+    dtor variant capture, nested scope chain, free-function
+    sorting, address-based de-dup off the free pile, evidence-
+    node layer, and run-to-run determinism.
+  - `ast` — closed C++ AST: `TranslationUnit` →
+    `Item::{Class, FreeFunction}`; `Class` carries `name`,
+    `scope_chain`, `bases`, `has_vtable`, `members`; member
+    functions carry `kind` (`Method` / `Constructor` /
+    `Destructor`), `is_const`, `is_virtual`, return type;
+    `CppType` covers `Void`, fixed-width `Int`, `Ptr`, `Ref`,
+    `Const`, and `Class { qualified_name }`. 5 unit tests pin
+    the variant set and the exhaustive-match contract.
+  - `lower::lower_unit` — `RecoveredClasses` + `FunctionSet` →
+    `TranslationUnit`. Ctor / dtor variants collapse to a single
+    member (Itanium variants share the source-level signature, so
+    emitting two would produce a duplicate-definition error); the
+    leading comment records every variant's address + mangled
+    symbol so the annotation channel surfaces them. Polymorphic
+    classes without a recovered dtor get a synthesised
+    `virtual ~Class();` so the emitted unit is well-formed C++
+    (I-6 — the leading comment makes the synthesis explicit).
+    `main` always lowers to `std::int32_t main()`; every other
+    free function defaults to `void` until B3.6's signature
+    recovery plumbs real types in. 7 unit tests pin the collapse,
+    the dtor synthesis, the virtual-method promotion, and the
+    `main` special case.
+  - `emit` — hand-rolled deterministic pretty-printer. Renders
+    leading comments as `// …`, classes with a `public:` block,
+    `virtual` and `const` keywords in the canonical order, ctor /
+    dtor name handling (no return type, tilde-prefix for dtors),
+    pointer / reference / const type spellings, and a stub body
+    that returns `return T{};` for non-`void` returns. 10 unit
+    tests pin the byte-stable output across class / free-function
+    / base-spec / type-spelling variants.
+  - `compile::try_compile` — mirrors `dac_backend_c::compile` but
+    invokes `c++ -x c++ -std=c++17 -c -`. Returns
+    `CompileResult::Skipped` when no C++ compiler is on `PATH`.
+    4 unit tests pin the candidate-list, the success and failure
+    cases, and a class-with-virtual-dtor round-trip.
+
+- `dac-cli`:
+  - `--target cpp` at `-O1`+ now produces `<output>.cpp` (or a
+    delimited stdout block). The CLI runs `recover_classes`
+    against the binary's symbol table, feeds the result through
+    `lower_unit`, and renders via `cpp_emit`. The banner comment
+    surfaces the recovered counts (`classes`, polymorphic,
+    member functions, free functions) so a `--debug` reader can
+    see how many of the binary's symbols the recovery captured.
+  - `render_source_text` now threads the `EvidenceGraph` so the
+    C++ class-recovery pass can link evidence nodes (I-2).
+  - The source sidecar suffix follows the target: `.c` for
+    `--target c`, `.cpp` for `--target cpp`. The xtask golden
+    harness gained a matching `OutputKind::CppSource` variant.
+
+- Fixture and goldens:
+  - `tests/fixtures/cpp-hierarchy-x86_64` — a 16 KiB PIE
+    executable built from a 3-class Animal / Dog / Cat hierarchy
+    with virtual dispatch. Built with
+    `g++ -Os -fno-exceptions hello_cpp.cpp -o
+    cpp-hierarchy-x86_64`; the source is reproduced in
+    `tests/fixtures/README.md`.
+  - `tests/golden/cpp-hierarchy-o1-cpp/` — listing + manifest +
+    `source.cpp` capture. The new golden case is wired into
+    `xtask::golden::CASES` so `cargo xtask ci`'s `golden check`
+    gates drift across re-runs.
+
+- Integration tests (`crates/dac-cli/tests/o1_target_cpp.rs`):
+  - `o1_target_cpp_emits_cpp_sidecar_with_recovered_classes` —
+    asserts `class Animal`, `class Dog`, `class Cat`,
+    `virtual ~Dog`, `virtual ~Cat`,
+    `virtual std::int32_t speak() const`, and
+    `std::int32_t main()` all land in the emitted `.cpp`.
+  - `o1_target_cpp_round_trips_through_system_compiler` — the
+    PLAN.md done-when gate. Pipes the emitted `.cpp` through
+    `c++ -std=c++17 -c -` and fails on any compiler diagnostic.
+    Skips silently when no `c++` is on `PATH`.
+  - `o1_target_cpp_output_is_deterministic` — two runs produce
+    byte-identical `.cpp` (NFR-9).
+  - `o1_target_c_still_emits_dot_c_sidecar_against_cpp_fixture`
+    — sanity check that `--target c` continues to work against
+    a C++ binary (the class-blind backend still produces a
+    valid `.c` sidecar with one `void <name>(void)` per
+    recovered function).
+
+Explicit B3.5 deferrals — each is documented at the call site so
+the next pass can pick them up without re-reading this entry:
+
+- **Base-class recovery.** The lowering reserves `Class::bases`
+  but always leaves it empty: identifying bases requires a
+  typeinfo-relocation walker that reads
+  `__si_class_type_info` / `__vmi_class_type_info` shapes out
+  of `.data.rel.ro`. Lands when the relocation reader exists.
+- **Signature recovery.** Every method, ctor, dtor, and free
+  function emits an empty parameter list today. The AST already
+  has `Param` / `CppType::Ref` / `CppType::Const` slots; B3.6's
+  user-hint plumbing feeds them.
+- **Real bodies.** The lifter → SSA bridge that drives the
+  structurer from x86-64 bytes is not yet a batch in PLAN.md, so
+  every emitted member / free function carries a deterministic
+  stub body (`// dac C++ stub: lifter→SSA bridge pending` +
+  `return T{};` for non-`void` returns). The leading comment
+  makes the degradation explicit (I-6).
+- **Namespace lowering.** Scope chains are flattened into the
+  class leading comment until B3.6 can ground them; the AST
+  already carries `Class::scope_chain` so adding `namespace`
+  emission is additive.
+- **Stripped-binary recovery.** A stripped C++ binary with no
+  `_Z…` symbols falls through to an empty class table. A byte-
+  level vtable scanner across `.data.rel.ro` reservation
+  patterns lands in a later batch.
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

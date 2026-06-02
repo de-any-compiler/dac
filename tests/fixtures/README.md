@@ -11,6 +11,7 @@ Kept here at workspace root so multiple crates can share them via
 | `hello-x86_64`             | PIE executable with full symbol table       | `gcc -Os hello.c -o hello-x86_64`                                |
 | `hello-x86_64-stripped`    | Same, with `-s` (no `.symtab` / `.strtab`)  | `strip -s hello-x86_64 -o hello-x86_64-stripped`                 |
 | `libsample.so`             | Shared library with three exports + a relo  | `gcc -Os -shared -fPIC sample.c -o libsample.so`                 |
+| `cpp-hierarchy-x86_64`     | PIE executable with a 3-class hierarchy (B3.5) | `g++ -Os -fno-exceptions hello_cpp.cpp -o cpp-hierarchy-x86_64` |
 
 The C sources are intentionally minimal so the binaries stay <20 KiB each
 and the round-trip tests stay focused on parser invariants, not on
@@ -25,6 +26,26 @@ int main(void) { write(1, "hello\n", 6); return 42; }
 int sample_value = 42;
 int sample_add(int a, int b) { return a + b; }
 const char* sample_greeting(void) { return "hello from libsample"; }
+```
+
+```cpp
+/* hello_cpp.cpp — fixture for dac-backend-cpp (B3.5). */
+struct Animal {
+    virtual int speak() const = 0;
+    virtual ~Animal() {}
+};
+struct Dog : Animal {
+    int legs;
+    Dog() : legs(4) {}
+    int speak() const override { return legs + 1; }
+};
+struct Cat : Animal {
+    int lives;
+    Cat() : lives(9) {}
+    int speak() const override { return lives - 2; }
+};
+int chorus(const Animal* a, const Animal* b) { return a->speak() + b->speak(); }
+int main() { Dog d; Cat c; return chorus(&d, &c); }
 ```
 
 Both were built with `gcc 13.x` on x86-64 Linux with `glibc 2.39`. The

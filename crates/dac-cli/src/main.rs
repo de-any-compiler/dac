@@ -39,6 +39,10 @@ use dac_backend_c::ast::{
     Block as CBlock, CType, Function as CFunction, Item as CItem, Stmt as CStmt, TranslationUnit,
 };
 use dac_backend_c::{default_includes as c_default_includes, emit as c_emit};
+use dac_backend_cpp::{
+    class_recovery::recover_classes as recover_cpp_classes,
+    default_includes as cpp_default_includes, emit as cpp_emit, lower_unit as cpp_lower_unit,
+};
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph};
 use dac_recovery::{discover_functions, FunctionSet};
@@ -195,8 +199,14 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 None
             };
             annotations_doc = build_annotations_doc(&input_label, &model, args, &functions, &graph);
-            source_text =
-                render_source_text(args, &input_label, &model, &functions, &annotations_doc);
+            source_text = render_source_text(
+                args,
+                &input_label,
+                &model,
+                &functions,
+                &annotations_doc,
+                Some(&mut graph),
+            );
             callgraph_text = if args.emit_callgraph {
                 let cg = build_call_graph(&model, &bytes, b.decoder.as_ref(), &functions);
                 Some(render_callgraph_dot(&cg, &input_label))
@@ -237,11 +247,17 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 functions: Vec::new(),
                 stats: Default::default(),
             };
-            let empty_graph = EvidenceGraph::new();
+            let mut empty_graph = EvidenceGraph::new();
             annotations_doc =
                 build_annotations_doc(&input_label, &model, args, &empty_set, &empty_graph);
-            source_text =
-                render_source_text(args, &input_label, &model, &empty_set, &annotations_doc);
+            source_text = render_source_text(
+                args,
+                &input_label,
+                &model,
+                &empty_set,
+                &annotations_doc,
+                Some(&mut empty_graph),
+            );
             callgraph_text = if args.emit_callgraph {
                 Some(unsupported_arch_callgraph(&model))
             } else {
@@ -260,6 +276,11 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         None
     };
 
+    let source_suffix = match args.target {
+        Target::C => ".c",
+        Target::Cpp => ".cpp",
+    };
+
     emit_outputs(
         args.output.as_deref(),
         &listing_text,
@@ -267,6 +288,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         report_text.as_deref(),
         cfg_text.as_deref(),
         source_text.as_deref(),
+        source_suffix,
         callgraph_text.as_deref(),
         xrefs_text.as_deref(),
         annotations_text.as_deref(),
@@ -333,6 +355,7 @@ fn render_source_text(
     model: &BinaryModel,
     functions: &FunctionSet,
     annotations: &AnnotationDoc,
+    graph: Option<&mut EvidenceGraph>,
 ) -> Option<String> {
     if args.opt == OptLevel::O0 {
         return None;
@@ -345,7 +368,13 @@ fn render_source_text(
             annotations,
             args.debug,
         )),
-        Target::Cpp => Some(render_cpp_pending_stub(input_label)),
+        Target::Cpp => Some(render_cpp_unit(
+            input_label,
+            model,
+            functions,
+            graph,
+            args.debug,
+        )),
     }
 }
 
@@ -427,11 +456,43 @@ fn function_leading_comment(
     s
 }
 
-fn render_cpp_pending_stub(input_label: &str) -> String {
-    format!(
-        "/* dac --target cpp\n   input: {input_label}\n   C++ backend lands in B3.5; this is a stub. */\n\
-         int main(void) {{ return 0; }}\n"
-    )
+/// Render the `--target cpp` translation unit at `-O1`+.
+///
+/// Runs symbol-driven class recovery on the binary's symbol table
+/// (B3.5, FR-21), feeds the recovered table plus the recovered
+/// function set through `dac-backend-cpp::lower_unit`, and prepends a
+/// banner comment + the canonical C++ includes. The translation
+/// unit's per-member / per-free-function bodies remain stubs because
+/// the lifter → `RawFunction` bridge is still pending — see
+/// [`render_c_unit`] for the matching commitment on the C side.
+fn render_cpp_unit(
+    input_label: &str,
+    model: &BinaryModel,
+    functions: &FunctionSet,
+    graph: Option<&mut EvidenceGraph>,
+    _debug: bool,
+) -> String {
+    let mut local_graph = EvidenceGraph::new();
+    let g: &mut EvidenceGraph = match graph {
+        Some(g) => g,
+        None => &mut local_graph,
+    };
+    let classes = recover_cpp_classes(model, functions, g);
+    let mut unit = cpp_lower_unit(&classes, functions);
+    let mut includes = cpp_default_includes();
+    includes.insert(
+        0,
+        format!(
+            "/* dac --target cpp -O1 reconstruction\n   input: {input_label}\n   arch:  {}\n   classes: {} (polymorphic: {}) members: {} free: {} */",
+            model.architecture.name(),
+            classes.stats.classes,
+            classes.stats.polymorphic_classes,
+            classes.stats.member_functions,
+            classes.stats.free_functions,
+        ),
+    );
+    unit.includes = includes;
+    cpp_emit(&unit)
 }
 
 /// Map a recovered symbol name to a C identifier. Replaces any
@@ -569,6 +630,7 @@ fn emit_outputs(
     report: Option<&str>,
     cfg: Option<&str>,
     source: Option<&str>,
+    source_suffix: &str,
     callgraph: Option<&str>,
     xrefs: Option<&str>,
     annotations: Option<&str>,
@@ -619,7 +681,7 @@ fn emit_outputs(
                 write_file(&cfg_path, c)?;
             }
             if let Some(s) = source {
-                let source_path = sidecar(path, ".c");
+                let source_path = sidecar(path, source_suffix);
                 write_file(&source_path, s)?;
             }
             if let Some(g) = callgraph {

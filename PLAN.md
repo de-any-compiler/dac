@@ -49,12 +49,6 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-### B3.5 — C++ backend (`-O2`)
-- `dac-backend-cpp`: class recovery from vtables, ctor/dtor patterns,
-  member function naming (FR-21).
-- **Done when:** a sample C++ binary with a small class hierarchy decompiles
-  to C++ that compiles.
-
 ### B3.6 — User hints / signatures
 - TOML or JSON file: per-function signatures, struct definitions, type
   hints (FR-20).

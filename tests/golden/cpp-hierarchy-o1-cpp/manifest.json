@@ -1,0 +1,26 @@
+{
+  "tool": {
+    "name": "dac",
+    "version": "0.1.0-pre",
+    "build_id": "dev"
+  },
+  "input": {
+    "path": "tests/fixtures/cpp-hierarchy-x86_64",
+    "size": 16880,
+    "format": "ELF",
+    "architecture": "x86-64"
+  },
+  "settings": {
+    "level": "O1",
+    "target": "cpp",
+    "deterministic": false,
+    "no_ai": false,
+    "emit_ir": false,
+    "emit_cfg": false,
+    "emit_report": false,
+    "emit_annotations": false,
+    "threads": null
+  },
+  "ai": { "provider": null },
+  "plugins": []
+}

@@ -56,6 +56,7 @@ enum OutputKind {
     Report,
     Cfg,
     Source,
+    CppSource,
 }
 
 impl OutputKind {
@@ -68,6 +69,7 @@ impl OutputKind {
             Self::Report => "report.txt",
             Self::Cfg => "cfg.dot",
             Self::Source => "source.c",
+            Self::CppSource => "source.cpp",
         }
     }
 
@@ -82,6 +84,7 @@ impl OutputKind {
             Self::Report => ".report.txt",
             Self::Cfg => ".cfg.dot",
             Self::Source => ".c",
+            Self::CppSource => ".cpp",
         };
         if suffix.is_empty() {
             base.to_path_buf()
@@ -148,6 +151,16 @@ const CASES: &[Case] = &[
             OutputKind::Listing,
             OutputKind::Manifest,
             OutputKind::Source,
+        ],
+    },
+    Case {
+        name: "cpp-hierarchy-o1-cpp",
+        fixture: "cpp-hierarchy-x86_64",
+        args: &["-O1", "--target", "cpp"],
+        outputs: &[
+            OutputKind::Listing,
+            OutputKind::Manifest,
+            OutputKind::CppSource,
         ],
     },
     Case {
@@ -485,6 +498,10 @@ mod tests {
         assert_eq!(
             OutputKind::Source.produced_path(&base),
             PathBuf::from("/tmp/out.c")
+        );
+        assert_eq!(
+            OutputKind::CppSource.produced_path(&base),
+            PathBuf::from("/tmp/out.cpp")
         );
     }
 
