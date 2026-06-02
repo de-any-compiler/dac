@@ -875,7 +875,88 @@ Completes Milestone 1 of `PLAN.md` — every M1 batch (B1.1 through
 B1.6) has now landed.
 
 ### Milestone 2 — Core decompilation
-*(not started)*
+
+#### B2.1 — CFG construction (2026-06-02)
+
+Per-function control-flow graph in `dac-analysis::cfg`: basic blocks
+split at every leader (function entry, branch targets,
+post-terminator addresses), edges classified into `Fall` / `Branch` /
+`Taken` / `NotTaken`, entries / exits / unreachable blocks recorded
+explicitly. The builder reads only through the existing
+`dac_arch::ControlFlow` classification so no ISA knowledge leaks into
+this layer, and refuses to invent edges when a target is unresolved
+or out-of-function (I-6). `--emit-cfg` exports a deterministic
+Graphviz DOT file, one `digraph` per function, sorted by function
+address, with stable `BB<id>` node ids — byte-identical across
+re-runs.
+
+- `dac-analysis`:
+  - `cfg::Cfg { function_address, function_end, function_name,
+    blocks, entry, exits, edges, unreachable, evidence }` — the
+    per-function CFG. Block ids are dense indices into `blocks`, so
+    `Edge::from` / `Edge::to` index directly. The function's
+    `EvidenceId` is inherited from `dac_recovery::Function::evidence`,
+    keeping CFG facts attached to the same evidence node B1.5 minted.
+  - `cfg::BasicBlock { id, address, end, instructions, terminator }`
+    holds decoded instructions in address order. May be empty if a
+    leader landed where the linear sweep produced no decode; the
+    block still appears so reachability is honest about it.
+  - `cfg::Terminator` closed enum — `Fall`, `Branch { target }`,
+    `Conditional { target }`, `Indirect`, `Call { target }`, `Return`,
+    `Interrupt`, `Invalid`. The branch / conditional / call targets
+    preserve the decoder-supplied VA even when out-of-function so the
+    future call-graph pass (B3.1) can detect tail calls.
+  - `cfg::Edge { from, to, kind }` + `cfg::EdgeKind` — sorted by
+    `(from, kind discriminant, to)` for deterministic output.
+  - `cfg::build_cfg(function, model, bytes, decoder) -> Option<Cfg>`
+    runs the leader-detection + block-building + BFS-reachability
+    pipeline. Returns `None` only when the function span cannot be
+    resolved (no `end`, truncated section, …); never panics on
+    garbage input (NFR-4).
+  - `cfg::build_cfgs(functions, …) -> Vec<Cfg>` — convenience over a
+    `FunctionSet` slice; silently skips functions that can't be
+    built.
+  - `cfg::render_dot(cfg) -> String` + `cfg::render_dot_all(cfgs) ->
+    String` — DOT exporters. Graph names are
+    `fn_<sanitized_name>_<hex_addr>` so duplicate names cannot
+    collide. Entry blocks are filled gray; unreachable blocks are
+    dashed. Labels escape backslashes / quotes / newlines into DOT
+    syntax (`\l` for left-justified line breaks).
+  - 14 unit tests cover the hand-checked-reference deliverable:
+    single-return, linear, conditional diamond, post-`jmp` orphan,
+    self-edge loop, out-of-function tail exit, call-fall-through,
+    indirect branch, conditional with out-of-range taken side,
+    DOT byte-stability, unresolved conditional (`target: None`),
+    `render_dot_all` address ordering, the escape function in
+    isolation, and target-not-on-instruction-boundary (no edge
+    minted).
+- `dac-cli`:
+  - `--emit-cfg` is now live. With `--output <path>` the DOT lands
+    at `<path>.cfg.dot`; without `--output` it appends to stdout
+    after the manifest / report, delimited by
+    `;; ---- cfg (FR-28) ----`.
+  - Non-x86_64 inputs still emit a (valid, empty) DOT digraph rather
+    than failing — keeps the binary-format layer usable end-to-end
+    regardless of arch backend availability.
+  - New `dac-analysis` workspace dependency.
+- Integration tests:
+  - `crates/dac-cli/tests/cfg_emit.rs` runs `dac -O0 --emit-cfg
+    --output <tmp>` twice on each of the ELF / PE / stripped-ELF
+    fixtures and asserts the DOT sidecars are byte-identical (the
+    determinism gate for `--emit-cfg`).
+  - Structural sanity: every fixture's DOT contains at least one
+    `digraph "fn_…"` and a `BB0` entry-block declaration; the
+    hello-world ELF additionally contains at least one classified
+    edge label (`fall` / `jmp` / `T` / `F`).
+
+Test counts: `cargo xtask ci` reports 42 green `test result: ok`
+lines (was 41 at end of B1.6) — +1 dac-analysis lib + 1 dac-cli
+integration binary. No new warnings.
+
+Closes: FR-10 (control-flow graphs for recovered functions), FR-28
+(export CFGs as DOT). Determinism is gated by the new integration
+test (NFR-9). The CFG carries the function's evidence handle, so
+I-2 is preserved across the new layer.
 
 ### Milestone 3 — Usable RE tool
 *(not started)*

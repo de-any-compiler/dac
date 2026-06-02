@@ -89,6 +89,13 @@ version = "0.1.0-pre"
 [[package]]
 name = "dac-analysis"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-arch",
+ "dac-arch-x86",
+ "dac-binfmt",
+ "dac-core",
+ "dac-recovery",
+]
 
 [[package]]
 name = "dac-api"
@@ -141,6 +148,7 @@ name = "dac-cli"
 version = "0.1.0-pre"
 dependencies = [
  "assert_cmd",
+ "dac-analysis",
  "dac-arch",
  "dac-arch-x86",
  "dac-binfmt",

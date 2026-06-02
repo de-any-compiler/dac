@@ -43,13 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.1 — CFG construction
-- `dac-analysis::cfg`: basic blocks, edges, entry/exit, unreachable
-  detection (FR-10).
-- `--emit-cfg` exports DOT.
-- **Done when:** CFG matches a hand-checked reference for 10 sample
-  functions.
-
 ### B2.2 — Dominators + loop nest
 - Dominator tree, post-dominators, natural loops, loop nest forest.
 - Reducibility detection (irreducible CFGs flagged, handled with `goto`

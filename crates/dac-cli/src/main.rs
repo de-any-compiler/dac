@@ -23,6 +23,7 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use dac_analysis::cfg::{build_cfgs, render_dot_all};
 use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter};
 use dac_arch_x86::X86_64;
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
@@ -137,6 +138,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let backend = pick_backend(&model);
     let listing_text;
     let report_text;
+    let cfg_text;
     match &backend {
         Some(b) => {
             let mut graph = EvidenceGraph::new();
@@ -162,12 +164,23 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 report_text = None;
             }
+            cfg_text = if args.emit_cfg {
+                let cfgs = build_cfgs(&functions.functions, &model, &bytes, b.decoder.as_ref());
+                Some(render_dot_all(&cfgs))
+            } else {
+                None
+            };
             let _ = functions; // evidence handles already wired
         }
         None => {
             listing_text = unsupported_arch_listing(&input_label, &model);
             report_text = if args.emit_report {
                 Some(unsupported_arch_report(&model))
+            } else {
+                None
+            };
+            cfg_text = if args.emit_cfg {
+                Some(unsupported_arch_cfg(&model))
             } else {
                 None
             };
@@ -179,6 +192,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         &listing_text,
         &manifest_json,
         report_text.as_deref(),
+        cfg_text.as_deref(),
     )
 }
 
@@ -215,6 +229,28 @@ fn unsupported_arch_report(model: &BinaryModel) -> String {
     s
 }
 
+fn unsupported_arch_cfg(model: &BinaryModel) -> String {
+    // Emit a valid (empty) DOT digraph so downstream tooling that pipes
+    // `dac --emit-cfg` into `dot` / `graphviz` does not fail to parse.
+    // The graph name records why the file is empty.
+    format!(
+        "digraph \"unsupported_arch_{}\" {{\n}}\n",
+        sanitize_dot_ident(model.architecture.name())
+    )
+}
+
+fn sanitize_dot_ident(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn build_manifest(input_path: &str, model: &BinaryModel, args: &Args) -> Manifest {
     Manifest {
         tool: ManifestTool {
@@ -248,17 +284,20 @@ fn build_manifest(input_path: &str, model: &BinaryModel, args: &Args) -> Manifes
     }
 }
 
-/// Emit the listing, manifest, and optional report.
+/// Emit the listing, manifest, and optional report / CFG.
 ///
 /// - No `--output`: listing → stdout, manifest → stdout (delimited),
-///   report (if any) → stdout.
+///   report (if any) → stdout (delimited), CFG (if any) → stdout
+///   (delimited).
 /// - With `--output <path>`: listing → `<path>`, manifest →
-///   `<path>.manifest.json`, report → `<path>.report.txt`.
+///   `<path>.manifest.json`, report → `<path>.report.txt`, CFG →
+///   `<path>.cfg.dot`.
 fn emit_outputs(
     output: Option<&Path>,
     listing: &str,
     manifest: &str,
     report: Option<&str>,
+    cfg: Option<&str>,
 ) -> dac_core::Result<()> {
     match output {
         None => {
@@ -271,6 +310,10 @@ fn emit_outputs(
                 h.write_all(b"\n;; ---- analysis report (FR-25) ----\n")?;
                 h.write_all(r.as_bytes())?;
             }
+            if let Some(c) = cfg {
+                h.write_all(b"\n;; ---- cfg (FR-28) ----\n")?;
+                h.write_all(c.as_bytes())?;
+            }
             Ok(())
         }
         Some(path) => {
@@ -280,6 +323,10 @@ fn emit_outputs(
             if let Some(r) = report {
                 let report_path = sidecar(path, ".report.txt");
                 write_file(&report_path, r)?;
+            }
+            if let Some(c) = cfg {
+                let cfg_path = sidecar(path, ".cfg.dot");
+                write_file(&cfg_path, c)?;
             }
             Ok(())
         }

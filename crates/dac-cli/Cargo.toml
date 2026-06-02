@@ -13,6 +13,7 @@ name = "dac"
 path = "src/main.rs"
 
 [dependencies]
+dac-analysis.workspace = true
 dac-arch.workspace = true
 dac-arch-x86.workspace = true
 dac-binfmt.workspace = true
