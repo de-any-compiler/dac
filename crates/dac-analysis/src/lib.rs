@@ -17,16 +17,19 @@
 //! - [`ssa`] — SSA construction (B2.3, FR-11). Pruned phi placement
 //!   via Cytron-Ferrante-Rosen-Wegman-Zadeck with liveness, dominator-
 //!   tree rename, and a local value-numbering pass for trivial CSE.
+//! - [`dataflow`] — SSA-level def-use chains and per-block liveness
+//!   (B2.4, FR-11). Use-def is implicit in SSA so the module exposes
+//!   a thin [`dataflow::def_of`] wrapper rather than a separate table.
 //!
 //! ## What's coming
 //!
-//! Dataflow (B2.4), calling-convention inference (B2.5), and type
-//! lattice / propagation (B2.6) all land into this crate behind their
-//! own modules and milestones.
+//! Calling-convention inference (B2.5) and type lattice / propagation
+//! (B2.6) land into this crate behind their own modules and milestones.
 
 #![forbid(unsafe_code)]
 
 pub mod cfg;
+pub mod dataflow;
 pub mod dom;
 pub mod loops;
 pub mod ssa;

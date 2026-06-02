@@ -1167,6 +1167,139 @@ intact. The `RawFunction` input layer keeps the algorithm
 testable in isolation; wiring it to a real `InstructionIr`
 stream is B2.4's problem.
 
+#### B2.4 — Dataflow + stack-frame recovery (2026-06-02)
+
+Two passes land together: SSA-level dataflow in
+`dac-analysis::dataflow` (def-use chains, per-block liveness),
+and stack-frame recovery in `dac-recovery::stack` (locals,
+incoming args, and Windows shadow space recovered from SSA
+address arithmetic anchored at the entry stack pointer). Both
+are deterministic and depend only on outputs already produced
+by B2.1–B2.3.
+
+The SSA construction in B2.3 already gives use-def for free —
+every operand directly names its defining value via [`ValueId`]
+— so this batch ships the inverse direction (def-use) and a
+liveness pass. Reaching definitions are deliberately not a
+separate pass: in SSA each operand already names its single
+reaching definition, and the interesting "which store reaches
+this load" version is a memory-SSA concern that lives in a
+later batch.
+
+The stack-frame pass identifies every memory location a
+function touches at a constant offset from the entry stack
+pointer. The SSA constructor mints a `Parameter` value for
+every variable read without first being written; for `rsp`
+that parameter is *the* `entry_sp` anchor. The pass propagates
+`(anchor, offset)` through `Move`/`Add`/`Sub` (constant
+operand), folds phi nodes whose every incoming agrees on the
+same offset, and collects every `Load`/`Store` whose address
+resolved to `entry_sp + k`. The frame pointer (if any) is
+detected as the first instruction whose destination variable
+matches the convention's nominated FP register (e.g. `rbp`) and
+whose offset is known; accesses through it fold back onto the
+same anchor with no extra mechanism. Per I-6, alignment masks
+(`and rsp, -16`) and other non-additive transforms do *not*
+propagate — the pass treats them as unknown rather than
+guessing.
+
+- `dac-analysis::dataflow`:
+  - `DefUseChains` — inverted SSA value graph keyed by
+    [`ValueId`]. A use-site appears once per syntactic
+    occurrence so `Add { lhs: v, rhs: v }` records two
+    instruction uses for `v` (classic "number of uses"
+    semantics for DCE / copy propagation).
+  - `UseSite` enum: `Phi { block, phi, incoming } |
+    Instruction { block, index } | Terminator { block }`.
+    Implements `Ord` so callers can sort use lists. The
+    location identifies the syntactic site, not which operand
+    slot within it.
+  - `compute_def_use(ssa) -> DefUseChains` — single forward
+    walk over phi/instruction/terminator operands.
+  - `def_of(ssa, value) -> &ValueDef` — thin wrapper over
+    `SsaFunction::value` kept for symmetry with the def-use
+    direction.
+  - `SsaLiveness { live_in, live_out }` — per-block sets of
+    live [`ValueId`]s.
+  - `compute_liveness(ssa) -> SsaLiveness` — backward
+    dataflow. The phi-incoming term is treated as a *per-edge*
+    use on the predecessor's live-out side, not as a join-block
+    live-in: otherwise a phi operand on edge (B1 → B3) would
+    spuriously appear live on edge (B2 → B3) too, inflating
+    live ranges. Matches Cooper & Torczon §9.2.
+  - 10 unit tests: each-operand-occurrence counting, dead-
+    value detection, phi-incoming recording per edge,
+    cross-branch liveness, the phi-inflation guard, loop-
+    carried back-edge liveness, determinism across runs,
+    empty-function corner case, terminator-use recording, and
+    a `parameter_of` test helper.
+- `dac-recovery::stack`:
+  - `StackConvention` closed enum: `SysVAmd64 | MsX64`. Names
+    the stack-pointer register (`rsp` for both) and the
+    frame-pointer register (`rbp` for both) per convention,
+    and classifies positive offsets into the convention's
+    layout zones.
+  - `StackFrame { convention, stack_pointer, frame_pointer,
+    locals, confidence }` — recovered frame, with
+    `stack_pointer: Option<VariableId>` (None for synthetic
+    leaf functions) and a [`BTreeMap`] of locals keyed by
+    signed offset from `entry_sp`.
+  - `FramePointer { variable, offset }` — populated when the
+    pass recognized `mov fp, sp + k`. Negative on SysV
+    (`rbp = rsp - 8` after a notional `push rbp`).
+  - `StackLocal { offset, width, kind, access_count,
+    confidence }` — one record per offset touched, with
+    `width` accumulating as the maximum observed access width
+    and `access_count` summing reads + writes.
+  - `StackLocalKind` closed enum: `Local | ReturnAddress |
+    ShadowSpace | IncomingArgument | Unclassified`.
+    Convention-driven classification: SysV places ret addr at
+    `+0`, stack args at any `8k > 0`; MsX64 has the same ret
+    addr at `+0`, home space at `+8..+40`, and stack args at
+    `>=+40`. Both treat negative offsets as callee locals.
+    Unrecognized offsets land in `Unclassified` rather than
+    being silently dropped — the reviewer should see what the
+    pass touched.
+  - `analyze_stack_frame(ssa, convention) -> StackFrame` — the
+    entrypoint. Returns an empty-but-well-formed frame when
+    the function never references `rsp` (legitimate for
+    synthetic leaf no-ops; never raises).
+  - All recovered facts carry [`Source::Derived`]
+    confidence (I-3): `0.9` for the frame itself when the
+    stack pointer was located, `0.85` per identified local.
+  - 13 unit tests covering SysV-no-FP locals at `[rsp + k]`,
+    SysV-with-FP `mov rbp, rsp` recognition + `[rbp - k]`
+    locals, SysV incoming-arg classification at positive
+    offsets, MsX64 home-space writes at `[rsp + 8]` /
+    `[rsp + 16]`, MsX64 locals below a reserved frame, MsX64
+    fifth-arg at `[rsp + 40]`, widest-access-width
+    accumulation, phi-loop offset propagation, missing-sp
+    degenerate case, determinism across runs, mid-return-
+    address `Unclassified` classification, unaligned home-
+    space `Unclassified`, and a `Source::Derived`
+    confidence audit on every produced confidence.
+
+Test counts: `cargo xtask ci` reports 44 green
+`test result: ok` lines (unchanged from B2.3 — both new
+modules are unit-tested inside their owning crates, no new
+integration-test binaries). Lib test counts grew in
+`dac-analysis` (52 → 62, +10 for dataflow) and in
+`dac-recovery` (9 → 22, +13 for stack). No new warnings.
+
+Closes: FR-11 (the def-use direction of use-def / def-use
+chains and SSA liveness) and FR-12 (stack-variable
+identification). Done-when satisfied: `dac-recovery::stack`
+ships unit tests for both SysV x86-64 and Win64 stack
+patterns — locals at negative offsets in both conventions,
+arg classification in both, frame-pointer recognition on
+SysV, and Win64 shadow-space recognition. No new evidence
+nodes are minted; the dataflow passes derive from the same
+SSA function (and thus the same CFG evidence handle as B2.3
+introduced), keeping the I-2 provenance chain intact. The
+stack pass's confidence (always `Source::Derived`) feeds
+B2.5 (calling-convention inference) and B2.6 (type lattice +
+propagation) directly.
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 

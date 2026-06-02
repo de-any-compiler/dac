@@ -43,12 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.4 — Dataflow + liveness
-- Use-def, def-use chains; liveness; reaching definitions (FR-11).
-- Stack-frame analysis: identify stack locals (FR-12).
-- **Done when:** stack-local recovery has unit tests for SysV x86-64 and
-  Win64 stack patterns.
-
 ### B2.5 — Calling convention inference
 - Use `dac-knowledge` calling-convention table (SysV x86-64, Win64) to
   match observed register usage (FR-13).

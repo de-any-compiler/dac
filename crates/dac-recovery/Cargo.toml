@@ -12,8 +12,10 @@ repository.workspace = true
 dac-arch = { workspace = true }
 dac-binfmt = { workspace = true }
 dac-core = { workspace = true }
+dac-ir = { workspace = true }
 
 [dev-dependencies]
+dac-analysis = { workspace = true }
 dac-arch-x86 = { workspace = true }
 
 [lints]
