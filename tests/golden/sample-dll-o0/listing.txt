@@ -1,0 +1,1749 @@
+;; dac -O0 annotated listing
+;; input:     tests/fixtures/sample.dll
+;; format:    PE
+;; arch:      x86-64
+;; entry:     0x00000002630811f0
+;; size:      29619 bytes
+;; functions: 51
+;; signals:   symbol=50 entry=1 call=29 prologue=1
+
+;; ============================================================
+;; function _CRT_INIT [0x0000000263081000..0x00000002630811f0) (496 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263081000  55                            push       rbp ; push(rbp:64)
+0x0000000263081001  57                            push       rdi ; push(rdi:64)
+0x0000000263081002  56                            push       rsi ; push(rsi:64)
+0x0000000263081003  53                            push       rbx ; push(rbx:64)
+0x0000000263081004  48 83 ec 38                   sub        rsp,38h ; sub(rsp:64, 56#64)
+0x0000000263081008  48 89 4c 24 60                mov        [rsp+60h],rcx ; mov(ss:[rsp+96]:64, rcx:64)
+0x000000026308100d  4c 89 44 24 70                mov        [rsp+70h],r8 ; mov(ss:[rsp+112]:64, r8:64)
+0x0000000263081012  85 d2                         test       edx,edx ; test(edx:32, edx:32)
+0x0000000263081014  0f 85 96 00 00 00             jne        00000002630810B0h ; jcc.ne(@0x2630810b0)
+0x000000026308101a  8b 05 f8 6f 00 00             mov        eax,[263088018h] ; mov(eax:32, ds:[rip+10251436056]:32)
+0x0000000263081020  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081022  0f 8e 69 01 00 00             jle        0000000263081191h ; jcc.le(@0x263081191)
+0x0000000263081028  83 e8 01                      sub        eax,1 ; sub(eax:32, 1#32)
+0x000000026308102b  89 05 e7 6f 00 00             mov        [263088018h],eax ; mov(ds:[rip+10251436056]:32, eax:32)
+0x0000000263081031  65 48 8b 04 25 30 00 00 .     mov        rax,gs:[30h] ; mov(rax:64, gs:[48]:64)
+0x000000026308103a  48 8b 70 08                   mov        rsi,[rax+8] ; mov(rsi:64, ds:[rax+8]:64)
+0x000000026308103e  48 8b 1d 9b 32 00 00          mov        rbx,[2630842E0h] ; mov(rbx:64, ds:[rip+10251420384]:64)
+0x0000000263081045  48 8b 2d 94 91 00 00          mov        rbp,[26308A1E0h] ; mov(rbp:64, ds:[rip+10251444704]:64)
+0x000000026308104c  eb 12                         jmp        short 0000000263081060h ; jmp(@0x263081060)
+0x000000026308104e  66 90                         xchg       ax,ax ; nop
+0x0000000263081050  48 39 d6                      cmp        rsi,rdx ; cmp(rsi:64, rdx:64)
+0x0000000263081053  0f 84 57 01 00 00             je         00000002630811B0h ; jcc.eq(@0x2630811b0)
+0x0000000263081059  b9 e8 03 00 00                mov        ecx,3E8h ; mov(ecx:32, 1000#32)
+0x000000026308105e  ff d5                         call       rbp ; call(rbp:64)
+0x0000000263081060  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081062  f0 48 0f b1 33                lock       cmpxchg [rbx],rsi ; opaque(cmpxchg)
+0x0000000263081067  48 89 c2                      mov        rdx,rax ; mov(rdx:64, rax:64)
+0x000000026308106a  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x000000026308106d  75 e1                         jne        short 0000000263081050h ; jcc.ne(@0x263081050)
+0x000000026308106f  48 8b 35 7a 32 00 00          mov        rsi,[2630842F0h] ; mov(rsi:64, ds:[rip+10251420400]:64)
+0x0000000263081076  8b 06                         mov        eax,[rsi] ; mov(eax:32, ds:[rsi]:32)
+0x0000000263081078  83 f8 02                      cmp        eax,2 ; cmp(eax:32, 2#32)
+0x000000026308107b  0f 85 5e 01 00 00             jne        00000002630811DFh ; jcc.ne(@0x2630811df)
+0x0000000263081081  48 8d 0d 78 6f 00 00          lea        rcx,[263088000h] ; lea(rcx:64, ds:[rip+10251436032]:0)
+0x0000000263081088  48 89 54 24 28                mov        [rsp+28h],rdx ; mov(ss:[rsp+40]:64, rdx:64)
+0x000000026308108d  e8 9e 12 00 00                call       0000000263082330h ; call(@0x263082330)
+0x0000000263081092  48 8b 54 24 28                mov        rdx,[rsp+28h] ; mov(rdx:64, ss:[rsp+40]:64)
+0x0000000263081097  c7 06 00 00 00 00             mov        dword ptr [rsi],0 ; mov(ds:[rsi]:32, 0#32)
+0x000000026308109d  48 87 13                      xchg       [rbx],rdx ; opaque(xchg)
+0x00000002630810a0  b8 01 00 00 00                mov        eax,1 ; mov(eax:32, 1#32)
+0x00000002630810a5  48 83 c4 38                   add        rsp,38h ; add(rsp:64, 56#64)
+0x00000002630810a9  5b                            pop        rbx ; pop(rbx:64)
+0x00000002630810aa  5e                            pop        rsi ; pop(rsi:64)
+0x00000002630810ab  5f                            pop        rdi ; pop(rdi:64)
+0x00000002630810ac  5d                            pop        rbp ; pop(rbp:64)
+0x00000002630810ad  c3                            ret        ; ret
+0x00000002630810ae  66 90                         xchg       ax,ax ; nop
+0x00000002630810b0  83 fa 01                      cmp        edx,1 ; cmp(edx:32, 1#32)
+0x00000002630810b3  75 eb                         jne        short 00000002630810A0h ; jcc.ne(@0x2630810a0)
+0x00000002630810b5  65 48 8b 04 25 30 00 00 .     mov        rax,gs:[30h] ; mov(rax:64, gs:[48]:64)
+0x00000002630810be  48 8b 70 08                   mov        rsi,[rax+8] ; mov(rsi:64, ds:[rax+8]:64)
+0x00000002630810c2  48 8b 1d 17 32 00 00          mov        rbx,[2630842E0h] ; mov(rbx:64, ds:[rip+10251420384]:64)
+0x00000002630810c9  48 8b 2d 10 91 00 00          mov        rbp,[26308A1E0h] ; mov(rbp:64, ds:[rip+10251444704]:64)
+0x00000002630810d0  eb 16                         jmp        short 00000002630810E8h ; jmp(@0x2630810e8)
+0x00000002630810d2  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x00000002630810d8  48 39 c6                      cmp        rsi,rax ; cmp(rsi:64, rax:64)
+0x00000002630810db  0f 84 bf 00 00 00             je         00000002630811A0h ; jcc.eq(@0x2630811a0)
+0x00000002630810e1  b9 e8 03 00 00                mov        ecx,3E8h ; mov(ecx:32, 1000#32)
+0x00000002630810e6  ff d5                         call       rbp ; call(rbp:64)
+0x00000002630810e8  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x00000002630810ea  f0 48 0f b1 33                lock       cmpxchg [rbx],rsi ; opaque(cmpxchg)
+0x00000002630810ef  75 e7                         jne        short 00000002630810D8h ; jcc.ne(@0x2630810d8)
+0x00000002630810f1  31 ff                         xor        edi,edi ; xor(edi:32, edi:32)
+0x00000002630810f3  48 8b 35 f6 31 00 00          mov        rsi,[2630842F0h] ; mov(rsi:64, ds:[rip+10251420400]:64)
+0x00000002630810fa  8b 06                         mov        eax,[rsi] ; mov(eax:32, ds:[rsi]:32)
+0x00000002630810fc  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x00000002630810fe  0f 85 db 00 00 00             jne        00000002630811DFh ; jcc.ne(@0x2630811df)
+0x0000000263081104  c7 06 01 00 00 00             mov        dword ptr [rsi],1 ; mov(ds:[rsi]:32, 1#32)
+0x000000026308110a  e8 b1 06 00 00                call       00000002630817C0h ; call(@0x2630817c0)
+0x000000026308110f  48 8d 0d ea 6e 00 00          lea        rcx,[263088000h] ; lea(rcx:64, ds:[rip+10251436032]:0)
+0x0000000263081116  e8 25 12 00 00                call       0000000263082340h ; call(@0x263082340)
+0x000000026308111b  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x000000026308111d  75 69                         jne        short 0000000263081188h ; jcc.ne(@0x263081188)
+0x000000026308111f  48 8b 15 0a 32 00 00          mov        rdx,[263084330h] ; mov(rdx:64, ds:[rip+10251420464]:64)
+0x0000000263081126  48 8b 0d f3 31 00 00          mov        rcx,[263084320h] ; mov(rcx:64, ds:[rip+10251420448]:64)
+0x000000026308112d  e8 1e 12 00 00                call       0000000263082350h ; call(@0x263082350)
+0x0000000263081132  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081134  75 52                         jne        short 0000000263081188h ; jcc.ne(@0x263081188)
+0x0000000263081136  48 8b 15 d3 31 00 00          mov        rdx,[263084310h] ; mov(rdx:64, ds:[rip+10251420432]:64)
+0x000000026308113d  48 8b 0d bc 31 00 00          mov        rcx,[263084300h] ; mov(rcx:64, ds:[rip+10251420416]:64)
+0x0000000263081144  e8 ff 11 00 00                call       0000000263082348h ; call(@0x263082348)
+0x0000000263081149  e8 d2 03 00 00                call       0000000263081520h ; call(@0x263081520)
+0x000000026308114e  c7 06 02 00 00 00             mov        dword ptr [rsi],2 ; mov(ds:[rsi]:32, 2#32)
+0x0000000263081154  85 ff                         test       edi,edi ; test(edi:32, edi:32)
+0x0000000263081156  74 7d                         je         short 00000002630811D5h ; jcc.eq(@0x2630811d5)
+0x0000000263081158  48 8b 05 51 31 00 00          mov        rax,[2630842B0h] ; mov(rax:64, ds:[rip+10251420336]:64)
+0x000000026308115f  48 8b 00                      mov        rax,[rax] ; mov(rax:64, ds:[rax]:64)
+0x0000000263081162  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081165  74 11                         je         short 0000000263081178h ; jcc.eq(@0x263081178)
+0x0000000263081167  4c 8b 44 24 70                mov        r8,[rsp+70h] ; mov(r8:64, ss:[rsp+112]:64)
+0x000000026308116c  48 8b 4c 24 60                mov        rcx,[rsp+60h] ; mov(rcx:64, ss:[rsp+96]:64)
+0x0000000263081171  ba 02 00 00 00                mov        edx,2 ; mov(edx:32, 2#32)
+0x0000000263081176  ff d0                         call       rax ; call(rax:64)
+0x0000000263081178  83 05 99 6e 00 00 01          add        dword ptr [263088018h],1 ; add(ds:[rip+10251436056]:32, 1#32)
+0x000000026308117f  e9 1c ff ff ff                jmp        00000002630810A0h ; jmp(@0x2630810a0)
+0x0000000263081184  0f 1f 40 00                   nop        [rax] ; nop
+0x0000000263081188  85 ff                         test       edi,edi ; test(edi:32, edi:32)
+0x000000026308118a  75 05                         jne        short 0000000263081191h ; jcc.ne(@0x263081191)
+0x000000026308118c  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x000000026308118e  48 87 03                      xchg       [rbx],rax ; opaque(xchg)
+0x0000000263081191  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081193  48 83 c4 38                   add        rsp,38h ; add(rsp:64, 56#64)
+0x0000000263081197  5b                            pop        rbx ; pop(rbx:64)
+0x0000000263081198  5e                            pop        rsi ; pop(rsi:64)
+0x0000000263081199  5f                            pop        rdi ; pop(rdi:64)
+0x000000026308119a  5d                            pop        rbp ; pop(rbp:64)
+0x000000026308119b  c3                            ret        ; ret
+0x000000026308119c  0f 1f 40 00                   nop        [rax] ; nop
+0x00000002630811a0  bf 01 00 00 00                mov        edi,1 ; mov(edi:32, 1#32)
+0x00000002630811a5  e9 49 ff ff ff                jmp        00000002630810F3h ; jmp(@0x2630810f3)
+0x00000002630811aa  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x00000002630811b0  48 8b 1d 39 31 00 00          mov        rbx,[2630842F0h] ; mov(rbx:64, ds:[rip+10251420400]:64)
+0x00000002630811b7  8b 03                         mov        eax,[rbx] ; mov(eax:32, ds:[rbx]:32)
+0x00000002630811b9  83 f8 02                      cmp        eax,2 ; cmp(eax:32, 2#32)
+0x00000002630811bc  75 21                         jne        short 00000002630811DFh ; jcc.ne(@0x2630811df)
+0x00000002630811be  48 8d 0d 3b 6e 00 00          lea        rcx,[263088000h] ; lea(rcx:64, ds:[rip+10251436032]:0)
+0x00000002630811c5  e8 66 11 00 00                call       0000000263082330h ; call(@0x263082330)
+0x00000002630811ca  c7 03 00 00 00 00             mov        dword ptr [rbx],0 ; mov(ds:[rbx]:32, 0#32)
+0x00000002630811d0  e9 cb fe ff ff                jmp        00000002630810A0h ; jmp(@0x2630810a0)
+0x00000002630811d5  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x00000002630811d7  48 87 03                      xchg       [rbx],rax ; opaque(xchg)
+0x00000002630811da  e9 79 ff ff ff                jmp        0000000263081158h ; jmp(@0x263081158)
+0x00000002630811df  b9 1f 00 00 00                mov        ecx,1Fh ; mov(ecx:32, 31#32)
+0x00000002630811e4  e8 f7 10 00 00                call       00000002630822E0h ; call(@0x2630822e0)
+0x00000002630811e9  90                            nop        ; nop
+0x00000002630811ea  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function DllMainCRTStartup [0x00000002630811f0..0x0000000263081330) (320 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, entry
+;; ============================================================
+0x00000002630811f0  57                            push       rdi ; push(rdi:64)
+0x00000002630811f1  56                            push       rsi ; push(rsi:64)
+0x00000002630811f2  53                            push       rbx ; push(rbx:64)
+0x00000002630811f3  48 83 ec 30                   sub        rsp,30h ; sub(rsp:64, 48#64)
+0x00000002630811f7  48 89 cb                      mov        rbx,rcx ; mov(rbx:64, rcx:64)
+0x00000002630811fa  4c 89 c6                      mov        rsi,r8 ; mov(rsi:64, r8:64)
+0x00000002630811fd  83 fa 01                      cmp        edx,1 ; cmp(edx:32, 1#32)
+0x0000000263081200  74 76                         je         short 0000000263081278h ; jcc.eq(@0x263081278)
+0x0000000263081202  48 8b 3d c7 30 00 00          mov        rdi,[2630842D0h] ; mov(rdi:64, ds:[rip+10251420368]:64)
+0x0000000263081209  89 17                         mov        [rdi],edx ; mov(ds:[rdi]:32, edx:32)
+0x000000026308120b  85 d2                         test       edx,edx ; test(edx:32, edx:32)
+0x000000026308120d  0f 85 cd 00 00 00             jne        00000002630812E0h ; jcc.ne(@0x2630812e0)
+0x0000000263081213  8b 05 ff 6d 00 00             mov        eax,[263088018h] ; mov(eax:32, ds:[rip+10251436056]:32)
+0x0000000263081219  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x000000026308121b  7e 53                         jle        short 0000000263081270h ; jcc.le(@0x263081270)
+0x000000026308121d  89 54 24 58                   mov        [rsp+58h],edx ; mov(ss:[rsp+88]:32, edx:32)
+0x0000000263081221  31 d2                         xor        edx,edx ; xor(edx:32, edx:32)
+0x0000000263081223  e8 58 11 00 00                call       0000000263082380h ; call(@0x263082380)
+0x0000000263081228  44 8b 4c 24 58                mov        r9d,[rsp+58h] ; mov(r9d:32, ss:[rsp+88]:32)
+0x000000026308122d  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x0000000263081230  44 89 ca                      mov        edx,r9d ; mov(edx:32, r9d:32)
+0x0000000263081233  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x0000000263081236  e8 c5 fd ff ff                call       0000000263081000h ; call(@0x263081000)
+0x000000026308123b  41 89 c2                      mov        r10d,eax ; mov(r10d:32, eax:32)
+0x000000026308123e  44 89 d0                      mov        eax,r10d ; mov(eax:32, r10d:32)
+0x0000000263081241  c7 07 ff ff ff ff             mov        dword ptr [rdi],0FFFFFFFFh ; mov(ds:[rdi]:32, -1#32)
+0x0000000263081247  48 83 c4 30                   add        rsp,30h ; add(rsp:64, 48#64)
+0x000000026308124b  5b                            pop        rbx ; pop(rbx:64)
+0x000000026308124c  5e                            pop        rsi ; pop(rsi:64)
+0x000000026308124d  5f                            pop        rdi ; pop(rdi:64)
+0x000000026308124e  c3                            ret        ; ret
+0x000000026308124f  90                            nop        ; nop
+0x0000000263081250  ba 02 00 00 00                mov        edx,2 ; mov(edx:32, 2#32)
+0x0000000263081255  e8 a6 fd ff ff                call       0000000263081000h ; call(@0x263081000)
+0x000000026308125a  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x000000026308125c  0f 85 a7 00 00 00             jne        0000000263081309h ; jcc.ne(@0x263081309)
+0x0000000263081262  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081265  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081270  45 31 d2                      xor        r10d,r10d ; xor(r10d:32, r10d:32)
+0x0000000263081273  eb c9                         jmp        short 000000026308123Eh ; jmp(@0x26308123e)
+0x0000000263081275  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081278  48 8b 05 41 30 00 00          mov        rax,[2630842C0h] ; mov(rax:64, ds:[rip+10251420352]:64)
+0x000000026308127f  48 8b 3d 4a 30 00 00          mov        rdi,[2630842D0h] ; mov(rdi:64, ds:[rip+10251420368]:64)
+0x0000000263081286  ba 01 00 00 00                mov        edx,1 ; mov(edx:32, 1#32)
+0x000000026308128b  c7 00 00 00 00 00             mov        dword ptr [rax],0 ; mov(ds:[rax]:32, 0#32)
+0x0000000263081291  c7 07 01 00 00 00             mov        dword ptr [rdi],1 ; mov(ds:[rdi]:32, 1#32)
+0x0000000263081297  e8 64 fd ff ff                call       0000000263081000h ; call(@0x263081000)
+0x000000026308129c  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x000000026308129e  74 d0                         je         short 0000000263081270h ; jcc.eq(@0x263081270)
+0x00000002630812a0  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x00000002630812a3  ba 01 00 00 00                mov        edx,1 ; mov(edx:32, 1#32)
+0x00000002630812a8  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x00000002630812ab  e8 d0 10 00 00                call       0000000263082380h ; call(@0x263082380)
+0x00000002630812b0  41 89 c2                      mov        r10d,eax ; mov(r10d:32, eax:32)
+0x00000002630812b3  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x00000002630812b5  75 87                         jne        short 000000026308123Eh ; jcc.ne(@0x26308123e)
+0x00000002630812b7  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x00000002630812ba  31 d2                         xor        edx,edx ; xor(edx:32, edx:32)
+0x00000002630812bc  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x00000002630812bf  44 89 54 24 2c                mov        [rsp+2Ch],r10d ; mov(ss:[rsp+44]:32, r10d:32)
+0x00000002630812c4  e8 b7 10 00 00                call       0000000263082380h ; call(@0x263082380)
+0x00000002630812c9  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x00000002630812cc  31 d2                         xor        edx,edx ; xor(edx:32, edx:32)
+0x00000002630812ce  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x00000002630812d1  e8 2a fd ff ff                call       0000000263081000h ; call(@0x263081000)
+0x00000002630812d6  44 8b 54 24 2c                mov        r10d,[rsp+2Ch] ; mov(r10d:32, ss:[rsp+44]:32)
+0x00000002630812db  e9 5e ff ff ff                jmp        000000026308123Eh ; jmp(@0x26308123e)
+0x00000002630812e0  83 fa 02                      cmp        edx,2 ; cmp(edx:32, 2#32)
+0x00000002630812e3  0f 84 67 ff ff ff             je         0000000263081250h ; jcc.eq(@0x263081250)
+0x00000002630812e9  89 54 24 58                   mov        [rsp+58h],edx ; mov(ss:[rsp+88]:32, edx:32)
+0x00000002630812ed  e8 8e 10 00 00                call       0000000263082380h ; call(@0x263082380)
+0x00000002630812f2  44 8b 4c 24 58                mov        r9d,[rsp+58h] ; mov(r9d:32, ss:[rsp+88]:32)
+0x00000002630812f7  41 89 c2                      mov        r10d,eax ; mov(r10d:32, eax:32)
+0x00000002630812fa  41 83 f9 03                   cmp        r9d,3 ; cmp(r9d:32, 3#32)
+0x00000002630812fe  0f 85 3a ff ff ff             jne        000000026308123Eh ; jcc.ne(@0x26308123e)
+0x0000000263081304  e9 24 ff ff ff                jmp        000000026308122Dh ; jmp(@0x26308122d)
+0x0000000263081309  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x000000026308130c  ba 02 00 00 00                mov        edx,2 ; mov(edx:32, 2#32)
+0x0000000263081311  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x0000000263081314  e8 67 10 00 00                call       0000000263082380h ; call(@0x263082380)
+0x0000000263081319  41 89 c2                      mov        r10d,eax ; mov(r10d:32, eax:32)
+0x000000026308131c  e9 1d ff ff ff                jmp        000000026308123Eh ; jmp(@0x26308123e)
+0x0000000263081321  0f 1f 40 00                   nop        [rax] ; nop
+0x0000000263081325  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function atexit [0x0000000263081330..0x0000000263081360) (48 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081330  48 89 ca                      mov        rdx,rcx ; mov(rdx:64, rcx:64)
+0x0000000263081333  48 8d 0d c6 6c 00 00          lea        rcx,[263088000h] ; lea(rcx:64, ds:[rip+10251436032]:0)
+0x000000026308133a  e9 19 10 00 00                jmp        0000000263082358h ; jmp(@0x263082358)
+0x000000026308133f  90                            nop        ; nop
+0x0000000263081340  c3                            ret        ; ret
+0x0000000263081341  0f 1f 40 00                   nop        [rax] ; nop
+0x0000000263081345  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081350  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081352  c3                            ret        ; ret
+0x0000000263081353  66 90                         xchg       ax,ax ; nop
+0x0000000263081355  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __gcc_register_frame [0x0000000263081360..0x0000000263081410) (176 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081360  55                            push       rbp ; push(rbp:64)
+0x0000000263081361  53                            push       rbx ; push(rbx:64)
+0x0000000263081362  48 83 ec 38                   sub        rsp,38h ; sub(rsp:64, 56#64)
+0x0000000263081366  48 8d 6c 24 30                lea        rbp,[rsp+30h] ; lea(rbp:64, ss:[rsp+48]:0)
+0x000000026308136b  48 8d 0d 8e 2c 00 00          lea        rcx,[263084000h] ; lea(rcx:64, ds:[rip+10251419648]:0)
+0x0000000263081372  ff 15 40 8e 00 00             call       qword ptr [26308A1B8h] ; call(ds:[rip+10251444664]:64)
+0x0000000263081378  48 89 c3                      mov        rbx,rax ; mov(rbx:64, rax:64)
+0x000000026308137b  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x000000026308137e  74 70                         je         short 00000002630813F0h ; jcc.eq(@0x2630813f0)
+0x0000000263081380  48 8d 0d 79 2c 00 00          lea        rcx,[263084000h] ; lea(rcx:64, ds:[rip+10251419648]:0)
+0x0000000263081387  ff 15 4b 8e 00 00             call       qword ptr [26308A1D8h] ; call(ds:[rip+10251444696]:64)
+0x000000026308138d  4c 8b 0d 2c 8e 00 00          mov        r9,[26308A1C0h] ; mov(r9:64, ds:[rip+10251444672]:64)
+0x0000000263081394  48 8d 15 78 2c 00 00          lea        rdx,[263084013h] ; lea(rdx:64, ds:[rip+10251419667]:0)
+0x000000026308139b  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x000000026308139e  48 89 05 7b 6c 00 00          mov        [263088020h],rax ; mov(ds:[rip+10251436064]:64, rax:64)
+0x00000002630813a5  4c 89 4d f0                   mov        [rbp-10h],r9 ; mov(ss:[rbp-16]:64, r9:64)
+0x00000002630813a9  41 ff d1                      call       r9 ; call(r9:64)
+0x00000002630813ac  48 8d 15 76 2c 00 00          lea        rdx,[263084029h] ; lea(rdx:64, ds:[rip+10251419689]:0)
+0x00000002630813b3  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x00000002630813b6  48 89 45 f8                   mov        [rbp-8],rax ; mov(ss:[rbp-8]:64, rax:64)
+0x00000002630813ba  ff 55 f0                      call       qword ptr [rbp-10h] ; call(ss:[rbp-16]:64)
+0x00000002630813bd  4c 8b 45 f8                   mov        r8,[rbp-8] ; mov(r8:64, ss:[rbp-8]:64)
+0x00000002630813c1  48 89 05 38 1c 00 00          mov        [263083000h],rax ; mov(ds:[rip+10251415552]:64, rax:64)
+0x00000002630813c8  4d 85 c0                      test       r8,r8 ; test(r8:64, r8:64)
+0x00000002630813cb  74 11                         je         short 00000002630813DEh ; jcc.eq(@0x2630813de)
+0x00000002630813cd  48 8d 15 6c 6c 00 00          lea        rdx,[263088040h] ; lea(rdx:64, ds:[rip+10251436096]:0)
+0x00000002630813d4  48 8d 0d 25 3c 00 00          lea        rcx,[263085000h] ; lea(rcx:64, ds:[rip+10251423744]:0)
+0x00000002630813db  41 ff d0                      call       r8 ; call(r8:64)
+0x00000002630813de  48 8d 0d 2b 00 00 00          lea        rcx,[263081410h] ; lea(rcx:64, ds:[rip+10251408400]:0)
+0x00000002630813e5  48 83 c4 38                   add        rsp,38h ; add(rsp:64, 56#64)
+0x00000002630813e9  5b                            pop        rbx ; pop(rbx:64)
+0x00000002630813ea  5d                            pop        rbp ; pop(rbp:64)
+0x00000002630813eb  e9 40 ff ff ff                jmp        0000000263081330h ; jmp(@0x263081330)
+0x00000002630813f0  48 8d 05 59 ff ff ff          lea        rax,[263081350h] ; lea(rax:64, ds:[rip+10251408208]:0)
+0x00000002630813f7  4c 8d 05 42 ff ff ff          lea        r8,[263081340h] ; lea(r8:64, ds:[rip+10251408192]:0)
+0x00000002630813fe  48 89 05 fb 1b 00 00          mov        [263083000h],rax ; mov(ds:[rip+10251415552]:64, rax:64)
+0x0000000263081405  eb c6                         jmp        short 00000002630813CDh ; jmp(@0x2630813cd)
+0x0000000263081407  66 0f 1f 84 00 00 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __gcc_deregister_frame [0x0000000263081410..0x0000000263081450) (64 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, prologue
+;; ============================================================
+0x0000000263081410  55                            push       rbp ; push(rbp:64)
+0x0000000263081411  48 89 e5                      mov        rbp,rsp ; mov(rbp:64, rsp:64)
+0x0000000263081414  48 83 ec 20                   sub        rsp,20h ; sub(rsp:64, 32#64)
+0x0000000263081418  48 8b 05 e1 1b 00 00          mov        rax,[263083000h] ; mov(rax:64, ds:[rip+10251415552]:64)
+0x000000026308141f  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081422  74 09                         je         short 000000026308142Dh ; jcc.eq(@0x26308142d)
+0x0000000263081424  48 8d 0d d5 3b 00 00          lea        rcx,[263085000h] ; lea(rcx:64, ds:[rip+10251423744]:0)
+0x000000026308142b  ff d0                         call       rax ; call(rax:64)
+0x000000026308142d  48 8b 0d ec 6b 00 00          mov        rcx,[263088020h] ; mov(rcx:64, ds:[rip+10251436064]:64)
+0x0000000263081434  48 85 c9                      test       rcx,rcx ; test(rcx:64, rcx:64)
+0x0000000263081437  74 0f                         je         short 0000000263081448h ; jcc.eq(@0x263081448)
+0x0000000263081439  48 83 c4 20                   add        rsp,20h ; add(rsp:64, 32#64)
+0x000000026308143d  5d                            pop        rbp ; pop(rbp:64)
+0x000000026308143e  48 ff 25 63 8d 00 00          jmp        qword ptr [26308A1A8h] ; jmp(ds:[rip+10251444648]:64)
+0x0000000263081445  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081448  48 83 c4 20                   add        rsp,20h ; add(rsp:64, 32#64)
+0x000000026308144c  5d                            pop        rbp ; pop(rbp:64)
+0x000000026308144d  c3                            ret        ; ret
+0x000000026308144e  90                            nop        ; nop
+0x000000026308144f  90                            nop        ; nop
+
+;; ============================================================
+;; function __do_global_dtors [0x0000000263081450..0x00000002630814a0) (80 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081450  48 83 ec 28                   sub        rsp,28h ; sub(rsp:64, 40#64)
+0x0000000263081454  48 8b 05 b5 1b 00 00          mov        rax,[263083010h] ; mov(rax:64, ds:[rip+10251415568]:64)
+0x000000026308145b  48 8b 00                      mov        rax,[rax] ; mov(rax:64, ds:[rax]:64)
+0x000000026308145e  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081461  74 2a                         je         short 000000026308148Dh ; jcc.eq(@0x26308148d)
+0x0000000263081463  66 90                         xchg       ax,ax ; nop
+0x0000000263081465  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081470  ff d0                         call       rax ; call(rax:64)
+0x0000000263081472  48 8b 05 97 1b 00 00          mov        rax,[263083010h] ; mov(rax:64, ds:[rip+10251415568]:64)
+0x0000000263081479  48 8d 50 08                   lea        rdx,[rax+8] ; lea(rdx:64, ds:[rax+8]:0)
+0x000000026308147d  48 8b 40 08                   mov        rax,[rax+8] ; mov(rax:64, ds:[rax+8]:64)
+0x0000000263081481  48 89 15 88 1b 00 00          mov        [263083010h],rdx ; mov(ds:[rip+10251415568]:64, rdx:64)
+0x0000000263081488  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x000000026308148b  75 e3                         jne        short 0000000263081470h ; jcc.ne(@0x263081470)
+0x000000026308148d  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x0000000263081491  c3                            ret        ; ret
+0x0000000263081492  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081495  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __do_global_ctors [0x00000002630814a0..0x0000000263081520) (128 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x00000002630814a0  56                            push       rsi ; push(rsi:64)
+0x00000002630814a1  53                            push       rbx ; push(rbx:64)
+0x00000002630814a2  48 83 ec 28                   sub        rsp,28h ; sub(rsp:64, 40#64)
+0x00000002630814a6  48 8b 15 c3 2d 00 00          mov        rdx,[263084270h] ; mov(rdx:64, ds:[rip+10251420272]:64)
+0x00000002630814ad  48 8b 02                      mov        rax,[rdx] ; mov(rax:64, ds:[rdx]:64)
+0x00000002630814b0  89 c1                         mov        ecx,eax ; mov(ecx:32, eax:32)
+0x00000002630814b2  83 f8 ff                      cmp        eax,0FFFFFFFFh ; cmp(eax:32, -1#32)
+0x00000002630814b5  74 39                         je         short 00000002630814F0h ; jcc.eq(@0x2630814f0)
+0x00000002630814b7  85 c9                         test       ecx,ecx ; test(ecx:32, ecx:32)
+0x00000002630814b9  74 20                         je         short 00000002630814DBh ; jcc.eq(@0x2630814db)
+0x00000002630814bb  89 c8                         mov        eax,ecx ; mov(eax:32, ecx:32)
+0x00000002630814bd  83 e9 01                      sub        ecx,1 ; sub(ecx:32, 1#32)
+0x00000002630814c0  48 8d 1c c2                   lea        rbx,[rdx+rax*8] ; lea(rbx:64, ds:[rdx+rax*8]:0)
+0x00000002630814c4  48 29 c8                      sub        rax,rcx ; sub(rax:64, rcx:64)
+0x00000002630814c7  48 8d 74 c2 f8                lea        rsi,[rdx+rax*8-8] ; lea(rsi:64, ds:[rdx+rax*8-8]:0)
+0x00000002630814cc  0f 1f 40 00                   nop        [rax] ; nop
+0x00000002630814d0  ff 13                         call       qword ptr [rbx] ; call(ds:[rbx]:64)
+0x00000002630814d2  48 83 eb 08                   sub        rbx,8 ; sub(rbx:64, 8#64)
+0x00000002630814d6  48 39 f3                      cmp        rbx,rsi ; cmp(rbx:64, rsi:64)
+0x00000002630814d9  75 f5                         jne        short 00000002630814D0h ; jcc.ne(@0x2630814d0)
+0x00000002630814db  48 8d 0d 6e ff ff ff          lea        rcx,[263081450h] ; lea(rcx:64, ds:[rip+10251408464]:0)
+0x00000002630814e2  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x00000002630814e6  5b                            pop        rbx ; pop(rbx:64)
+0x00000002630814e7  5e                            pop        rsi ; pop(rsi:64)
+0x00000002630814e8  e9 43 fe ff ff                jmp        0000000263081330h ; jmp(@0x263081330)
+0x00000002630814ed  0f 1f 00                      nop        [rax] ; nop
+0x00000002630814f0  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x00000002630814f2  0f 1f 00                      nop        [rax] ; nop
+0x00000002630814f5  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081500  44 8d 40 01                   lea        r8d,[rax+1] ; lea(r8d:32, ds:[rax+1]:0)
+0x0000000263081504  89 c1                         mov        ecx,eax ; mov(ecx:32, eax:32)
+0x0000000263081506  4c 89 c0                      mov        rax,r8 ; mov(rax:64, r8:64)
+0x0000000263081509  4a 83 3c c2 00                cmp        qword ptr [rdx+r8*8],0 ; cmp(ds:[rdx+r8*8]:64, 0#64)
+0x000000026308150e  75 f0                         jne        short 0000000263081500h ; jcc.ne(@0x263081500)
+0x0000000263081510  eb a5                         jmp        short 00000002630814B7h ; jmp(@0x2630814b7)
+0x0000000263081512  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081515  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __main [0x0000000263081520..0x0000000263081540) (32 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263081520  8b 05 5a 6b 00 00             mov        eax,[263088080h] ; mov(eax:32, ds:[rip+10251436160]:32)
+0x0000000263081526  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081528  74 06                         je         short 0000000263081530h ; jcc.eq(@0x263081530)
+0x000000026308152a  c3                            ret        ; ret
+0x000000026308152b  0f 1f 44 00 00                nop        [rax+rax] ; nop
+0x0000000263081530  c7 05 46 6b 00 00 01 00 .     mov        dword ptr [263088080h],1 ; mov(ds:[rip+10251436160]:32, 1#32)
+0x000000026308153a  e9 61 ff ff ff                jmp        00000002630814A0h ; jmp(@0x2630814a0)
+0x000000026308153f  90                            nop        ; nop
+
+;; ============================================================
+;; function __dyn_tls_dtor [0x0000000263081540..0x0000000263081560) (32 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081540  83 fa 03                      cmp        edx,3 ; cmp(edx:32, 3#32)
+0x0000000263081543  74 0b                         je         short 0000000263081550h ; jcc.eq(@0x263081550)
+0x0000000263081545  85 d2                         test       edx,edx ; test(edx:32, edx:32)
+0x0000000263081547  74 07                         je         short 0000000263081550h ; jcc.eq(@0x263081550)
+0x0000000263081549  c3                            ret        ; ret
+0x000000026308154a  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x0000000263081550  e9 9b 07 00 00                jmp        0000000263081CF0h ; jmp(@0x263081cf0)
+0x0000000263081555  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __dyn_tls_init [0x0000000263081560..0x00000002630815e0) (128 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081560  56                            push       rsi ; push(rsi:64)
+0x0000000263081561  53                            push       rbx ; push(rbx:64)
+0x0000000263081562  48 83 ec 28                   sub        rsp,28h ; sub(rsp:64, 40#64)
+0x0000000263081566  48 8b 05 f3 2c 00 00          mov        rax,[263084260h] ; mov(rax:64, ds:[rip+10251420256]:64)
+0x000000026308156d  83 38 02                      cmp        dword ptr [rax],2 ; cmp(ds:[rax]:32, 2#32)
+0x0000000263081570  74 06                         je         short 0000000263081578h ; jcc.eq(@0x263081578)
+0x0000000263081572  c7 00 02 00 00 00             mov        dword ptr [rax],2 ; mov(ds:[rax]:32, 2#32)
+0x0000000263081578  83 fa 02                      cmp        edx,2 ; cmp(edx:32, 2#32)
+0x000000026308157b  74 13                         je         short 0000000263081590h ; jcc.eq(@0x263081590)
+0x000000026308157d  83 fa 01                      cmp        edx,1 ; cmp(edx:32, 1#32)
+0x0000000263081580  74 4e                         je         short 00000002630815D0h ; jcc.eq(@0x2630815d0)
+0x0000000263081582  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x0000000263081586  5b                            pop        rbx ; pop(rbx:64)
+0x0000000263081587  5e                            pop        rsi ; pop(rsi:64)
+0x0000000263081588  c3                            ret        ; ret
+0x0000000263081589  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x0000000263081590  48 8d 1d 19 2e 00 00          lea        rbx,[2630843B0h] ; lea(rbx:64, ds:[rip+10251420592]:0)
+0x0000000263081597  48 8d 35 12 2e 00 00          lea        rsi,[2630843B0h] ; lea(rsi:64, ds:[rip+10251420592]:0)
+0x000000026308159e  48 39 f3                      cmp        rbx,rsi ; cmp(rbx:64, rsi:64)
+0x00000002630815a1  74 df                         je         short 0000000263081582h ; jcc.eq(@0x263081582)
+0x00000002630815a3  66 90                         xchg       ax,ax ; nop
+0x00000002630815a5  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x00000002630815b0  48 8b 03                      mov        rax,[rbx] ; mov(rax:64, ds:[rbx]:64)
+0x00000002630815b3  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x00000002630815b6  74 02                         je         short 00000002630815BAh ; jcc.eq(@0x2630815ba)
+0x00000002630815b8  ff d0                         call       rax ; call(rax:64)
+0x00000002630815ba  48 83 c3 08                   add        rbx,8 ; add(rbx:64, 8#64)
+0x00000002630815be  48 39 f3                      cmp        rbx,rsi ; cmp(rbx:64, rsi:64)
+0x00000002630815c1  75 ed                         jne        short 00000002630815B0h ; jcc.ne(@0x2630815b0)
+0x00000002630815c3  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x00000002630815c7  5b                            pop        rbx ; pop(rbx:64)
+0x00000002630815c8  5e                            pop        rsi ; pop(rsi:64)
+0x00000002630815c9  c3                            ret        ; ret
+0x00000002630815ca  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x00000002630815d0  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x00000002630815d4  5b                            pop        rbx ; pop(rbx:64)
+0x00000002630815d5  5e                            pop        rsi ; pop(rsi:64)
+0x00000002630815d6  e9 15 07 00 00                jmp        0000000263081CF0h ; jmp(@0x263081cf0)
+0x00000002630815db  0f 1f 44 00 00                nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __tlregdtor [0x00000002630815e0..0x00000002630815f0) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x00000002630815e0  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x00000002630815e2  c3                            ret        ; ret
+0x00000002630815e3  90                            nop        ; nop
+0x00000002630815e4  90                            nop        ; nop
+0x00000002630815e5  90                            nop        ; nop
+0x00000002630815e6  90                            nop        ; nop
+0x00000002630815e7  90                            nop        ; nop
+0x00000002630815e8  90                            nop        ; nop
+0x00000002630815e9  90                            nop        ; nop
+0x00000002630815ea  90                            nop        ; nop
+0x00000002630815eb  90                            nop        ; nop
+0x00000002630815ec  90                            nop        ; nop
+0x00000002630815ed  90                            nop        ; nop
+0x00000002630815ee  90                            nop        ; nop
+0x00000002630815ef  90                            nop        ; nop
+
+;; ============================================================
+;; function __report_error [0x00000002630815f0..0x0000000263081650) (96 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x00000002630815f0  56                            push       rsi ; push(rsi:64)
+0x00000002630815f1  53                            push       rbx ; push(rbx:64)
+0x00000002630815f2  48 83 ec 38                   sub        rsp,38h ; sub(rsp:64, 56#64)
+0x00000002630815f6  48 89 cb                      mov        rbx,rcx ; mov(rbx:64, rcx:64)
+0x00000002630815f9  48 8d 44 24 58                lea        rax,[rsp+58h] ; lea(rax:64, ss:[rsp+88]:0)
+0x00000002630815fe  b9 02 00 00 00                mov        ecx,2 ; mov(ecx:32, 2#32)
+0x0000000263081603  4c 89 44 24 60                mov        [rsp+60h],r8 ; mov(ss:[rsp+96]:64, r8:64)
+0x0000000263081608  4c 89 4c 24 68                mov        [rsp+68h],r9 ; mov(ss:[rsp+104]:64, r9:64)
+0x000000026308160d  48 89 54 24 58                mov        [rsp+58h],rdx ; mov(ss:[rsp+88]:64, rdx:64)
+0x0000000263081612  48 89 44 24 28                mov        [rsp+28h],rax ; mov(ss:[rsp+40]:64, rax:64)
+0x0000000263081617  e8 04 0d 00 00                call       0000000263082320h ; call(@0x263082320)
+0x000000026308161c  48 8d 15 bd 2a 00 00          lea        rdx,[2630840E0h] ; lea(rdx:64, ds:[rip+10251419872]:0)
+0x0000000263081623  48 89 c1                      mov        rcx,rax ; mov(rcx:64, rax:64)
+0x0000000263081626  e8 55 0c 00 00                call       0000000263082280h ; call(@0x263082280)
+0x000000026308162b  48 8b 74 24 28                mov        rsi,[rsp+28h] ; mov(rsi:64, ss:[rsp+40]:64)
+0x0000000263081630  b9 02 00 00 00                mov        ecx,2 ; mov(ecx:32, 2#32)
+0x0000000263081635  e8 e6 0c 00 00                call       0000000263082320h ; call(@0x263082320)
+0x000000026308163a  48 89 da                      mov        rdx,rbx ; mov(rdx:64, rbx:64)
+0x000000026308163d  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x0000000263081640  48 89 c1                      mov        rcx,rax ; mov(rcx:64, rax:64)
+0x0000000263081643  e8 f8 0b 00 00                call       0000000263082240h ; call(@0x263082240)
+0x0000000263081648  e8 13 0d 00 00                call       0000000263082360h ; call(@0x263082360)
+0x000000026308164d  90                            nop        ; nop
+0x000000026308164e  66 90                         xchg       ax,ax ; nop
+
+;; ============================================================
+;; function mark_section_writable [0x0000000263081650..0x00000002630817c0) (368 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263081650  57                            push       rdi ; push(rdi:64)
+0x0000000263081651  56                            push       rsi ; push(rsi:64)
+0x0000000263081652  53                            push       rbx ; push(rbx:64)
+0x0000000263081653  48 83 ec 50                   sub        rsp,50h ; sub(rsp:64, 80#64)
+0x0000000263081657  48 63 35 66 6a 00 00          movsxd     rsi,[2630880C4h] ; mov(rsi:64, ds:[rip+10251436228]:32)
+0x000000026308165e  48 89 cb                      mov        rbx,rcx ; mov(rbx:64, rcx:64)
+0x0000000263081661  85 f6                         test       esi,esi ; test(esi:32, esi:32)
+0x0000000263081663  0f 8e 17 01 00 00             jle        0000000263081780h ; jcc.le(@0x263081780)
+0x0000000263081669  48 8b 05 58 6a 00 00          mov        rax,[2630880C8h] ; mov(rax:64, ds:[rip+10251436232]:64)
+0x0000000263081670  45 31 c9                      xor        r9d,r9d ; xor(r9d:32, r9d:32)
+0x0000000263081673  48 83 c0 18                   add        rax,18h ; add(rax:64, 24#64)
+0x0000000263081677  66 0f 1f 84 00 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081680  4c 8b 00                      mov        r8,[rax] ; mov(r8:64, ds:[rax]:64)
+0x0000000263081683  4c 39 c3                      cmp        rbx,r8 ; cmp(rbx:64, r8:64)
+0x0000000263081686  72 13                         jb         short 000000026308169Bh ; jcc.b(@0x26308169b)
+0x0000000263081688  48 8b 50 08                   mov        rdx,[rax+8] ; mov(rdx:64, ds:[rax+8]:64)
+0x000000026308168c  8b 52 08                      mov        edx,[rdx+8] ; mov(edx:32, ds:[rdx+8]:32)
+0x000000026308168f  49 01 d0                      add        r8,rdx ; add(r8:64, rdx:64)
+0x0000000263081692  4c 39 c3                      cmp        rbx,r8 ; cmp(rbx:64, r8:64)
+0x0000000263081695  0f 82 8a 00 00 00             jb         0000000263081725h ; jcc.b(@0x263081725)
+0x000000026308169b  41 83 c1 01                   add        r9d,1 ; add(r9d:32, 1#32)
+0x000000026308169f  48 83 c0 28                   add        rax,28h ; add(rax:64, 40#64)
+0x00000002630816a3  41 39 f1                      cmp        r9d,esi ; cmp(r9d:32, esi:32)
+0x00000002630816a6  75 d8                         jne        short 0000000263081680h ; jcc.ne(@0x263081680)
+0x00000002630816a8  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x00000002630816ab  e8 80 08 00 00                call       0000000263081F30h ; call(@0x263081f30)
+0x00000002630816b0  48 89 c7                      mov        rdi,rax ; mov(rdi:64, rax:64)
+0x00000002630816b3  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x00000002630816b6  0f 84 e6 00 00 00             je         00000002630817A2h ; jcc.eq(@0x2630817a2)
+0x00000002630816bc  48 8b 05 05 6a 00 00          mov        rax,[2630880C8h] ; mov(rax:64, ds:[rip+10251436232]:64)
+0x00000002630816c3  48 8d 1c b6                   lea        rbx,[rsi+rsi*4] ; lea(rbx:64, ds:[rsi+rsi*4]:0)
+0x00000002630816c7  48 c1 e3 03                   shl        rbx,3 ; shl(rbx:64, 3#8)
+0x00000002630816cb  48 01 d8                      add        rax,rbx ; add(rax:64, rbx:64)
+0x00000002630816ce  48 89 78 20                   mov        [rax+20h],rdi ; mov(ds:[rax+32]:64, rdi:64)
+0x00000002630816d2  c7 00 00 00 00 00             mov        dword ptr [rax],0 ; mov(ds:[rax]:32, 0#32)
+0x00000002630816d8  e8 93 09 00 00                call       0000000263082070h ; call(@0x263082070)
+0x00000002630816dd  8b 57 0c                      mov        edx,[rdi+0Ch] ; mov(edx:32, ds:[rdi+12]:32)
+0x00000002630816e0  41 b8 30 00 00 00             mov        r8d,30h ; mov(r8d:32, 48#32)
+0x00000002630816e6  48 8d 0c 10                   lea        rcx,[rax+rdx] ; lea(rcx:64, ds:[rax+rdx*1]:0)
+0x00000002630816ea  48 8b 05 d7 69 00 00          mov        rax,[2630880C8h] ; mov(rax:64, ds:[rip+10251436232]:64)
+0x00000002630816f1  48 8d 54 24 20                lea        rdx,[rsp+20h] ; lea(rdx:64, ss:[rsp+32]:0)
+0x00000002630816f6  48 89 4c 18 18                mov        [rax+rbx+18h],rcx ; mov(ds:[rax+rbx*1+24]:64, rcx:64)
+0x00000002630816fb  ff 15 f7 8a 00 00             call       qword ptr [26308A1F8h] ; call(ds:[rip+10251444728]:64)
+0x0000000263081701  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081704  0f 84 7d 00 00 00             je         0000000263081787h ; jcc.eq(@0x263081787)
+0x000000026308170a  8b 44 24 44                   mov        eax,[rsp+44h] ; mov(eax:32, ss:[rsp+68]:32)
+0x000000026308170e  8d 50 fc                      lea        edx,[rax-4] ; lea(edx:32, ds:[rax-4]:0)
+0x0000000263081711  83 e2 fb                      and        edx,0FFFFFFFBh ; and(edx:32, -5#32)
+0x0000000263081714  74 08                         je         short 000000026308171Eh ; jcc.eq(@0x26308171e)
+0x0000000263081716  8d 50 c0                      lea        edx,[rax-40h] ; lea(edx:32, ds:[rax-64]:0)
+0x0000000263081719  83 e2 bf                      and        edx,0FFFFFFBFh ; and(edx:32, -65#32)
+0x000000026308171c  75 12                         jne        short 0000000263081730h ; jcc.ne(@0x263081730)
+0x000000026308171e  83 05 9f 69 00 00 01          add        dword ptr [2630880C4h],1 ; add(ds:[rip+10251436228]:32, 1#32)
+0x0000000263081725  48 83 c4 50                   add        rsp,50h ; add(rsp:64, 80#64)
+0x0000000263081729  5b                            pop        rbx ; pop(rbx:64)
+0x000000026308172a  5e                            pop        rsi ; pop(rsi:64)
+0x000000026308172b  5f                            pop        rdi ; pop(rdi:64)
+0x000000026308172c  c3                            ret        ; ret
+0x000000026308172d  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081730  83 f8 02                      cmp        eax,2 ; cmp(eax:32, 2#32)
+0x0000000263081733  48 8b 4c 24 20                mov        rcx,[rsp+20h] ; mov(rcx:64, ss:[rsp+32]:64)
+0x0000000263081738  48 8b 54 24 38                mov        rdx,[rsp+38h] ; mov(rdx:64, ss:[rsp+56]:64)
+0x000000026308173d  41 b8 40 00 00 00             mov        r8d,40h ; mov(r8d:32, 64#32)
+0x0000000263081743  b8 04 00 00 00                mov        eax,4 ; mov(eax:32, 4#32)
+0x0000000263081748  44 0f 44 c0                   cmove      r8d,eax ; opaque(cmove)
+0x000000026308174c  48 03 1d 75 69 00 00          add        rbx,[2630880C8h] ; add(rbx:64, ds:[rip+10251436232]:64)
+0x0000000263081753  48 89 4b 08                   mov        [rbx+8],rcx ; mov(ds:[rbx+8]:64, rcx:64)
+0x0000000263081757  49 89 d9                      mov        r9,rbx ; mov(r9:64, rbx:64)
+0x000000026308175a  48 89 53 10                   mov        [rbx+10h],rdx ; mov(ds:[rbx+16]:64, rdx:64)
+0x000000026308175e  ff 15 8c 8a 00 00             call       qword ptr [26308A1F0h] ; call(ds:[rip+10251444720]:64)
+0x0000000263081764  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081766  75 b6                         jne        short 000000026308171Eh ; jcc.ne(@0x26308171e)
+0x0000000263081768  ff 15 42 8a 00 00             call       qword ptr [26308A1B0h] ; call(ds:[rip+10251444656]:64)
+0x000000026308176e  48 8d 0d e3 29 00 00          lea        rcx,[263084158h] ; lea(rcx:64, ds:[rip+10251419992]:0)
+0x0000000263081775  89 c2                         mov        edx,eax ; mov(edx:32, eax:32)
+0x0000000263081777  e8 74 fe ff ff                call       00000002630815F0h ; call(@0x2630815f0)
+0x000000026308177c  0f 1f 40 00                   nop        [rax] ; nop
+0x0000000263081780  31 f6                         xor        esi,esi ; xor(esi:32, esi:32)
+0x0000000263081782  e9 21 ff ff ff                jmp        00000002630816A8h ; jmp(@0x2630816a8)
+0x0000000263081787  48 8b 05 3a 69 00 00          mov        rax,[2630880C8h] ; mov(rax:64, ds:[rip+10251436232]:64)
+0x000000026308178e  8b 57 08                      mov        edx,[rdi+8] ; mov(edx:32, ds:[rdi+8]:32)
+0x0000000263081791  48 8d 0d 88 29 00 00          lea        rcx,[263084120h] ; lea(rcx:64, ds:[rip+10251419936]:0)
+0x0000000263081798  4c 8b 44 18 18                mov        r8,[rax+rbx+18h] ; mov(r8:64, ds:[rax+rbx*1+24]:64)
+0x000000026308179d  e8 4e fe ff ff                call       00000002630815F0h ; call(@0x2630815f0)
+0x00000002630817a2  48 89 da                      mov        rdx,rbx ; mov(rdx:64, rbx:64)
+0x00000002630817a5  48 8d 0d 54 29 00 00          lea        rcx,[263084100h] ; lea(rcx:64, ds:[rip+10251419904]:0)
+0x00000002630817ac  e8 3f fe ff ff                call       00000002630815F0h ; call(@0x2630815f0)
+0x00000002630817b1  90                            nop        ; nop
+0x00000002630817b2  0f 1f 00                      nop        [rax] ; nop
+0x00000002630817b5  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function _pei386_runtime_relocator [0x00000002630817c0..0x0000000263081b60) (928 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x00000002630817c0  55                            push       rbp ; push(rbp:64)
+0x00000002630817c1  41 57                         push       r15 ; push(r15:64)
+0x00000002630817c3  41 56                         push       r14 ; push(r14:64)
+0x00000002630817c5  41 55                         push       r13 ; push(r13:64)
+0x00000002630817c7  41 54                         push       r12 ; push(r12:64)
+0x00000002630817c9  57                            push       rdi ; push(rdi:64)
+0x00000002630817ca  56                            push       rsi ; push(rsi:64)
+0x00000002630817cb  53                            push       rbx ; push(rbx:64)
+0x00000002630817cc  48 83 ec 48                   sub        rsp,48h ; sub(rsp:64, 72#64)
+0x00000002630817d0  48 8d 6c 24 40                lea        rbp,[rsp+40h] ; lea(rbp:64, ss:[rsp+64]:0)
+0x00000002630817d5  8b 35 e5 68 00 00             mov        esi,[2630880C0h] ; mov(esi:32, ds:[rip+10251436224]:32)
+0x00000002630817db  85 f6                         test       esi,esi ; test(esi:32, esi:32)
+0x00000002630817dd  74 11                         je         short 00000002630817F0h ; jcc.eq(@0x2630817f0)
+0x00000002630817df  48 8d 65 08                   lea        rsp,[rbp+8] ; lea(rsp:64, ss:[rbp+8]:0)
+0x00000002630817e3  5b                            pop        rbx ; pop(rbx:64)
+0x00000002630817e4  5e                            pop        rsi ; pop(rsi:64)
+0x00000002630817e5  5f                            pop        rdi ; pop(rdi:64)
+0x00000002630817e6  41 5c                         pop        r12 ; pop(r12:64)
+0x00000002630817e8  41 5d                         pop        r13 ; pop(r13:64)
+0x00000002630817ea  41 5e                         pop        r14 ; pop(r14:64)
+0x00000002630817ec  41 5f                         pop        r15 ; pop(r15:64)
+0x00000002630817ee  5d                            pop        rbp ; pop(rbp:64)
+0x00000002630817ef  c3                            ret        ; ret
+0x00000002630817f0  c7 05 c6 68 00 00 01 00 .     mov        dword ptr [2630880C0h],1 ; mov(ds:[rip+10251436224]:32, 1#32)
+0x00000002630817fa  e8 b1 07 00 00                call       0000000263081FB0h ; call(@0x263081fb0)
+0x00000002630817ff  48 98                         cdqe       ; opaque(cdqe)
+0x0000000263081801  48 8d 04 80                   lea        rax,[rax+rax*4] ; lea(rax:64, ds:[rax+rax*4]:0)
+0x0000000263081805  48 8d 04 c5 0f 00 00 00       lea        rax,[rax*8+0Fh] ; lea(rax:64, ds:[rax*8+15]:0)
+0x000000026308180d  48 83 e0 f0                   and        rax,0FFFFFFFFFFFFFFF0h ; and(rax:64, -16#64)
+0x0000000263081811  e8 ea 09 00 00                call       0000000263082200h ; call(@0x263082200)
+0x0000000263081816  48 8b 3d 73 2a 00 00          mov        rdi,[263084290h] ; mov(rdi:64, ds:[rip+10251420304]:64)
+0x000000026308181d  48 8b 1d 7c 2a 00 00          mov        rbx,[2630842A0h] ; mov(rbx:64, ds:[rip+10251420320]:64)
+0x0000000263081824  48 29 c4                      sub        rsp,rax ; sub(rsp:64, rax:64)
+0x0000000263081827  c7 05 93 68 00 00 00 00 .     mov        dword ptr [2630880C4h],0 ; mov(ds:[rip+10251436228]:32, 0#32)
+0x0000000263081831  48 8d 44 24 30                lea        rax,[rsp+30h] ; lea(rax:64, ss:[rsp+48]:0)
+0x0000000263081836  48 89 05 8b 68 00 00          mov        [2630880C8h],rax ; mov(ds:[rip+10251436232]:64, rax:64)
+0x000000026308183d  48 89 f8                      mov        rax,rdi ; mov(rax:64, rdi:64)
+0x0000000263081840  48 29 d8                      sub        rax,rbx ; sub(rax:64, rbx:64)
+0x0000000263081843  48 83 f8 07                   cmp        rax,7 ; cmp(rax:64, 7#64)
+0x0000000263081847  7e 96                         jle        short 00000002630817DFh ; jcc.le(@0x2630817df)
+0x0000000263081849  48 83 f8 0b                   cmp        rax,0Bh ; cmp(rax:64, 11#64)
+0x000000026308184d  0f 8f 85 01 00 00             jg         00000002630819D8h ; jcc.gt(@0x2630819d8)
+0x0000000263081853  8b 13                         mov        edx,[rbx] ; mov(edx:32, ds:[rbx]:32)
+0x0000000263081855  85 d2                         test       edx,edx ; test(edx:32, edx:32)
+0x0000000263081857  0f 85 90 01 00 00             jne        00000002630819EDh ; jcc.ne(@0x2630819ed)
+0x000000026308185d  8b 43 04                      mov        eax,[rbx+4] ; mov(eax:32, ds:[rbx+4]:32)
+0x0000000263081860  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081862  0f 85 85 01 00 00             jne        00000002630819EDh ; jcc.ne(@0x2630819ed)
+0x0000000263081868  8b 53 08                      mov        edx,[rbx+8] ; mov(edx:32, ds:[rbx+8]:32)
+0x000000026308186b  83 fa 01                      cmp        edx,1 ; cmp(edx:32, 1#32)
+0x000000026308186e  0f 85 cf 02 00 00             jne        0000000263081B43h ; jcc.ne(@0x263081b43)
+0x0000000263081874  48 83 c3 0c                   add        rbx,0Ch ; add(rbx:64, 12#64)
+0x0000000263081878  4c 8b 35 01 2a 00 00          mov        r14,[263084280h] ; mov(r14:64, ds:[rip+10251420288]:64)
+0x000000026308187f  4c 8d 65 f8                   lea        r12,[rbp-8] ; lea(r12:64, ss:[rbp-8]:0)
+0x0000000263081883  48 39 fb                      cmp        rbx,rdi ; cmp(rbx:64, rdi:64)
+0x0000000263081886  72 7c                         jb         short 0000000263081904h ; jcc.b(@0x263081904)
+0x0000000263081888  e9 52 ff ff ff                jmp        00000002630817DFh ; jmp(@0x2630817df)
+0x000000026308188d  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081890  83 fa 08                      cmp        edx,8 ; cmp(edx:32, 8#32)
+0x0000000263081893  0f 84 1f 02 00 00             je         0000000263081AB8h ; jcc.eq(@0x263081ab8)
+0x0000000263081899  83 fa 10                      cmp        edx,10h ; cmp(edx:32, 16#32)
+0x000000026308189c  0f 85 79 02 00 00             jne        0000000263081B1Bh ; jcc.ne(@0x263081b1b)
+0x00000002630818a2  41 0f b7 07                   movzx      eax,word ptr [r15] ; mov(eax:32, ds:[r15]:16)
+0x00000002630818a6  66 85 c0                      test       ax,ax ; test(ax:16, ax:16)
+0x00000002630818a9  79 06                         jns        short 00000002630818B1h ; jcc.ns(@0x2630818b1)
+0x00000002630818ab  48 0d 00 00 ff ff             or         rax,0FFFFFFFFFFFF0000h ; or(rax:64, -65536#64)
+0x00000002630818b1  4c 29 c0                      sub        rax,r8 ; sub(rax:64, r8:64)
+0x00000002630818b4  4c 01 c8                      add        rax,r9 ; add(rax:64, r9:64)
+0x00000002630818b7  81 e1 c0 00 00 00             and        ecx,0C0h ; and(ecx:32, 192#32)
+0x00000002630818bd  48 89 45 f8                   mov        [rbp-8],rax ; mov(ss:[rbp-8]:64, rax:64)
+0x00000002630818c1  75 18                         jne        short 00000002630818DBh ; jcc.ne(@0x2630818db)
+0x00000002630818c3  48 3d ff ff 00 00             cmp        rax,0FFFFh ; cmp(rax:64, 65535#64)
+0x00000002630818c9  0f 8f 60 02 00 00             jg         0000000263081B2Fh ; jcc.gt(@0x263081b2f)
+0x00000002630818cf  48 3d 00 80 ff ff             cmp        rax,0FFFFFFFFFFFF8000h ; cmp(rax:64, -32768#64)
+0x00000002630818d5  0f 8c 54 02 00 00             jl         0000000263081B2Fh ; jcc.lt(@0x263081b2f)
+0x00000002630818db  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x00000002630818de  4d 89 e5                      mov        r13,r12 ; mov(r13:64, r12:64)
+0x00000002630818e1  e8 6a fd ff ff                call       0000000263081650h ; call(@0x263081650)
+0x00000002630818e6  41 b8 02 00 00 00             mov        r8d,2 ; mov(r8d:32, 2#32)
+0x00000002630818ec  4c 89 e2                      mov        rdx,r12 ; mov(rdx:64, r12:64)
+0x00000002630818ef  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x00000002630818f2  e8 71 0a 00 00                call       0000000263082368h ; call(@0x263082368)
+0x00000002630818f7  48 83 c3 0c                   add        rbx,0Ch ; add(rbx:64, 12#64)
+0x00000002630818fb  48 39 fb                      cmp        rbx,rdi ; cmp(rbx:64, rdi:64)
+0x00000002630818fe  0f 83 7c 00 00 00             jae        0000000263081980h ; jcc.ae(@0x263081980)
+0x0000000263081904  44 8b 03                      mov        r8d,[rbx] ; mov(r8d:32, ds:[rbx]:32)
+0x0000000263081907  8b 4b 08                      mov        ecx,[rbx+8] ; mov(ecx:32, ds:[rbx+8]:32)
+0x000000026308190a  44 8b 7b 04                   mov        r15d,[rbx+4] ; mov(r15d:32, ds:[rbx+4]:32)
+0x000000026308190e  4d 01 f0                      add        r8,r14 ; add(r8:64, r14:64)
+0x0000000263081911  0f b6 d1                      movzx      edx,cl ; mov(edx:32, cl:8)
+0x0000000263081914  4d 8b 08                      mov        r9,[r8] ; mov(r9:64, ds:[r8]:64)
+0x0000000263081917  4d 01 f7                      add        r15,r14 ; add(r15:64, r14:64)
+0x000000026308191a  83 fa 20                      cmp        edx,20h ; cmp(edx:32, 32#32)
+0x000000026308191d  0f 84 2d 01 00 00             je         0000000263081A50h ; jcc.eq(@0x263081a50)
+0x0000000263081923  0f 86 67 ff ff ff             jbe        0000000263081890h ; jcc.be(@0x263081890)
+0x0000000263081929  83 fa 40                      cmp        edx,40h ; cmp(edx:32, 64#32)
+0x000000026308192c  0f 85 e9 01 00 00             jne        0000000263081B1Bh ; jcc.ne(@0x263081b1b)
+0x0000000263081932  49 8b 07                      mov        rax,[r15] ; mov(rax:64, ds:[r15]:64)
+0x0000000263081935  4c 29 c0                      sub        rax,r8 ; sub(rax:64, r8:64)
+0x0000000263081938  4c 01 c8                      add        rax,r9 ; add(rax:64, r9:64)
+0x000000026308193b  81 e1 c0 00 00 00             and        ecx,0C0h ; and(ecx:32, 192#32)
+0x0000000263081941  48 89 45 f8                   mov        [rbp-8],rax ; mov(ss:[rbp-8]:64, rax:64)
+0x0000000263081945  75 09                         jne        short 0000000263081950h ; jcc.ne(@0x263081950)
+0x0000000263081947  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x000000026308194a  0f 89 df 01 00 00             jns        0000000263081B2Fh ; jcc.ns(@0x263081b2f)
+0x0000000263081950  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x0000000263081953  48 83 c3 0c                   add        rbx,0Ch ; add(rbx:64, 12#64)
+0x0000000263081957  4d 89 e5                      mov        r13,r12 ; mov(r13:64, r12:64)
+0x000000026308195a  e8 f1 fc ff ff                call       0000000263081650h ; call(@0x263081650)
+0x000000026308195f  41 b8 08 00 00 00             mov        r8d,8 ; mov(r8d:32, 8#32)
+0x0000000263081965  4c 89 e2                      mov        rdx,r12 ; mov(rdx:64, r12:64)
+0x0000000263081968  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x000000026308196b  e8 f8 09 00 00                call       0000000263082368h ; call(@0x263082368)
+0x0000000263081970  48 39 fb                      cmp        rbx,rdi ; cmp(rbx:64, rdi:64)
+0x0000000263081973  72 8f                         jb         short 0000000263081904h ; jcc.b(@0x263081904)
+0x0000000263081975  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081980  8b 05 3e 67 00 00             mov        eax,[2630880C4h] ; mov(eax:32, ds:[rip+10251436228]:32)
+0x0000000263081986  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081988  0f 8e 51 fe ff ff             jle        00000002630817DFh ; jcc.le(@0x2630817df)
+0x000000026308198e  48 8b 3d 5b 88 00 00          mov        rdi,[26308A1F0h] ; mov(rdi:64, ds:[rip+10251444720]:64)
+0x0000000263081995  31 db                         xor        ebx,ebx ; xor(ebx:32, ebx:32)
+0x0000000263081997  66 0f 1f 84 00 00 00 00 .     nop        [rax+rax] ; nop
+0x00000002630819a0  48 8b 05 21 67 00 00          mov        rax,[2630880C8h] ; mov(rax:64, ds:[rip+10251436232]:64)
+0x00000002630819a7  48 01 d8                      add        rax,rbx ; add(rax:64, rbx:64)
+0x00000002630819aa  44 8b 00                      mov        r8d,[rax] ; mov(r8d:32, ds:[rax]:32)
+0x00000002630819ad  45 85 c0                      test       r8d,r8d ; test(r8d:32, r8d:32)
+0x00000002630819b0  74 0d                         je         short 00000002630819BFh ; jcc.eq(@0x2630819bf)
+0x00000002630819b2  48 8b 50 10                   mov        rdx,[rax+10h] ; mov(rdx:64, ds:[rax+16]:64)
+0x00000002630819b6  48 8b 48 08                   mov        rcx,[rax+8] ; mov(rcx:64, ds:[rax+8]:64)
+0x00000002630819ba  4d 89 e9                      mov        r9,r13 ; mov(r9:64, r13:64)
+0x00000002630819bd  ff d7                         call       rdi ; call(rdi:64)
+0x00000002630819bf  83 c6 01                      add        esi,1 ; add(esi:32, 1#32)
+0x00000002630819c2  48 83 c3 28                   add        rbx,28h ; add(rbx:64, 40#64)
+0x00000002630819c6  3b 35 f8 66 00 00             cmp        esi,[2630880C4h] ; cmp(esi:32, ds:[rip+10251436228]:32)
+0x00000002630819cc  7c d2                         jl         short 00000002630819A0h ; jcc.lt(@0x2630819a0)
+0x00000002630819ce  e9 0c fe ff ff                jmp        00000002630817DFh ; jmp(@0x2630817df)
+0x00000002630819d3  0f 1f 44 00 00                nop        [rax+rax] ; nop
+0x00000002630819d8  44 8b 0b                      mov        r9d,[rbx] ; mov(r9d:32, ds:[rbx]:32)
+0x00000002630819db  45 85 c9                      test       r9d,r9d ; test(r9d:32, r9d:32)
+0x00000002630819de  75 0d                         jne        short 00000002630819EDh ; jcc.ne(@0x2630819ed)
+0x00000002630819e0  44 8b 43 04                   mov        r8d,[rbx+4] ; mov(r8d:32, ds:[rbx+4]:32)
+0x00000002630819e4  45 85 c0                      test       r8d,r8d ; test(r8d:32, r8d:32)
+0x00000002630819e7  0f 84 1a 01 00 00             je         0000000263081B07h ; jcc.eq(@0x263081b07)
+0x00000002630819ed  48 39 fb                      cmp        rbx,rdi ; cmp(rbx:64, rdi:64)
+0x00000002630819f0  0f 83 e9 fd ff ff             jae        00000002630817DFh ; jcc.ae(@0x2630817df)
+0x00000002630819f6  4c 8b 35 83 28 00 00          mov        r14,[263084280h] ; mov(r14:64, ds:[rip+10251420288]:64)
+0x00000002630819fd  4c 8d 6d f8                   lea        r13,[rbp-8] ; lea(r13:64, ss:[rbp-8]:0)
+0x0000000263081a01  0f 1f 40 00                   nop        [rax] ; nop
+0x0000000263081a05  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081a10  44 8b 63 04                   mov        r12d,[rbx+4] ; mov(r12d:32, ds:[rbx+4]:32)
+0x0000000263081a14  8b 03                         mov        eax,[rbx] ; mov(eax:32, ds:[rbx]:32)
+0x0000000263081a16  48 83 c3 08                   add        rbx,8 ; add(rbx:64, 8#64)
+0x0000000263081a1a  43 03 04 26                   add        eax,[r14+r12] ; add(eax:32, ds:[r14+r12*1]:32)
+0x0000000263081a1e  4b 8d 0c 34                   lea        rcx,[r12+r14] ; lea(rcx:64, ds:[r12+r14*1]:0)
+0x0000000263081a22  89 45 f8                      mov        [rbp-8],eax ; mov(ss:[rbp-8]:32, eax:32)
+0x0000000263081a25  e8 26 fc ff ff                call       0000000263081650h ; call(@0x263081650)
+0x0000000263081a2a  41 b8 04 00 00 00             mov        r8d,4 ; mov(r8d:32, 4#32)
+0x0000000263081a30  4c 89 ea                      mov        rdx,r13 ; mov(rdx:64, r13:64)
+0x0000000263081a33  4b 8d 0c 34                   lea        rcx,[r12+r14] ; lea(rcx:64, ds:[r12+r14*1]:0)
+0x0000000263081a37  e8 2c 09 00 00                call       0000000263082368h ; call(@0x263082368)
+0x0000000263081a3c  48 39 fb                      cmp        rbx,rdi ; cmp(rbx:64, rdi:64)
+0x0000000263081a3f  72 cf                         jb         short 0000000263081A10h ; jcc.b(@0x263081a10)
+0x0000000263081a41  e9 3a ff ff ff                jmp        0000000263081980h ; jmp(@0x263081980)
+0x0000000263081a46  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081a50  41 8b 07                      mov        eax,[r15] ; mov(eax:32, ds:[r15]:32)
+0x0000000263081a53  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081a55  79 0d                         jns        short 0000000263081A64h ; jcc.ns(@0x263081a64)
+0x0000000263081a57  49 bb 00 00 00 00 ff ff .     mov        r11,0FFFFFFFF00000000h ; mov(r11:64, -4294967296#64)
+0x0000000263081a61  4c 09 d8                      or         rax,r11 ; or(rax:64, r11:64)
+0x0000000263081a64  4c 29 c0                      sub        rax,r8 ; sub(rax:64, r8:64)
+0x0000000263081a67  4c 01 c8                      add        rax,r9 ; add(rax:64, r9:64)
+0x0000000263081a6a  81 e1 c0 00 00 00             and        ecx,0C0h ; and(ecx:32, 192#32)
+0x0000000263081a70  48 89 45 f8                   mov        [rbp-8],rax ; mov(ss:[rbp-8]:64, rax:64)
+0x0000000263081a74  75 1a                         jne        short 0000000263081A90h ; jcc.ne(@0x263081a90)
+0x0000000263081a76  b9 ff ff ff ff                mov        ecx,0FFFFFFFFh ; mov(ecx:32, -1#32)
+0x0000000263081a7b  48 39 c8                      cmp        rax,rcx ; cmp(rax:64, rcx:64)
+0x0000000263081a7e  0f 8f ab 00 00 00             jg         0000000263081B2Fh ; jcc.gt(@0x263081b2f)
+0x0000000263081a84  48 3d 00 00 00 80             cmp        rax,0FFFFFFFF80000000h ; cmp(rax:64, -2147483648#64)
+0x0000000263081a8a  0f 8c 9f 00 00 00             jl         0000000263081B2Fh ; jcc.lt(@0x263081b2f)
+0x0000000263081a90  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x0000000263081a93  4d 89 e5                      mov        r13,r12 ; mov(r13:64, r12:64)
+0x0000000263081a96  e8 b5 fb ff ff                call       0000000263081650h ; call(@0x263081650)
+0x0000000263081a9b  41 b8 04 00 00 00             mov        r8d,4 ; mov(r8d:32, 4#32)
+0x0000000263081aa1  4c 89 e2                      mov        rdx,r12 ; mov(rdx:64, r12:64)
+0x0000000263081aa4  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x0000000263081aa7  e8 bc 08 00 00                call       0000000263082368h ; call(@0x263082368)
+0x0000000263081aac  e9 46 fe ff ff                jmp        00000002630818F7h ; jmp(@0x2630818f7)
+0x0000000263081ab1  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x0000000263081ab8  41 0f b6 07                   movzx      eax,byte ptr [r15] ; mov(eax:32, ds:[r15]:8)
+0x0000000263081abc  84 c0                         test       al,al ; test(al:8, al:8)
+0x0000000263081abe  79 06                         jns        short 0000000263081AC6h ; jcc.ns(@0x263081ac6)
+0x0000000263081ac0  48 0d 00 ff ff ff             or         rax,0FFFFFFFFFFFFFF00h ; or(rax:64, -256#64)
+0x0000000263081ac6  4c 29 c0                      sub        rax,r8 ; sub(rax:64, r8:64)
+0x0000000263081ac9  4c 01 c8                      add        rax,r9 ; add(rax:64, r9:64)
+0x0000000263081acc  81 e1 c0 00 00 00             and        ecx,0C0h ; and(ecx:32, 192#32)
+0x0000000263081ad2  48 89 45 f8                   mov        [rbp-8],rax ; mov(ss:[rbp-8]:64, rax:64)
+0x0000000263081ad6  75 0e                         jne        short 0000000263081AE6h ; jcc.ne(@0x263081ae6)
+0x0000000263081ad8  48 3d ff 00 00 00             cmp        rax,0FFh ; cmp(rax:64, 255#64)
+0x0000000263081ade  7f 4f                         jg         short 0000000263081B2Fh ; jcc.gt(@0x263081b2f)
+0x0000000263081ae0  48 83 f8 80                   cmp        rax,0FFFFFFFFFFFFFF80h ; cmp(rax:64, -128#64)
+0x0000000263081ae4  7c 49                         jl         short 0000000263081B2Fh ; jcc.lt(@0x263081b2f)
+0x0000000263081ae6  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x0000000263081ae9  4d 89 e5                      mov        r13,r12 ; mov(r13:64, r12:64)
+0x0000000263081aec  e8 5f fb ff ff                call       0000000263081650h ; call(@0x263081650)
+0x0000000263081af1  41 b8 01 00 00 00             mov        r8d,1 ; mov(r8d:32, 1#32)
+0x0000000263081af7  4c 89 e2                      mov        rdx,r12 ; mov(rdx:64, r12:64)
+0x0000000263081afa  4c 89 f9                      mov        rcx,r15 ; mov(rcx:64, r15:64)
+0x0000000263081afd  e8 66 08 00 00                call       0000000263082368h ; call(@0x263082368)
+0x0000000263081b02  e9 f0 fd ff ff                jmp        00000002630818F7h ; jmp(@0x2630818f7)
+0x0000000263081b07  8b 4b 08                      mov        ecx,[rbx+8] ; mov(ecx:32, ds:[rbx+8]:32)
+0x0000000263081b0a  85 c9                         test       ecx,ecx ; test(ecx:32, ecx:32)
+0x0000000263081b0c  0f 85 56 fd ff ff             jne        0000000263081868h ; jcc.ne(@0x263081868)
+0x0000000263081b12  48 83 c3 0c                   add        rbx,0Ch ; add(rbx:64, 12#64)
+0x0000000263081b16  e9 38 fd ff ff                jmp        0000000263081853h ; jmp(@0x263081853)
+0x0000000263081b1b  48 8d 0d 96 26 00 00          lea        rcx,[2630841B8h] ; lea(rcx:64, ds:[rip+10251420088]:0)
+0x0000000263081b22  48 c7 45 f8 00 00 00 00       mov        qword ptr [rbp-8],0 ; mov(ss:[rbp-8]:64, 0#64)
+0x0000000263081b2a  e8 c1 fa ff ff                call       00000002630815F0h ; call(@0x2630815f0)
+0x0000000263081b2f  48 89 44 24 20                mov        [rsp+20h],rax ; mov(ss:[rsp+32]:64, rax:64)
+0x0000000263081b34  4d 89 f8                      mov        r8,r15 ; mov(r8:64, r15:64)
+0x0000000263081b37  48 8d 0d aa 26 00 00          lea        rcx,[2630841E8h] ; lea(rcx:64, ds:[rip+10251420136]:0)
+0x0000000263081b3e  e8 ad fa ff ff                call       00000002630815F0h ; call(@0x2630815f0)
+0x0000000263081b43  48 8d 0d 36 26 00 00          lea        rcx,[263084180h] ; lea(rcx:64, ds:[rip+10251420032]:0)
+0x0000000263081b4a  e8 a1 fa ff ff                call       00000002630815F0h ; call(@0x2630815f0)
+0x0000000263081b4f  90                            nop        ; nop
+0x0000000263081b50  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081b5a  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __mingwthr_run_key_dtors.part.0 [0x0000000263081b60..0x0000000263081bd0) (112 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263081b60  55                            push       rbp ; push(rbp:64)
+0x0000000263081b61  57                            push       rdi ; push(rdi:64)
+0x0000000263081b62  56                            push       rsi ; push(rsi:64)
+0x0000000263081b63  53                            push       rbx ; push(rbx:64)
+0x0000000263081b64  48 83 ec 28                   sub        rsp,28h ; sub(rsp:64, 40#64)
+0x0000000263081b68  48 8d 0d 91 65 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081b6f  ff 15 2b 86 00 00             call       qword ptr [26308A1A0h] ; call(ds:[rip+10251444640]:64)
+0x0000000263081b75  48 8b 1d 64 65 00 00          mov        rbx,[2630880E0h] ; mov(rbx:64, ds:[rip+10251436256]:64)
+0x0000000263081b7c  48 85 db                      test       rbx,rbx ; test(rbx:64, rbx:64)
+0x0000000263081b7f  74 33                         je         short 0000000263081BB4h ; jcc.eq(@0x263081bb4)
+0x0000000263081b81  48 8b 2d 60 86 00 00          mov        rbp,[26308A1E8h] ; mov(rbp:64, ds:[rip+10251444712]:64)
+0x0000000263081b88  48 8b 3d 21 86 00 00          mov        rdi,[26308A1B0h] ; mov(rdi:64, ds:[rip+10251444656]:64)
+0x0000000263081b8f  90                            nop        ; nop
+0x0000000263081b90  8b 0b                         mov        ecx,[rbx] ; mov(ecx:32, ds:[rbx]:32)
+0x0000000263081b92  ff d5                         call       rbp ; call(rbp:64)
+0x0000000263081b94  48 89 c6                      mov        rsi,rax ; mov(rsi:64, rax:64)
+0x0000000263081b97  ff d7                         call       rdi ; call(rdi:64)
+0x0000000263081b99  48 85 f6                      test       rsi,rsi ; test(rsi:64, rsi:64)
+0x0000000263081b9c  74 0d                         je         short 0000000263081BABh ; jcc.eq(@0x263081bab)
+0x0000000263081b9e  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081ba0  75 09                         jne        short 0000000263081BABh ; jcc.ne(@0x263081bab)
+0x0000000263081ba2  48 8b 43 08                   mov        rax,[rbx+8] ; mov(rax:64, ds:[rbx+8]:64)
+0x0000000263081ba6  48 89 f1                      mov        rcx,rsi ; mov(rcx:64, rsi:64)
+0x0000000263081ba9  ff d0                         call       rax ; call(rax:64)
+0x0000000263081bab  48 8b 5b 10                   mov        rbx,[rbx+10h] ; mov(rbx:64, ds:[rbx+16]:64)
+0x0000000263081baf  48 85 db                      test       rbx,rbx ; test(rbx:64, rbx:64)
+0x0000000263081bb2  75 dc                         jne        short 0000000263081B90h ; jcc.ne(@0x263081b90)
+0x0000000263081bb4  48 8d 0d 45 65 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081bbb  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x0000000263081bbf  5b                            pop        rbx ; pop(rbx:64)
+0x0000000263081bc0  5e                            pop        rsi ; pop(rsi:64)
+0x0000000263081bc1  5f                            pop        rdi ; pop(rdi:64)
+0x0000000263081bc2  5d                            pop        rbp ; pop(rbp:64)
+0x0000000263081bc3  48 ff 25 06 86 00 00          jmp        qword ptr [26308A1D0h] ; jmp(ds:[rip+10251444688]:64)
+0x0000000263081bca  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function ___w64_mingwthr_add_key_dtor [0x0000000263081bd0..0x0000000263081c60) (144 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081bd0  48 83 ec 38                   sub        rsp,38h ; sub(rsp:64, 56#64)
+0x0000000263081bd4  8b 05 0e 65 00 00             mov        eax,[2630880E8h] ; mov(eax:32, ds:[rip+10251436264]:32)
+0x0000000263081bda  41 89 c9                      mov        r9d,ecx ; mov(r9d:32, ecx:32)
+0x0000000263081bdd  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081bdf  75 0f                         jne        short 0000000263081BF0h ; jcc.ne(@0x263081bf0)
+0x0000000263081be1  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081be3  48 83 c4 38                   add        rsp,38h ; add(rsp:64, 56#64)
+0x0000000263081be7  c3                            ret        ; ret
+0x0000000263081be8  0f 1f 84 00 00 00 00 00       nop        [rax+rax] ; nop
+0x0000000263081bf0  48 89 54 24 48                mov        [rsp+48h],rdx ; mov(ss:[rsp+72]:64, rdx:64)
+0x0000000263081bf5  b9 01 00 00 00                mov        ecx,1 ; mov(ecx:32, 1#32)
+0x0000000263081bfa  ba 18 00 00 00                mov        edx,18h ; mov(edx:32, 24#32)
+0x0000000263081bff  44 89 4c 24 40                mov        [rsp+40h],r9d ; mov(ss:[rsp+64]:32, r9d:32)
+0x0000000263081c04  e8 67 07 00 00                call       0000000263082370h ; call(@0x263082370)
+0x0000000263081c09  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081c0c  74 49                         je         short 0000000263081C57h ; jcc.eq(@0x263081c57)
+0x0000000263081c0e  44 8b 4c 24 40                mov        r9d,[rsp+40h] ; mov(r9d:32, ss:[rsp+64]:32)
+0x0000000263081c13  4c 8b 44 24 48                mov        r8,[rsp+48h] ; mov(r8:64, ss:[rsp+72]:64)
+0x0000000263081c18  48 89 44 24 28                mov        [rsp+28h],rax ; mov(ss:[rsp+40]:64, rax:64)
+0x0000000263081c1d  48 8d 0d dc 64 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081c24  44 89 08                      mov        [rax],r9d ; mov(ds:[rax]:32, r9d:32)
+0x0000000263081c27  4c 89 40 08                   mov        [rax+8],r8 ; mov(ds:[rax+8]:64, r8:64)
+0x0000000263081c2b  ff 15 6f 85 00 00             call       qword ptr [26308A1A0h] ; call(ds:[rip+10251444640]:64)
+0x0000000263081c31  48 8b 15 a8 64 00 00          mov        rdx,[2630880E0h] ; mov(rdx:64, ds:[rip+10251436256]:64)
+0x0000000263081c38  48 8b 44 24 28                mov        rax,[rsp+28h] ; mov(rax:64, ss:[rsp+40]:64)
+0x0000000263081c3d  48 8d 0d bc 64 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081c44  48 89 50 10                   mov        [rax+10h],rdx ; mov(ds:[rax+16]:64, rdx:64)
+0x0000000263081c48  48 89 05 91 64 00 00          mov        [2630880E0h],rax ; mov(ds:[rip+10251436256]:64, rax:64)
+0x0000000263081c4f  ff 15 7b 85 00 00             call       qword ptr [26308A1D0h] ; call(ds:[rip+10251444688]:64)
+0x0000000263081c55  eb 8a                         jmp        short 0000000263081BE1h ; jmp(@0x263081be1)
+0x0000000263081c57  b8 ff ff ff ff                mov        eax,0FFFFFFFFh ; mov(eax:32, -1#32)
+0x0000000263081c5c  eb 85                         jmp        short 0000000263081BE3h ; jmp(@0x263081be3)
+0x0000000263081c5e  66 90                         xchg       ax,ax ; nop
+
+;; ============================================================
+;; function ___w64_mingwthr_remove_key_dtor [0x0000000263081c60..0x0000000263081cf0) (144 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081c60  48 83 ec 28                   sub        rsp,28h ; sub(rsp:64, 40#64)
+0x0000000263081c64  8b 05 7e 64 00 00             mov        eax,[2630880E8h] ; mov(eax:32, ds:[rip+10251436264]:32)
+0x0000000263081c6a  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081c6c  75 0a                         jne        short 0000000263081C78h ; jcc.ne(@0x263081c78)
+0x0000000263081c6e  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081c70  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x0000000263081c74  c3                            ret        ; ret
+0x0000000263081c75  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081c78  89 4c 24 30                   mov        [rsp+30h],ecx ; mov(ss:[rsp+48]:32, ecx:32)
+0x0000000263081c7c  48 8d 0d 7d 64 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081c83  ff 15 17 85 00 00             call       qword ptr [26308A1A0h] ; call(ds:[rip+10251444640]:64)
+0x0000000263081c89  48 8b 0d 50 64 00 00          mov        rcx,[2630880E0h] ; mov(rcx:64, ds:[rip+10251436256]:64)
+0x0000000263081c90  48 85 c9                      test       rcx,rcx ; test(rcx:64, rcx:64)
+0x0000000263081c93  74 2e                         je         short 0000000263081CC3h ; jcc.eq(@0x263081cc3)
+0x0000000263081c95  8b 54 24 30                   mov        edx,[rsp+30h] ; mov(edx:32, ss:[rsp+48]:32)
+0x0000000263081c99  45 31 c0                      xor        r8d,r8d ; xor(r8d:32, r8d:32)
+0x0000000263081c9c  eb 0d                         jmp        short 0000000263081CABh ; jmp(@0x263081cab)
+0x0000000263081c9e  66 90                         xchg       ax,ax ; nop
+0x0000000263081ca0  49 89 c8                      mov        r8,rcx ; mov(r8:64, rcx:64)
+0x0000000263081ca3  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081ca6  74 1b                         je         short 0000000263081CC3h ; jcc.eq(@0x263081cc3)
+0x0000000263081ca8  48 89 c1                      mov        rcx,rax ; mov(rcx:64, rax:64)
+0x0000000263081cab  8b 01                         mov        eax,[rcx] ; mov(eax:32, ds:[rcx]:32)
+0x0000000263081cad  39 d0                         cmp        eax,edx ; cmp(eax:32, edx:32)
+0x0000000263081caf  48 8b 41 10                   mov        rax,[rcx+10h] ; mov(rax:64, ds:[rcx+16]:64)
+0x0000000263081cb3  75 eb                         jne        short 0000000263081CA0h ; jcc.ne(@0x263081ca0)
+0x0000000263081cb5  4d 85 c0                      test       r8,r8 ; test(r8:64, r8:64)
+0x0000000263081cb8  74 26                         je         short 0000000263081CE0h ; jcc.eq(@0x263081ce0)
+0x0000000263081cba  49 89 40 10                   mov        [r8+10h],rax ; mov(ds:[r8+16]:64, rax:64)
+0x0000000263081cbe  e8 b5 06 00 00                call       0000000263082378h ; call(@0x263082378)
+0x0000000263081cc3  48 8d 0d 36 64 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081cca  ff 15 00 85 00 00             call       qword ptr [26308A1D0h] ; call(ds:[rip+10251444688]:64)
+0x0000000263081cd0  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081cd2  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x0000000263081cd6  c3                            ret        ; ret
+0x0000000263081cd7  66 0f 1f 84 00 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081ce0  48 89 05 f9 63 00 00          mov        [2630880E0h],rax ; mov(ds:[rip+10251436256]:64, rax:64)
+0x0000000263081ce7  eb d5                         jmp        short 0000000263081CBEh ; jmp(@0x263081cbe)
+0x0000000263081ce9  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+
+;; ============================================================
+;; function __mingw_TLScallback [0x0000000263081cf0..0x0000000263081e00) (272 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081cf0  48 83 ec 38                   sub        rsp,38h ; sub(rsp:64, 56#64)
+0x0000000263081cf4  83 fa 02                      cmp        edx,2 ; cmp(edx:32, 2#32)
+0x0000000263081cf7  0f 84 bb 00 00 00             je         0000000263081DB8h ; jcc.eq(@0x263081db8)
+0x0000000263081cfd  77 29                         ja         short 0000000263081D28h ; jcc.a(@0x263081d28)
+0x0000000263081cff  85 d2                         test       edx,edx ; test(edx:32, edx:32)
+0x0000000263081d01  74 3d                         je         short 0000000263081D40h ; jcc.eq(@0x263081d40)
+0x0000000263081d03  8b 05 df 63 00 00             mov        eax,[2630880E8h] ; mov(eax:32, ds:[rip+10251436264]:32)
+0x0000000263081d09  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081d0b  0f 84 cf 00 00 00             je         0000000263081DE0h ; jcc.eq(@0x263081de0)
+0x0000000263081d11  c7 05 cd 63 00 00 01 00 .     mov        dword ptr [2630880E8h],1 ; mov(ds:[rip+10251436264]:32, 1#32)
+0x0000000263081d1b  b8 01 00 00 00                mov        eax,1 ; mov(eax:32, 1#32)
+0x0000000263081d20  48 83 c4 38                   add        rsp,38h ; add(rsp:64, 56#64)
+0x0000000263081d24  c3                            ret        ; ret
+0x0000000263081d25  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081d28  83 fa 03                      cmp        edx,3 ; cmp(edx:32, 3#32)
+0x0000000263081d2b  75 ee                         jne        short 0000000263081D1Bh ; jcc.ne(@0x263081d1b)
+0x0000000263081d2d  8b 05 b5 63 00 00             mov        eax,[2630880E8h] ; mov(eax:32, ds:[rip+10251436264]:32)
+0x0000000263081d33  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081d35  74 e4                         je         short 0000000263081D1Bh ; jcc.eq(@0x263081d1b)
+0x0000000263081d37  e8 24 fe ff ff                call       0000000263081B60h ; call(@0x263081b60)
+0x0000000263081d3c  eb dd                         jmp        short 0000000263081D1Bh ; jmp(@0x263081d1b)
+0x0000000263081d3e  66 90                         xchg       ax,ax ; nop
+0x0000000263081d40  8b 05 a2 63 00 00             mov        eax,[2630880E8h] ; mov(eax:32, ds:[rip+10251436264]:32)
+0x0000000263081d46  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081d48  0f 85 82 00 00 00             jne        0000000263081DD0h ; jcc.ne(@0x263081dd0)
+0x0000000263081d4e  8b 05 94 63 00 00             mov        eax,[2630880E8h] ; mov(eax:32, ds:[rip+10251436264]:32)
+0x0000000263081d54  83 f8 01                      cmp        eax,1 ; cmp(eax:32, 1#32)
+0x0000000263081d57  75 c2                         jne        short 0000000263081D1Bh ; jcc.ne(@0x263081d1b)
+0x0000000263081d59  48 8b 05 80 63 00 00          mov        rax,[2630880E0h] ; mov(rax:64, ds:[rip+10251436256]:64)
+0x0000000263081d60  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081d63  74 26                         je         short 0000000263081D8Bh ; jcc.eq(@0x263081d8b)
+0x0000000263081d65  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081d70  48 89 c1                      mov        rcx,rax ; mov(rcx:64, rax:64)
+0x0000000263081d73  48 8b 40 10                   mov        rax,[rax+10h] ; mov(rax:64, ds:[rax+16]:64)
+0x0000000263081d77  48 89 44 24 28                mov        [rsp+28h],rax ; mov(ss:[rsp+40]:64, rax:64)
+0x0000000263081d7c  e8 f7 05 00 00                call       0000000263082378h ; call(@0x263082378)
+0x0000000263081d81  48 8b 44 24 28                mov        rax,[rsp+28h] ; mov(rax:64, ss:[rsp+40]:64)
+0x0000000263081d86  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000263081d89  75 e5                         jne        short 0000000263081D70h ; jcc.ne(@0x263081d70)
+0x0000000263081d8b  48 8d 0d 6e 63 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081d92  48 c7 05 43 63 00 00 00 .     mov        qword ptr [2630880E0h],0 ; mov(ds:[rip+10251436256]:64, 0#64)
+0x0000000263081d9d  c7 05 41 63 00 00 00 00 .     mov        dword ptr [2630880E8h],0 ; mov(ds:[rip+10251436264]:32, 0#32)
+0x0000000263081da7  ff 15 eb 83 00 00             call       qword ptr [26308A198h] ; call(ds:[rip+10251444632]:64)
+0x0000000263081dad  e9 69 ff ff ff                jmp        0000000263081D1Bh ; jmp(@0x263081d1b)
+0x0000000263081db2  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x0000000263081db8  e8 43 00 00 00                call       0000000263081E00h ; call(@0x263081e00)
+0x0000000263081dbd  b8 01 00 00 00                mov        eax,1 ; mov(eax:32, 1#32)
+0x0000000263081dc2  48 83 c4 38                   add        rsp,38h ; add(rsp:64, 56#64)
+0x0000000263081dc6  c3                            ret        ; ret
+0x0000000263081dc7  66 0f 1f 84 00 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081dd0  e8 8b fd ff ff                call       0000000263081B60h ; call(@0x263081b60)
+0x0000000263081dd5  e9 74 ff ff ff                jmp        0000000263081D4Eh ; jmp(@0x263081d4e)
+0x0000000263081dda  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x0000000263081de0  48 8d 0d 19 63 00 00          lea        rcx,[263088100h] ; lea(rcx:64, ds:[rip+10251436288]:0)
+0x0000000263081de7  ff 15 db 83 00 00             call       qword ptr [26308A1C8h] ; call(ds:[rip+10251444680]:64)
+0x0000000263081ded  e9 1f ff ff ff                jmp        0000000263081D11h ; jmp(@0x263081d11)
+0x0000000263081df2  90                            nop        ; nop
+0x0000000263081df3  90                            nop        ; nop
+0x0000000263081df4  90                            nop        ; nop
+0x0000000263081df5  90                            nop        ; nop
+0x0000000263081df6  90                            nop        ; nop
+0x0000000263081df7  90                            nop        ; nop
+0x0000000263081df8  90                            nop        ; nop
+0x0000000263081df9  90                            nop        ; nop
+0x0000000263081dfa  90                            nop        ; nop
+0x0000000263081dfb  90                            nop        ; nop
+0x0000000263081dfc  90                            nop        ; nop
+0x0000000263081dfd  90                            nop        ; nop
+0x0000000263081dfe  90                            nop        ; nop
+0x0000000263081dff  90                            nop        ; nop
+
+;; ============================================================
+;; function _fpreset [0x0000000263081e00..0x0000000263081e10) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263081e00  db e3                         fninit     ; opaque(fninit)
+0x0000000263081e02  c3                            ret        ; ret
+0x0000000263081e03  90                            nop        ; nop
+0x0000000263081e04  90                            nop        ; nop
+0x0000000263081e05  90                            nop        ; nop
+0x0000000263081e06  90                            nop        ; nop
+0x0000000263081e07  90                            nop        ; nop
+0x0000000263081e08  90                            nop        ; nop
+0x0000000263081e09  90                            nop        ; nop
+0x0000000263081e0a  90                            nop        ; nop
+0x0000000263081e0b  90                            nop        ; nop
+0x0000000263081e0c  90                            nop        ; nop
+0x0000000263081e0d  90                            nop        ; nop
+0x0000000263081e0e  90                            nop        ; nop
+0x0000000263081e0f  90                            nop        ; nop
+
+;; ============================================================
+;; function _ValidateImageBase [0x0000000263081e10..0x0000000263081e40) (48 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081e10  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081e12  66 81 39 4d 5a                cmp        word ptr [rcx],5A4Dh ; cmp(ds:[rcx]:16, 23117#16)
+0x0000000263081e17  75 0f                         jne        short 0000000263081E28h ; jcc.ne(@0x263081e28)
+0x0000000263081e19  48 63 51 3c                   movsxd     rdx,[rcx+3Ch] ; mov(rdx:64, ds:[rcx+60]:32)
+0x0000000263081e1d  48 01 d1                      add        rcx,rdx ; add(rcx:64, rdx:64)
+0x0000000263081e20  81 39 50 45 00 00             cmp        dword ptr [rcx],4550h ; cmp(ds:[rcx]:32, 17744#32)
+0x0000000263081e26  74 08                         je         short 0000000263081E30h ; jcc.eq(@0x263081e30)
+0x0000000263081e28  c3                            ret        ; ret
+0x0000000263081e29  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x0000000263081e30  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081e32  66 81 79 18 0b 02             cmp        word ptr [rcx+18h],20Bh ; cmp(ds:[rcx+24]:16, 523#16)
+0x0000000263081e38  0f 94 c0                      sete       al ; opaque(sete)
+0x0000000263081e3b  c3                            ret        ; ret
+0x0000000263081e3c  0f 1f 40 00                   nop        [rax] ; nop
+
+;; ============================================================
+;; function _FindPESection [0x0000000263081e40..0x0000000263081e90) (80 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081e40  48 63 41 3c                   movsxd     rax,[rcx+3Ch] ; mov(rax:64, ds:[rcx+60]:32)
+0x0000000263081e44  48 01 c8                      add        rax,rcx ; add(rax:64, rcx:64)
+0x0000000263081e47  0f b7 48 06                   movzx      ecx,word ptr [rax+6] ; mov(ecx:32, ds:[rax+6]:16)
+0x0000000263081e4b  66 85 c9                      test       cx,cx ; test(cx:16, cx:16)
+0x0000000263081e4e  74 3d                         je         short 0000000263081E8Dh ; jcc.eq(@0x263081e8d)
+0x0000000263081e50  44 0f b7 40 14                movzx      r8d,word ptr [rax+14h] ; mov(r8d:32, ds:[rax+20]:16)
+0x0000000263081e55  83 e9 01                      sub        ecx,1 ; sub(ecx:32, 1#32)
+0x0000000263081e58  48 8d 0c 89                   lea        rcx,[rcx+rcx*4] ; lea(rcx:64, ds:[rcx+rcx*4]:0)
+0x0000000263081e5c  4a 8d 44 00 18                lea        rax,[rax+r8+18h] ; lea(rax:64, ds:[rax+r8*1+24]:0)
+0x0000000263081e61  4c 8d 4c c8 28                lea        r9,[rax+rcx*8+28h] ; lea(r9:64, ds:[rax+rcx*8+40]:0)
+0x0000000263081e66  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081e70  44 8b 40 0c                   mov        r8d,[rax+0Ch] ; mov(r8d:32, ds:[rax+12]:32)
+0x0000000263081e74  4c 89 c1                      mov        rcx,r8 ; mov(rcx:64, r8:64)
+0x0000000263081e77  4c 39 c2                      cmp        rdx,r8 ; cmp(rdx:64, r8:64)
+0x0000000263081e7a  72 08                         jb         short 0000000263081E84h ; jcc.b(@0x263081e84)
+0x0000000263081e7c  03 48 08                      add        ecx,[rax+8] ; add(ecx:32, ds:[rax+8]:32)
+0x0000000263081e7f  48 39 ca                      cmp        rdx,rcx ; cmp(rdx:64, rcx:64)
+0x0000000263081e82  72 0b                         jb         short 0000000263081E8Fh ; jcc.b(@0x263081e8f)
+0x0000000263081e84  48 83 c0 28                   add        rax,28h ; add(rax:64, 40#64)
+0x0000000263081e88  4c 39 c8                      cmp        rax,r9 ; cmp(rax:64, r9:64)
+0x0000000263081e8b  75 e3                         jne        short 0000000263081E70h ; jcc.ne(@0x263081e70)
+0x0000000263081e8d  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081e8f  c3                            ret        ; ret
+
+;; ============================================================
+;; function _FindPESectionByName [0x0000000263081e90..0x0000000263081f30) (160 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081e90  55                            push       rbp ; push(rbp:64)
+0x0000000263081e91  57                            push       rdi ; push(rdi:64)
+0x0000000263081e92  56                            push       rsi ; push(rsi:64)
+0x0000000263081e93  53                            push       rbx ; push(rbx:64)
+0x0000000263081e94  48 83 ec 28                   sub        rsp,28h ; sub(rsp:64, 40#64)
+0x0000000263081e98  48 89 cf                      mov        rdi,rcx ; mov(rdi:64, rcx:64)
+0x0000000263081e9b  e8 70 04 00 00                call       0000000263082310h ; call(@0x263082310)
+0x0000000263081ea0  48 83 f8 08                   cmp        rax,8 ; cmp(rax:64, 8#64)
+0x0000000263081ea4  77 0e                         ja         short 0000000263081EB4h ; jcc.a(@0x263081eb4)
+0x0000000263081ea6  48 8b 05 d3 23 00 00          mov        rax,[263084280h] ; mov(rax:64, ds:[rip+10251420288]:64)
+0x0000000263081ead  66 81 38 4d 5a                cmp        word ptr [rax],5A4Dh ; cmp(ds:[rax]:16, 23117#16)
+0x0000000263081eb2  74 14                         je         short 0000000263081EC8h ; jcc.eq(@0x263081ec8)
+0x0000000263081eb4  31 db                         xor        ebx,ebx ; xor(ebx:32, ebx:32)
+0x0000000263081eb6  48 89 d8                      mov        rax,rbx ; mov(rax:64, rbx:64)
+0x0000000263081eb9  48 83 c4 28                   add        rsp,28h ; add(rsp:64, 40#64)
+0x0000000263081ebd  5b                            pop        rbx ; pop(rbx:64)
+0x0000000263081ebe  5e                            pop        rsi ; pop(rsi:64)
+0x0000000263081ebf  5f                            pop        rdi ; pop(rdi:64)
+0x0000000263081ec0  5d                            pop        rbp ; pop(rbp:64)
+0x0000000263081ec1  c3                            ret        ; ret
+0x0000000263081ec2  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x0000000263081ec8  48 63 68 3c                   movsxd     rbp,[rax+3Ch] ; mov(rbp:64, ds:[rax+60]:32)
+0x0000000263081ecc  48 01 c5                      add        rbp,rax ; add(rbp:64, rax:64)
+0x0000000263081ecf  81 7d 00 50 45 00 00          cmp        dword ptr [rbp],4550h ; cmp(ss:[rbp]:32, 17744#32)
+0x0000000263081ed6  75 dc                         jne        short 0000000263081EB4h ; jcc.ne(@0x263081eb4)
+0x0000000263081ed8  66 81 7d 18 0b 02             cmp        word ptr [rbp+18h],20Bh ; cmp(ss:[rbp+24]:16, 523#16)
+0x0000000263081ede  75 d4                         jne        short 0000000263081EB4h ; jcc.ne(@0x263081eb4)
+0x0000000263081ee0  66 83 7d 06 00                cmp        word ptr [rbp+6],0 ; cmp(ss:[rbp+6]:16, 0#16)
+0x0000000263081ee5  74 cd                         je         short 0000000263081EB4h ; jcc.eq(@0x263081eb4)
+0x0000000263081ee7  0f b7 45 14                   movzx      eax,word ptr [rbp+14h] ; mov(eax:32, ss:[rbp+20]:16)
+0x0000000263081eeb  31 f6                         xor        esi,esi ; xor(esi:32, esi:32)
+0x0000000263081eed  48 8d 5c 05 18                lea        rbx,[rbp+rax+18h] ; lea(rbx:64, ss:[rbp+rax*1+24]:0)
+0x0000000263081ef2  0f 1f 00                      nop        [rax] ; nop
+0x0000000263081ef5  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081f00  41 b8 08 00 00 00             mov        r8d,8 ; mov(r8d:32, 8#32)
+0x0000000263081f06  48 89 fa                      mov        rdx,rdi ; mov(rdx:64, rdi:64)
+0x0000000263081f09  48 89 d9                      mov        rcx,rbx ; mov(rcx:64, rbx:64)
+0x0000000263081f0c  e8 07 04 00 00                call       0000000263082318h ; call(@0x263082318)
+0x0000000263081f11  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263081f13  74 a1                         je         short 0000000263081EB6h ; jcc.eq(@0x263081eb6)
+0x0000000263081f15  0f b7 45 06                   movzx      eax,word ptr [rbp+6] ; mov(eax:32, ss:[rbp+6]:16)
+0x0000000263081f19  83 c6 01                      add        esi,1 ; add(esi:32, 1#32)
+0x0000000263081f1c  48 83 c3 28                   add        rbx,28h ; add(rbx:64, 40#64)
+0x0000000263081f20  39 c6                         cmp        esi,eax ; cmp(esi:32, eax:32)
+0x0000000263081f22  72 dc                         jb         short 0000000263081F00h ; jcc.b(@0x263081f00)
+0x0000000263081f24  eb 8e                         jmp        short 0000000263081EB4h ; jmp(@0x263081eb4)
+0x0000000263081f26  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function __mingw_GetSectionForAddress [0x0000000263081f30..0x0000000263081fb0) (128 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263081f30  48 8b 15 49 23 00 00          mov        rdx,[263084280h] ; mov(rdx:64, ds:[rip+10251420288]:64)
+0x0000000263081f37  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081f39  66 81 3a 4d 5a                cmp        word ptr [rdx],5A4Dh ; cmp(ds:[rdx]:16, 23117#16)
+0x0000000263081f3e  75 10                         jne        short 0000000263081F50h ; jcc.ne(@0x263081f50)
+0x0000000263081f40  4c 63 42 3c                   movsxd     r8,[rdx+3Ch] ; mov(r8:64, ds:[rdx+60]:32)
+0x0000000263081f44  49 01 d0                      add        r8,rdx ; add(r8:64, rdx:64)
+0x0000000263081f47  41 81 38 50 45 00 00          cmp        dword ptr [r8],4550h ; cmp(ds:[r8]:32, 17744#32)
+0x0000000263081f4e  74 08                         je         short 0000000263081F58h ; jcc.eq(@0x263081f58)
+0x0000000263081f50  c3                            ret        ; ret
+0x0000000263081f51  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x0000000263081f58  66 41 81 78 18 0b 02          cmp        word ptr [r8+18h],20Bh ; cmp(ds:[r8+24]:16, 523#16)
+0x0000000263081f5f  75 ef                         jne        short 0000000263081F50h ; jcc.ne(@0x263081f50)
+0x0000000263081f61  45 0f b7 48 06                movzx      r9d,word ptr [r8+6] ; mov(r9d:32, ds:[r8+6]:16)
+0x0000000263081f66  66 45 85 c9                   test       r9w,r9w ; test(r9w:16, r9w:16)
+0x0000000263081f6a  74 e4                         je         short 0000000263081F50h ; jcc.eq(@0x263081f50)
+0x0000000263081f6c  41 0f b7 40 14                movzx      eax,word ptr [r8+14h] ; mov(eax:32, ds:[r8+20]:16)
+0x0000000263081f71  48 29 d1                      sub        rcx,rdx ; sub(rcx:64, rdx:64)
+0x0000000263081f74  41 8d 51 ff                   lea        edx,[r9-1] ; lea(edx:32, ds:[r9-1]:0)
+0x0000000263081f78  48 8d 14 92                   lea        rdx,[rdx+rdx*4] ; lea(rdx:64, ds:[rdx+rdx*4]:0)
+0x0000000263081f7c  49 8d 44 00 18                lea        rax,[r8+rax+18h] ; lea(rax:64, ds:[r8+rax*1+24]:0)
+0x0000000263081f81  4c 8d 4c d0 28                lea        r9,[rax+rdx*8+28h] ; lea(r9:64, ds:[rax+rdx*8+40]:0)
+0x0000000263081f86  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263081f90  44 8b 40 0c                   mov        r8d,[rax+0Ch] ; mov(r8d:32, ds:[rax+12]:32)
+0x0000000263081f94  4c 89 c2                      mov        rdx,r8 ; mov(rdx:64, r8:64)
+0x0000000263081f97  4c 39 c1                      cmp        rcx,r8 ; cmp(rcx:64, r8:64)
+0x0000000263081f9a  72 08                         jb         short 0000000263081FA4h ; jcc.b(@0x263081fa4)
+0x0000000263081f9c  03 50 08                      add        edx,[rax+8] ; add(edx:32, ds:[rax+8]:32)
+0x0000000263081f9f  48 39 d1                      cmp        rcx,rdx ; cmp(rcx:64, rdx:64)
+0x0000000263081fa2  72 ac                         jb         short 0000000263081F50h ; jcc.b(@0x263081f50)
+0x0000000263081fa4  48 83 c0 28                   add        rax,28h ; add(rax:64, 40#64)
+0x0000000263081fa8  4c 39 c8                      cmp        rax,r9 ; cmp(rax:64, r9:64)
+0x0000000263081fab  75 e3                         jne        short 0000000263081F90h ; jcc.ne(@0x263081f90)
+0x0000000263081fad  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081faf  c3                            ret        ; ret
+
+;; ============================================================
+;; function __mingw_GetSectionCount [0x0000000263081fb0..0x0000000263081ff0) (64 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263081fb0  48 8b 05 c9 22 00 00          mov        rax,[263084280h] ; mov(rax:64, ds:[rip+10251420288]:64)
+0x0000000263081fb7  31 c9                         xor        ecx,ecx ; xor(ecx:32, ecx:32)
+0x0000000263081fb9  66 81 38 4d 5a                cmp        word ptr [rax],5A4Dh ; cmp(ds:[rax]:16, 23117#16)
+0x0000000263081fbe  75 0f                         jne        short 0000000263081FCFh ; jcc.ne(@0x263081fcf)
+0x0000000263081fc0  48 63 50 3c                   movsxd     rdx,[rax+3Ch] ; mov(rdx:64, ds:[rax+60]:32)
+0x0000000263081fc4  48 01 d0                      add        rax,rdx ; add(rax:64, rdx:64)
+0x0000000263081fc7  81 38 50 45 00 00             cmp        dword ptr [rax],4550h ; cmp(ds:[rax]:32, 17744#32)
+0x0000000263081fcd  74 09                         je         short 0000000263081FD8h ; jcc.eq(@0x263081fd8)
+0x0000000263081fcf  89 c8                         mov        eax,ecx ; mov(eax:32, ecx:32)
+0x0000000263081fd1  c3                            ret        ; ret
+0x0000000263081fd2  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x0000000263081fd8  66 81 78 18 0b 02             cmp        word ptr [rax+18h],20Bh ; cmp(ds:[rax+24]:16, 523#16)
+0x0000000263081fde  75 ef                         jne        short 0000000263081FCFh ; jcc.ne(@0x263081fcf)
+0x0000000263081fe0  0f b7 48 06                   movzx      ecx,word ptr [rax+6] ; mov(ecx:32, ds:[rax+6]:16)
+0x0000000263081fe4  89 c8                         mov        eax,ecx ; mov(eax:32, ecx:32)
+0x0000000263081fe6  c3                            ret        ; ret
+0x0000000263081fe7  66 0f 1f 84 00 00 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function _FindPESectionExec [0x0000000263081ff0..0x0000000263082070) (128 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263081ff0  4c 8b 05 89 22 00 00          mov        r8,[263084280h] ; mov(r8:64, ds:[rip+10251420288]:64)
+0x0000000263081ff7  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x0000000263081ff9  66 41 81 38 4d 5a             cmp        word ptr [r8],5A4Dh ; cmp(ds:[r8]:16, 23117#16)
+0x0000000263081fff  75 0f                         jne        short 0000000263082010h ; jcc.ne(@0x263082010)
+0x0000000263082001  49 63 50 3c                   movsxd     rdx,[r8+3Ch] ; mov(rdx:64, ds:[r8+60]:32)
+0x0000000263082005  4c 01 c2                      add        rdx,r8 ; add(rdx:64, r8:64)
+0x0000000263082008  81 3a 50 45 00 00             cmp        dword ptr [rdx],4550h ; cmp(ds:[rdx]:32, 17744#32)
+0x000000026308200e  74 08                         je         short 0000000263082018h ; jcc.eq(@0x263082018)
+0x0000000263082010  c3                            ret        ; ret
+0x0000000263082011  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x0000000263082018  66 81 7a 18 0b 02             cmp        word ptr [rdx+18h],20Bh ; cmp(ds:[rdx+24]:16, 523#16)
+0x000000026308201e  75 f0                         jne        short 0000000263082010h ; jcc.ne(@0x263082010)
+0x0000000263082020  44 0f b7 42 06                movzx      r8d,word ptr [rdx+6] ; mov(r8d:32, ds:[rdx+6]:16)
+0x0000000263082025  66 45 85 c0                   test       r8w,r8w ; test(r8w:16, r8w:16)
+0x0000000263082029  74 e5                         je         short 0000000263082010h ; jcc.eq(@0x263082010)
+0x000000026308202b  0f b7 42 14                   movzx      eax,word ptr [rdx+14h] ; mov(eax:32, ds:[rdx+20]:16)
+0x000000026308202f  48 8d 44 02 18                lea        rax,[rdx+rax+18h] ; lea(rax:64, ds:[rdx+rax*1+24]:0)
+0x0000000263082034  41 8d 50 ff                   lea        edx,[r8-1] ; lea(edx:32, ds:[r8-1]:0)
+0x0000000263082038  48 8d 14 92                   lea        rdx,[rdx+rdx*4] ; lea(rdx:64, ds:[rdx+rdx*4]:0)
+0x000000026308203c  48 8d 54 d0 28                lea        rdx,[rax+rdx*8+28h] ; lea(rdx:64, ds:[rax+rdx*8+40]:0)
+0x0000000263082041  0f 1f 40 00                   nop        [rax] ; nop
+0x0000000263082045  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000263082050  f6 40 27 20                   test       byte ptr [rax+27h],20h ; test(ds:[rax+39]:8, 32#8)
+0x0000000263082054  74 09                         je         short 000000026308205Fh ; jcc.eq(@0x26308205f)
+0x0000000263082056  48 85 c9                      test       rcx,rcx ; test(rcx:64, rcx:64)
+0x0000000263082059  74 b5                         je         short 0000000263082010h ; jcc.eq(@0x263082010)
+0x000000026308205b  48 83 e9 01                   sub        rcx,1 ; sub(rcx:64, 1#64)
+0x000000026308205f  48 83 c0 28                   add        rax,28h ; add(rax:64, 40#64)
+0x0000000263082063  48 39 c2                      cmp        rdx,rax ; cmp(rdx:64, rax:64)
+0x0000000263082066  75 e8                         jne        short 0000000263082050h ; jcc.ne(@0x263082050)
+0x0000000263082068  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x000000026308206a  c3                            ret        ; ret
+0x000000026308206b  0f 1f 44 00 00                nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function _GetPEImageBase [0x0000000263082070..0x00000002630820b0) (64 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082070  48 8b 05 09 22 00 00          mov        rax,[263084280h] ; mov(rax:64, ds:[rip+10251420288]:64)
+0x0000000263082077  31 d2                         xor        edx,edx ; xor(edx:32, edx:32)
+0x0000000263082079  66 81 38 4d 5a                cmp        word ptr [rax],5A4Dh ; cmp(ds:[rax]:16, 23117#16)
+0x000000026308207e  75 0f                         jne        short 000000026308208Fh ; jcc.ne(@0x26308208f)
+0x0000000263082080  48 63 48 3c                   movsxd     rcx,[rax+3Ch] ; mov(rcx:64, ds:[rax+60]:32)
+0x0000000263082084  48 01 c1                      add        rcx,rax ; add(rcx:64, rax:64)
+0x0000000263082087  81 39 50 45 00 00             cmp        dword ptr [rcx],4550h ; cmp(ds:[rcx]:32, 17744#32)
+0x000000026308208d  74 09                         je         short 0000000263082098h ; jcc.eq(@0x263082098)
+0x000000026308208f  48 89 d0                      mov        rax,rdx ; mov(rax:64, rdx:64)
+0x0000000263082092  c3                            ret        ; ret
+0x0000000263082093  0f 1f 44 00 00                nop        [rax+rax] ; nop
+0x0000000263082098  66 81 79 18 0b 02             cmp        word ptr [rcx+18h],20Bh ; cmp(ds:[rcx+24]:16, 523#16)
+0x000000026308209e  48 0f 44 d0                   cmove      rdx,rax ; opaque(cmove)
+0x00000002630820a2  48 89 d0                      mov        rax,rdx ; mov(rax:64, rdx:64)
+0x00000002630820a5  c3                            ret        ; ret
+0x00000002630820a6  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function _IsNonwritableInCurrentImage [0x00000002630820b0..0x0000000263082140) (144 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x00000002630820b0  48 8b 15 c9 21 00 00          mov        rdx,[263084280h] ; mov(rdx:64, ds:[rip+10251420288]:64)
+0x00000002630820b7  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x00000002630820b9  66 81 3a 4d 5a                cmp        word ptr [rdx],5A4Dh ; cmp(ds:[rdx]:16, 23117#16)
+0x00000002630820be  75 10                         jne        short 00000002630820D0h ; jcc.ne(@0x2630820d0)
+0x00000002630820c0  4c 63 42 3c                   movsxd     r8,[rdx+3Ch] ; mov(r8:64, ds:[rdx+60]:32)
+0x00000002630820c4  49 01 d0                      add        r8,rdx ; add(r8:64, rdx:64)
+0x00000002630820c7  41 81 38 50 45 00 00          cmp        dword ptr [r8],4550h ; cmp(ds:[r8]:32, 17744#32)
+0x00000002630820ce  74 08                         je         short 00000002630820D8h ; jcc.eq(@0x2630820d8)
+0x00000002630820d0  c3                            ret        ; ret
+0x00000002630820d1  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x00000002630820d8  66 41 81 78 18 0b 02          cmp        word ptr [r8+18h],20Bh ; cmp(ds:[r8+24]:16, 523#16)
+0x00000002630820df  75 ef                         jne        short 00000002630820D0h ; jcc.ne(@0x2630820d0)
+0x00000002630820e1  45 0f b7 48 06                movzx      r9d,word ptr [r8+6] ; mov(r9d:32, ds:[r8+6]:16)
+0x00000002630820e6  66 45 85 c9                   test       r9w,r9w ; test(r9w:16, r9w:16)
+0x00000002630820ea  74 e4                         je         short 00000002630820D0h ; jcc.eq(@0x2630820d0)
+0x00000002630820ec  41 0f b7 40 14                movzx      eax,word ptr [r8+14h] ; mov(eax:32, ds:[r8+20]:16)
+0x00000002630820f1  48 29 d1                      sub        rcx,rdx ; sub(rcx:64, rdx:64)
+0x00000002630820f4  41 8d 51 ff                   lea        edx,[r9-1] ; lea(edx:32, ds:[r9-1]:0)
+0x00000002630820f8  48 8d 14 92                   lea        rdx,[rdx+rdx*4] ; lea(rdx:64, ds:[rdx+rdx*4]:0)
+0x00000002630820fc  49 8d 44 00 18                lea        rax,[r8+rax+18h] ; lea(rax:64, ds:[r8+rax*1+24]:0)
+0x0000000263082101  4c 8d 4c d0 28                lea        r9,[rax+rdx*8+28h] ; lea(r9:64, ds:[rax+rdx*8+40]:0)
+0x0000000263082106  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000263082110  44 8b 40 0c                   mov        r8d,[rax+0Ch] ; mov(r8d:32, ds:[rax+12]:32)
+0x0000000263082114  4c 89 c2                      mov        rdx,r8 ; mov(rdx:64, r8:64)
+0x0000000263082117  4c 39 c1                      cmp        rcx,r8 ; cmp(rcx:64, r8:64)
+0x000000026308211a  72 08                         jb         short 0000000263082124h ; jcc.b(@0x263082124)
+0x000000026308211c  03 50 08                      add        edx,[rax+8] ; add(edx:32, ds:[rax+8]:32)
+0x000000026308211f  48 39 d1                      cmp        rcx,rdx ; cmp(rcx:64, rdx:64)
+0x0000000263082122  72 0c                         jb         short 0000000263082130h ; jcc.b(@0x263082130)
+0x0000000263082124  48 83 c0 28                   add        rax,28h ; add(rax:64, 40#64)
+0x0000000263082128  49 39 c1                      cmp        r9,rax ; cmp(r9:64, rax:64)
+0x000000026308212b  75 e3                         jne        short 0000000263082110h ; jcc.ne(@0x263082110)
+0x000000026308212d  31 c0                         xor        eax,eax ; xor(eax:32, eax:32)
+0x000000026308212f  c3                            ret        ; ret
+0x0000000263082130  8b 40 24                      mov        eax,[rax+24h] ; mov(eax:32, ds:[rax+36]:32)
+0x0000000263082133  f7 d0                         not        eax ; not(eax:32)
+0x0000000263082135  c1 e8 1f                      shr        eax,1Fh ; shr(eax:32, 31#8)
+0x0000000263082138  c3                            ret        ; ret
+0x0000000263082139  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+
+;; ============================================================
+;; function __mingw_enum_import_library_names [0x0000000263082140..0x0000000263082200) (192 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263082140  4c 8b 1d 39 21 00 00          mov        r11,[263084280h] ; mov(r11:64, ds:[rip+10251420288]:64)
+0x0000000263082147  45 31 c0                      xor        r8d,r8d ; xor(r8d:32, r8d:32)
+0x000000026308214a  66 41 81 3b 4d 5a             cmp        word ptr [r11],5A4Dh ; cmp(ds:[r11]:16, 23117#16)
+0x0000000263082150  75 0f                         jne        short 0000000263082161h ; jcc.ne(@0x263082161)
+0x0000000263082152  49 63 53 3c                   movsxd     rdx,[r11+3Ch] ; mov(rdx:64, ds:[r11+60]:32)
+0x0000000263082156  4c 01 da                      add        rdx,r11 ; add(rdx:64, r11:64)
+0x0000000263082159  81 3a 50 45 00 00             cmp        dword ptr [rdx],4550h ; cmp(ds:[rdx]:32, 17744#32)
+0x000000026308215f  74 07                         je         short 0000000263082168h ; jcc.eq(@0x263082168)
+0x0000000263082161  4c 89 c0                      mov        rax,r8 ; mov(rax:64, r8:64)
+0x0000000263082164  c3                            ret        ; ret
+0x0000000263082165  0f 1f 00                      nop        [rax] ; nop
+0x0000000263082168  66 81 7a 18 0b 02             cmp        word ptr [rdx+18h],20Bh ; cmp(ds:[rdx+24]:16, 523#16)
+0x000000026308216e  75 f1                         jne        short 0000000263082161h ; jcc.ne(@0x263082161)
+0x0000000263082170  8b 82 90 00 00 00             mov        eax,[rdx+90h] ; mov(eax:32, ds:[rdx+144]:32)
+0x0000000263082176  85 c0                         test       eax,eax ; test(eax:32, eax:32)
+0x0000000263082178  74 e7                         je         short 0000000263082161h ; jcc.eq(@0x263082161)
+0x000000026308217a  44 0f b7 4a 06                movzx      r9d,word ptr [rdx+6] ; mov(r9d:32, ds:[rdx+6]:16)
+0x000000026308217f  66 45 85 c9                   test       r9w,r9w ; test(r9w:16, r9w:16)
+0x0000000263082183  74 dc                         je         short 0000000263082161h ; jcc.eq(@0x263082161)
+0x0000000263082185  44 0f b7 42 14                movzx      r8d,word ptr [rdx+14h] ; mov(r8d:32, ds:[rdx+20]:16)
+0x000000026308218a  4a 8d 54 02 18                lea        rdx,[rdx+r8+18h] ; lea(rdx:64, ds:[rdx+r8*1+24]:0)
+0x000000026308218f  45 8d 41 ff                   lea        r8d,[r9-1] ; lea(r8d:32, ds:[r9-1]:0)
+0x0000000263082193  4f 8d 04 80                   lea        r8,[r8+r8*4] ; lea(r8:64, ds:[r8+r8*4]:0)
+0x0000000263082197  4e 8d 54 c2 28                lea        r10,[rdx+r8*8+28h] ; lea(r10:64, ds:[rdx+r8*8+40]:0)
+0x000000026308219c  0f 1f 40 00                   nop        [rax] ; nop
+0x00000002630821a0  44 8b 4a 0c                   mov        r9d,[rdx+0Ch] ; mov(r9d:32, ds:[rdx+12]:32)
+0x00000002630821a4  4d 89 c8                      mov        r8,r9 ; mov(r8:64, r9:64)
+0x00000002630821a7  4c 39 c8                      cmp        rax,r9 ; cmp(rax:64, r9:64)
+0x00000002630821aa  72 09                         jb         short 00000002630821B5h ; jcc.b(@0x2630821b5)
+0x00000002630821ac  44 03 42 08                   add        r8d,[rdx+8] ; add(r8d:32, ds:[rdx+8]:32)
+0x00000002630821b0  4c 39 c0                      cmp        rax,r8 ; cmp(rax:64, r8:64)
+0x00000002630821b3  72 13                         jb         short 00000002630821C8h ; jcc.b(@0x2630821c8)
+0x00000002630821b5  48 83 c2 28                   add        rdx,28h ; add(rdx:64, 40#64)
+0x00000002630821b9  49 39 d2                      cmp        r10,rdx ; cmp(r10:64, rdx:64)
+0x00000002630821bc  75 e2                         jne        short 00000002630821A0h ; jcc.ne(@0x2630821a0)
+0x00000002630821be  45 31 c0                      xor        r8d,r8d ; xor(r8d:32, r8d:32)
+0x00000002630821c1  4c 89 c0                      mov        rax,r8 ; mov(rax:64, r8:64)
+0x00000002630821c4  c3                            ret        ; ret
+0x00000002630821c5  0f 1f 00                      nop        [rax] ; nop
+0x00000002630821c8  4c 01 d8                      add        rax,r11 ; add(rax:64, r11:64)
+0x00000002630821cb  eb 0a                         jmp        short 00000002630821D7h ; jmp(@0x2630821d7)
+0x00000002630821cd  0f 1f 00                      nop        [rax] ; nop
+0x00000002630821d0  83 e9 01                      sub        ecx,1 ; sub(ecx:32, 1#32)
+0x00000002630821d3  48 83 c0 14                   add        rax,14h ; add(rax:64, 20#64)
+0x00000002630821d7  44 8b 40 04                   mov        r8d,[rax+4] ; mov(r8d:32, ds:[rax+4]:32)
+0x00000002630821db  45 85 c0                      test       r8d,r8d ; test(r8d:32, r8d:32)
+0x00000002630821de  75 07                         jne        short 00000002630821E7h ; jcc.ne(@0x2630821e7)
+0x00000002630821e0  8b 50 0c                      mov        edx,[rax+0Ch] ; mov(edx:32, ds:[rax+12]:32)
+0x00000002630821e3  85 d2                         test       edx,edx ; test(edx:32, edx:32)
+0x00000002630821e5  74 d7                         je         short 00000002630821BEh ; jcc.eq(@0x2630821be)
+0x00000002630821e7  85 c9                         test       ecx,ecx ; test(ecx:32, ecx:32)
+0x00000002630821e9  7f e5                         jg         short 00000002630821D0h ; jcc.gt(@0x2630821d0)
+0x00000002630821eb  44 8b 40 0c                   mov        r8d,[rax+0Ch] ; mov(r8d:32, ds:[rax+12]:32)
+0x00000002630821ef  4d 01 d8                      add        r8,r11 ; add(r8:64, r11:64)
+0x00000002630821f2  4c 89 c0                      mov        rax,r8 ; mov(rax:64, r8:64)
+0x00000002630821f5  c3                            ret        ; ret
+0x00000002630821f6  90                            nop        ; nop
+0x00000002630821f7  90                            nop        ; nop
+0x00000002630821f8  90                            nop        ; nop
+0x00000002630821f9  90                            nop        ; nop
+0x00000002630821fa  90                            nop        ; nop
+0x00000002630821fb  90                            nop        ; nop
+0x00000002630821fc  90                            nop        ; nop
+0x00000002630821fd  90                            nop        ; nop
+0x00000002630821fe  90                            nop        ; nop
+0x00000002630821ff  90                            nop        ; nop
+
+;; ============================================================
+;; function <unnamed> [0x0000000263082200..0x0000000263082240) (64 bytes)
+;;   confidence: derived 0.850
+;;   sources:   call
+;; ============================================================
+0x0000000263082200  51                            push       rcx ; push(rcx:64)
+0x0000000263082201  50                            push       rax ; push(rax:64)
+0x0000000263082202  48 3d 00 10 00 00             cmp        rax,1000h ; cmp(rax:64, 4096#64)
+0x0000000263082208  48 8d 4c 24 18                lea        rcx,[rsp+18h] ; lea(rcx:64, ss:[rsp+24]:0)
+0x000000026308220d  72 19                         jb         short 0000000263082228h ; jcc.b(@0x263082228)
+0x000000026308220f  48 81 e9 00 10 00 00          sub        rcx,1000h ; sub(rcx:64, 4096#64)
+0x0000000263082216  48 83 09 00                   or         qword ptr [rcx],0 ; or(ds:[rcx]:64, 0#64)
+0x000000026308221a  48 2d 00 10 00 00             sub        rax,1000h ; sub(rax:64, 4096#64)
+0x0000000263082220  48 3d 00 10 00 00             cmp        rax,1000h ; cmp(rax:64, 4096#64)
+0x0000000263082226  77 e7                         ja         short 000000026308220Fh ; jcc.a(@0x26308220f)
+0x0000000263082228  48 29 c1                      sub        rcx,rax ; sub(rcx:64, rax:64)
+0x000000026308222b  48 83 09 00                   or         qword ptr [rcx],0 ; or(ds:[rcx]:64, 0#64)
+0x000000026308222f  58                            pop        rax ; pop(rax:64)
+0x0000000263082230  59                            pop        rcx ; pop(rcx:64)
+0x0000000263082231  c3                            ret        ; ret
+0x0000000263082232  90                            nop        ; nop
+0x0000000263082233  90                            nop        ; nop
+0x0000000263082234  90                            nop        ; nop
+0x0000000263082235  90                            nop        ; nop
+0x0000000263082236  90                            nop        ; nop
+0x0000000263082237  90                            nop        ; nop
+0x0000000263082238  90                            nop        ; nop
+0x0000000263082239  90                            nop        ; nop
+0x000000026308223a  90                            nop        ; nop
+0x000000026308223b  90                            nop        ; nop
+0x000000026308223c  90                            nop        ; nop
+0x000000026308223d  90                            nop        ; nop
+0x000000026308223e  90                            nop        ; nop
+0x000000026308223f  90                            nop        ; nop
+
+;; ============================================================
+;; function vfprintf [0x0000000263082240..0x0000000263082280) (64 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082240  57                            push       rdi ; push(rdi:64)
+0x0000000263082241  56                            push       rsi ; push(rsi:64)
+0x0000000263082242  53                            push       rbx ; push(rbx:64)
+0x0000000263082243  48 83 ec 30                   sub        rsp,30h ; sub(rsp:64, 48#64)
+0x0000000263082247  48 89 cb                      mov        rbx,rcx ; mov(rbx:64, rcx:64)
+0x000000026308224a  48 89 d6                      mov        rsi,rdx ; mov(rsi:64, rdx:64)
+0x000000026308224d  4c 89 c7                      mov        rdi,r8 ; mov(rdi:64, r8:64)
+0x0000000263082250  e8 7b 00 00 00                call       00000002630822D0h ; call(@0x2630822d0)
+0x0000000263082255  45 31 c9                      xor        r9d,r9d ; xor(r9d:32, r9d:32)
+0x0000000263082258  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x000000026308225b  48 89 da                      mov        rdx,rbx ; mov(rdx:64, rbx:64)
+0x000000026308225e  48 8b 08                      mov        rcx,[rax] ; mov(rcx:64, ds:[rax]:64)
+0x0000000263082261  48 89 7c 24 20                mov        [rsp+20h],rdi ; mov(ss:[rsp+32]:64, rdi:64)
+0x0000000263082266  e8 bd 00 00 00                call       0000000263082328h ; call(@0x263082328)
+0x000000026308226b  48 83 c4 30                   add        rsp,30h ; add(rsp:64, 48#64)
+0x000000026308226f  5b                            pop        rbx ; pop(rbx:64)
+0x0000000263082270  5e                            pop        rsi ; pop(rsi:64)
+0x0000000263082271  5f                            pop        rdi ; pop(rdi:64)
+0x0000000263082272  c3                            ret        ; ret
+0x0000000263082273  90                            nop        ; nop
+0x0000000263082274  90                            nop        ; nop
+0x0000000263082275  90                            nop        ; nop
+0x0000000263082276  90                            nop        ; nop
+0x0000000263082277  90                            nop        ; nop
+0x0000000263082278  90                            nop        ; nop
+0x0000000263082279  90                            nop        ; nop
+0x000000026308227a  90                            nop        ; nop
+0x000000026308227b  90                            nop        ; nop
+0x000000026308227c  90                            nop        ; nop
+0x000000026308227d  90                            nop        ; nop
+0x000000026308227e  90                            nop        ; nop
+0x000000026308227f  90                            nop        ; nop
+
+;; ============================================================
+;; function fprintf [0x0000000263082280..0x00000002630822d0) (80 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082280  57                            push       rdi ; push(rdi:64)
+0x0000000263082281  56                            push       rsi ; push(rsi:64)
+0x0000000263082282  53                            push       rbx ; push(rbx:64)
+0x0000000263082283  48 83 ec 40                   sub        rsp,40h ; sub(rsp:64, 64#64)
+0x0000000263082287  48 8d 7c 24 70                lea        rdi,[rsp+70h] ; lea(rdi:64, ss:[rsp+112]:0)
+0x000000026308228c  48 89 cb                      mov        rbx,rcx ; mov(rbx:64, rcx:64)
+0x000000026308228f  48 89 d6                      mov        rsi,rdx ; mov(rsi:64, rdx:64)
+0x0000000263082292  4c 89 44 24 70                mov        [rsp+70h],r8 ; mov(ss:[rsp+112]:64, r8:64)
+0x0000000263082297  4c 89 4c 24 78                mov        [rsp+78h],r9 ; mov(ss:[rsp+120]:64, r9:64)
+0x000000026308229c  48 89 7c 24 38                mov        [rsp+38h],rdi ; mov(ss:[rsp+56]:64, rdi:64)
+0x00000002630822a1  e8 2a 00 00 00                call       00000002630822D0h ; call(@0x2630822d0)
+0x00000002630822a6  45 31 c9                      xor        r9d,r9d ; xor(r9d:32, r9d:32)
+0x00000002630822a9  49 89 f0                      mov        r8,rsi ; mov(r8:64, rsi:64)
+0x00000002630822ac  48 89 da                      mov        rdx,rbx ; mov(rdx:64, rbx:64)
+0x00000002630822af  48 8b 08                      mov        rcx,[rax] ; mov(rcx:64, ds:[rax]:64)
+0x00000002630822b2  48 89 7c 24 20                mov        [rsp+20h],rdi ; mov(ss:[rsp+32]:64, rdi:64)
+0x00000002630822b7  e8 6c 00 00 00                call       0000000263082328h ; call(@0x263082328)
+0x00000002630822bc  48 83 c4 40                   add        rsp,40h ; add(rsp:64, 64#64)
+0x00000002630822c0  5b                            pop        rbx ; pop(rbx:64)
+0x00000002630822c1  5e                            pop        rsi ; pop(rsi:64)
+0x00000002630822c2  5f                            pop        rdi ; pop(rdi:64)
+0x00000002630822c3  c3                            ret        ; ret
+0x00000002630822c4  90                            nop        ; nop
+0x00000002630822c5  90                            nop        ; nop
+0x00000002630822c6  90                            nop        ; nop
+0x00000002630822c7  90                            nop        ; nop
+0x00000002630822c8  90                            nop        ; nop
+0x00000002630822c9  90                            nop        ; nop
+0x00000002630822ca  90                            nop        ; nop
+0x00000002630822cb  90                            nop        ; nop
+0x00000002630822cc  90                            nop        ; nop
+0x00000002630822cd  90                            nop        ; nop
+0x00000002630822ce  90                            nop        ; nop
+0x00000002630822cf  90                            nop        ; nop
+
+;; ============================================================
+;; function __local_stdio_printf_options [0x00000002630822d0..0x00000002630822e0) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x00000002630822d0  48 8d 05 69 0d 00 00          lea        rax,[263083040h] ; lea(rax:64, ds:[rip+10251415616]:0)
+0x00000002630822d7  c3                            ret        ; ret
+0x00000002630822d8  90                            nop        ; nop
+0x00000002630822d9  90                            nop        ; nop
+0x00000002630822da  90                            nop        ; nop
+0x00000002630822db  90                            nop        ; nop
+0x00000002630822dc  90                            nop        ; nop
+0x00000002630822dd  90                            nop        ; nop
+0x00000002630822de  90                            nop        ; nop
+0x00000002630822df  90                            nop        ; nop
+
+;; ============================================================
+;; function _amsg_exit [0x00000002630822e0..0x0000000263082310) (48 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x00000002630822e0  53                            push       rbx ; push(rbx:64)
+0x00000002630822e1  48 83 ec 20                   sub        rsp,20h ; sub(rsp:64, 32#64)
+0x00000002630822e5  89 cb                         mov        ebx,ecx ; mov(ebx:32, ecx:32)
+0x00000002630822e7  b9 02 00 00 00                mov        ecx,2 ; mov(ecx:32, 2#32)
+0x00000002630822ec  e8 2f 00 00 00                call       0000000263082320h ; call(@0x263082320)
+0x00000002630822f1  41 89 d8                      mov        r8d,ebx ; mov(r8d:32, ebx:32)
+0x00000002630822f4  48 8d 15 45 1f 00 00          lea        rdx,[263084240h] ; lea(rdx:64, ds:[rip+10251420224]:0)
+0x00000002630822fb  48 89 c1                      mov        rcx,rax ; mov(rcx:64, rax:64)
+0x00000002630822fe  e8 7d ff ff ff                call       0000000263082280h ; call(@0x263082280)
+0x0000000263082303  b9 ff 00 00 00                mov        ecx,0FFh ; mov(ecx:32, 255#32)
+0x0000000263082308  e8 2b 00 00 00                call       0000000263082338h ; call(@0x263082338)
+0x000000026308230d  90                            nop        ; nop
+0x000000026308230e  90                            nop        ; nop
+0x000000026308230f  90                            nop        ; nop
+
+;; ============================================================
+;; function strlen [0x0000000263082310..0x0000000263082318) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082310  ff 25 72 7f 00 00             jmp        qword ptr [26308A288h] ; jmp(ds:[rip+10251444872]:64)
+0x0000000263082316  90                            nop        ; nop
+0x0000000263082317  90                            nop        ; nop
+
+;; ============================================================
+;; function strncmp [0x0000000263082318..0x0000000263082320) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082318  ff 25 72 7f 00 00             jmp        qword ptr [26308A290h] ; jmp(ds:[rip+10251444880]:64)
+0x000000026308231e  90                            nop        ; nop
+0x000000026308231f  90                            nop        ; nop
+
+;; ============================================================
+;; function __acrt_iob_func [0x0000000263082320..0x0000000263082328) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082320  ff 25 4a 7f 00 00             jmp        qword ptr [26308A270h] ; jmp(ds:[rip+10251444848]:64)
+0x0000000263082326  90                            nop        ; nop
+0x0000000263082327  90                            nop        ; nop
+
+;; ============================================================
+;; function __stdio_common_vfprintf [0x0000000263082328..0x0000000263082330) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082328  ff 25 4a 7f 00 00             jmp        qword ptr [26308A278h] ; jmp(ds:[rip+10251444856]:64)
+0x000000026308232e  90                            nop        ; nop
+0x000000026308232f  90                            nop        ; nop
+
+;; ============================================================
+;; function _execute_onexit_table [0x0000000263082330..0x0000000263082338) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082330  ff 25 fa 7e 00 00             jmp        qword ptr [26308A230h] ; jmp(ds:[rip+10251444784]:64)
+0x0000000263082336  90                            nop        ; nop
+0x0000000263082337  90                            nop        ; nop
+
+;; ============================================================
+;; function _exit [0x0000000263082338..0x0000000263082340) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082338  ff 25 fa 7e 00 00             jmp        qword ptr [26308A238h] ; jmp(ds:[rip+10251444792]:64)
+0x000000026308233e  90                            nop        ; nop
+0x000000026308233f  90                            nop        ; nop
+
+;; ============================================================
+;; function _initialize_onexit_table [0x0000000263082340..0x0000000263082348) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082340  ff 25 fa 7e 00 00             jmp        qword ptr [26308A240h] ; jmp(ds:[rip+10251444800]:64)
+0x0000000263082346  90                            nop        ; nop
+0x0000000263082347  90                            nop        ; nop
+
+;; ============================================================
+;; function _initterm [0x0000000263082348..0x0000000263082350) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082348  ff 25 fa 7e 00 00             jmp        qword ptr [26308A248h] ; jmp(ds:[rip+10251444808]:64)
+0x000000026308234e  90                            nop        ; nop
+0x000000026308234f  90                            nop        ; nop
+
+;; ============================================================
+;; function _initterm_e [0x0000000263082350..0x0000000263082358) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082350  ff 25 fa 7e 00 00             jmp        qword ptr [26308A250h] ; jmp(ds:[rip+10251444816]:64)
+0x0000000263082356  90                            nop        ; nop
+0x0000000263082357  90                            nop        ; nop
+
+;; ============================================================
+;; function _register_onexit_function [0x0000000263082358..0x0000000263082360) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263082358  ff 25 fa 7e 00 00             jmp        qword ptr [26308A258h] ; jmp(ds:[rip+10251444824]:64)
+0x000000026308235e  90                            nop        ; nop
+0x000000026308235f  90                            nop        ; nop
+
+;; ============================================================
+;; function abort [0x0000000263082360..0x0000000263082368) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082360  ff 25 fa 7e 00 00             jmp        qword ptr [26308A260h] ; jmp(ds:[rip+10251444832]:64)
+0x0000000263082366  90                            nop        ; nop
+0x0000000263082367  90                            nop        ; nop
+
+;; ============================================================
+;; function memcpy [0x0000000263082368..0x0000000263082370) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082368  ff 25 b2 7e 00 00             jmp        qword ptr [26308A220h] ; jmp(ds:[rip+10251444768]:64)
+0x000000026308236e  90                            nop        ; nop
+0x000000026308236f  90                            nop        ; nop
+
+;; ============================================================
+;; function calloc [0x0000000263082370..0x0000000263082378) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082370  ff 25 92 7e 00 00             jmp        qword ptr [26308A208h] ; jmp(ds:[rip+10251444744]:64)
+0x0000000263082376  90                            nop        ; nop
+0x0000000263082377  90                            nop        ; nop
+
+;; ============================================================
+;; function free [0x0000000263082378..0x0000000263082380) (8 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082378  ff 25 92 7e 00 00             jmp        qword ptr [26308A210h] ; jmp(ds:[rip+10251444752]:64)
+0x000000026308237e  90                            nop        ; nop
+0x000000026308237f  90                            nop        ; nop
+
+;; ============================================================
+;; function DllMain [0x0000000263082380..0x0000000263082390) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol, call
+;; ============================================================
+0x0000000263082380  b8 01 00 00 00                mov        eax,1 ; mov(eax:32, 1#32)
+0x0000000263082385  c3                            ret        ; ret
+0x0000000263082386  90                            nop        ; nop
+0x0000000263082387  90                            nop        ; nop
+0x0000000263082388  90                            nop        ; nop
+0x0000000263082389  90                            nop        ; nop
+0x000000026308238a  90                            nop        ; nop
+0x000000026308238b  90                            nop        ; nop
+0x000000026308238c  90                            nop        ; nop
+0x000000026308238d  90                            nop        ; nop
+0x000000026308238e  90                            nop        ; nop
+0x000000026308238f  90                            nop        ; nop
+
+;; ============================================================
+;; function sample_add [0x0000000263082390..0x00000002630823a0) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x0000000263082390  8d 04 11                      lea        eax,[rcx+rdx] ; lea(eax:32, ds:[rcx+rdx*1]:0)
+0x0000000263082393  c3                            ret        ; ret
+0x0000000263082394  90                            nop        ; nop
+0x0000000263082395  90                            nop        ; nop
+0x0000000263082396  90                            nop        ; nop
+0x0000000263082397  90                            nop        ; nop
+0x0000000263082398  90                            nop        ; nop
+0x0000000263082399  90                            nop        ; nop
+0x000000026308239a  90                            nop        ; nop
+0x000000026308239b  90                            nop        ; nop
+0x000000026308239c  90                            nop        ; nop
+0x000000026308239d  90                            nop        ; nop
+0x000000026308239e  90                            nop        ; nop
+0x000000026308239f  90                            nop        ; nop
+
+;; ============================================================
+;; function sample_greeting [0x00000002630823a0..0x00000002630823b0) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x00000002630823a0  48 8d 05 a9 1c 00 00          lea        rax,[263084050h] ; lea(rax:64, ds:[rip+10251419728]:0)
+0x00000002630823a7  c3                            ret        ; ret
+0x00000002630823a8  90                            nop        ; nop
+0x00000002630823a9  90                            nop        ; nop
+0x00000002630823aa  90                            nop        ; nop
+0x00000002630823ab  90                            nop        ; nop
+0x00000002630823ac  90                            nop        ; nop
+0x00000002630823ad  90                            nop        ; nop
+0x00000002630823ae  90                            nop        ; nop
+0x00000002630823af  90                            nop        ; nop
+
+;; ============================================================
+;; function register_frame_ctor [0x00000002630823b0..0x00000002630823c0) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   symbol
+;; ============================================================
+0x00000002630823b0  e9 ab ef ff ff                jmp        0000000263081360h ; jmp(@0x263081360)
+0x00000002630823b5  90                            nop        ; nop
+0x00000002630823b6  90                            nop        ; nop
+0x00000002630823b7  90                            nop        ; nop
+0x00000002630823b8  90                            nop        ; nop
+0x00000002630823b9  90                            nop        ; nop
+0x00000002630823ba  90                            nop        ; nop
+0x00000002630823bb  90                            nop        ; nop
+0x00000002630823bc  90                            nop        ; nop
+0x00000002630823bd  90                            nop        ; nop
+0x00000002630823be  90                            nop        ; nop
+0x00000002630823bf  90                            nop        ; nop
+

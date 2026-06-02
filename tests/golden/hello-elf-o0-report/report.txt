@@ -1,0 +1,18 @@
+;; dac analysis report (FR-25)
+;; functions:   9
+;; signals:     symbol=8 entry=1 call=2 prologue=2
+;; lift cover.: 81 / 82 (98.78% lifted, 1 opaque)
+
+functions:
+  0x0000000000001000..0x000000000000101b  _init                     observed/1.000  symbol,prologue
+  0x0000000000001030..0x0000000000001040  <unnamed>                 derived/0.850  call
+  0x0000000000001040..0x000000000000105e  main                      observed/1.000  symbol
+  0x0000000000001060..0x0000000000001086  _start                    observed/1.000  symbol,entry
+  0x0000000000001090..0x00000000000010c0  deregister_tm_clones      observed/1.000  symbol,call
+  0x00000000000010c0..0x0000000000001100  register_tm_clones        observed/1.000  symbol
+  0x0000000000001100..0x0000000000001150  __do_global_dtors_aux     observed/1.000  symbol
+  0x0000000000001150..0x0000000000001159  frame_dummy               observed/1.000  symbol
+  0x000000000000115c..0x0000000000001169  _fini                     observed/1.000  symbol,prologue
+
+unresolved opaque mnemonics:
+  hlt: 1

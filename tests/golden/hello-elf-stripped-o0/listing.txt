@@ -1,0 +1,114 @@
+;; dac -O0 annotated listing
+;; input:     tests/fixtures/hello-x86_64-stripped
+;; format:    ELF
+;; arch:      x86-64
+;; entry:     0x0000000000001060
+;; size:      14472 bytes
+;; functions: 5
+;; signals:   symbol=0 entry=1 call=2 prologue=2
+
+;; ============================================================
+;; function <unnamed> [0x0000000000001000..0x000000000000101b) (27 bytes)
+;;   confidence: derived 0.600
+;;   sources:   prologue
+;; ============================================================
+0x0000000000001000  f3 0f 1e fa                   endbr64    ; nop
+0x0000000000001004  48 83 ec 08                   sub        rsp,8 ; sub(rsp:64, 8#64)
+0x0000000000001008  48 8b 05 c1 2f 00 00          mov        rax,[3FD0h] ; mov(rax:64, ds:[rip+16336]:64)
+0x000000000000100f  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x0000000000001012  74 02                         je         short 0000000000001016h ; jcc.eq(@0x1016)
+0x0000000000001014  ff d0                         call       rax ; call(rax:64)
+0x0000000000001016  48 83 c4 08                   add        rsp,8 ; add(rsp:64, 8#64)
+0x000000000000101a  c3                            ret        ; ret
+
+;; ============================================================
+;; function <unnamed> [0x0000000000001030..0x0000000000001040) (16 bytes)
+;;   confidence: derived 0.850
+;;   sources:   call
+;; ============================================================
+0x0000000000001030  ff 25 ca 2f 00 00             jmp        qword ptr [4000h] ; jmp(ds:[rip+16384]:64)
+0x0000000000001036  68 00 00 00 00                push       0 ; push(0#64)
+0x000000000000103b  e9 e0 ff ff ff                jmp        0000000000001020h ; jmp(@0x1020)
+
+;; ============================================================
+;; function <unnamed> [0x0000000000001060..0x0000000000001090) (48 bytes)
+;;   confidence: observed 1.000
+;;   sources:   entry
+;; ============================================================
+0x0000000000001060  f3 0f 1e fa                   endbr64    ; nop
+0x0000000000001064  31 ed                         xor        ebp,ebp ; xor(ebp:32, ebp:32)
+0x0000000000001066  49 89 d1                      mov        r9,rdx ; mov(r9:64, rdx:64)
+0x0000000000001069  5e                            pop        rsi ; pop(rsi:64)
+0x000000000000106a  48 89 e2                      mov        rdx,rsp ; mov(rdx:64, rsp:64)
+0x000000000000106d  48 83 e4 f0                   and        rsp,0FFFFFFFFFFFFFFF0h ; and(rsp:64, -16#64)
+0x0000000000001071  50                            push       rax ; push(rax:64)
+0x0000000000001072  54                            push       rsp ; push(rsp:64)
+0x0000000000001073  45 31 c0                      xor        r8d,r8d ; xor(r8d:32, r8d:32)
+0x0000000000001076  31 c9                         xor        ecx,ecx ; xor(ecx:32, ecx:32)
+0x0000000000001078  48 8d 3d c1 ff ff ff          lea        rdi,[1040h] ; lea(rdi:64, ds:[rip+4160]:0)
+0x000000000000107f  ff 15 3b 2f 00 00             call       qword ptr [3FC0h] ; call(ds:[rip+16320]:64)
+0x0000000000001085  f4                            hlt        ; opaque(hlt)
+0x0000000000001086  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+
+;; ============================================================
+;; function <unnamed> [0x0000000000001090..0x0000000000001159) (201 bytes)
+;;   confidence: derived 0.850
+;;   sources:   call
+;; ============================================================
+0x0000000000001090  48 8d 3d 81 2f 00 00          lea        rdi,[4018h] ; lea(rdi:64, ds:[rip+16408]:0)
+0x0000000000001097  48 8d 05 7a 2f 00 00          lea        rax,[4018h] ; lea(rax:64, ds:[rip+16408]:0)
+0x000000000000109e  48 39 f8                      cmp        rax,rdi ; cmp(rax:64, rdi:64)
+0x00000000000010a1  74 15                         je         short 00000000000010B8h ; jcc.eq(@0x10b8)
+0x00000000000010a3  48 8b 05 1e 2f 00 00          mov        rax,[3FC8h] ; mov(rax:64, ds:[rip+16328]:64)
+0x00000000000010aa  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x00000000000010ad  74 09                         je         short 00000000000010B8h ; jcc.eq(@0x10b8)
+0x00000000000010af  ff e0                         jmp        rax ; jmp(rax:64)
+0x00000000000010b1  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x00000000000010b8  c3                            ret        ; ret
+0x00000000000010b9  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x00000000000010c0  48 8d 3d 51 2f 00 00          lea        rdi,[4018h] ; lea(rdi:64, ds:[rip+16408]:0)
+0x00000000000010c7  48 8d 35 4a 2f 00 00          lea        rsi,[4018h] ; lea(rsi:64, ds:[rip+16408]:0)
+0x00000000000010ce  48 29 fe                      sub        rsi,rdi ; sub(rsi:64, rdi:64)
+0x00000000000010d1  48 89 f0                      mov        rax,rsi ; mov(rax:64, rsi:64)
+0x00000000000010d4  48 c1 ee 3f                   shr        rsi,3Fh ; shr(rsi:64, 63#8)
+0x00000000000010d8  48 c1 f8 03                   sar        rax,3 ; sar(rax:64, 3#8)
+0x00000000000010dc  48 01 c6                      add        rsi,rax ; add(rsi:64, rax:64)
+0x00000000000010df  48 d1 fe                      sar        rsi,1 ; sar(rsi:64, 1#8)
+0x00000000000010e2  74 14                         je         short 00000000000010F8h ; jcc.eq(@0x10f8)
+0x00000000000010e4  48 8b 05 ed 2e 00 00          mov        rax,[3FD8h] ; mov(rax:64, ds:[rip+16344]:64)
+0x00000000000010eb  48 85 c0                      test       rax,rax ; test(rax:64, rax:64)
+0x00000000000010ee  74 08                         je         short 00000000000010F8h ; jcc.eq(@0x10f8)
+0x00000000000010f0  ff e0                         jmp        rax ; jmp(rax:64)
+0x00000000000010f2  66 0f 1f 44 00 00             nop        [rax+rax] ; nop
+0x00000000000010f8  c3                            ret        ; ret
+0x00000000000010f9  0f 1f 80 00 00 00 00          nop        [rax] ; nop
+0x0000000000001100  f3 0f 1e fa                   endbr64    ; nop
+0x0000000000001104  80 3d 0d 2f 00 00 00          cmp        byte ptr [4018h],0 ; cmp(ds:[rip+16408]:8, 0#8)
+0x000000000000110b  75 33                         jne        short 0000000000001140h ; jcc.ne(@0x1140)
+0x000000000000110d  55                            push       rbp ; push(rbp:64)
+0x000000000000110e  48 83 3d ca 2e 00 00 00       cmp        qword ptr [3FE0h],0 ; cmp(ds:[rip+16352]:64, 0#64)
+0x0000000000001116  48 89 e5                      mov        rbp,rsp ; mov(rbp:64, rsp:64)
+0x0000000000001119  74 0d                         je         short 0000000000001128h ; jcc.eq(@0x1128)
+0x000000000000111b  48 8b 3d ee 2e 00 00          mov        rdi,[4010h] ; mov(rdi:64, ds:[rip+16400]:64)
+0x0000000000001122  ff 15 b8 2e 00 00             call       qword ptr [3FE0h] ; call(ds:[rip+16352]:64)
+0x0000000000001128  e8 63 ff ff ff                call       0000000000001090h ; call(@0x1090)
+0x000000000000112d  c6 05 e4 2e 00 00 01          mov        byte ptr [4018h],1 ; mov(ds:[rip+16408]:8, 1#8)
+0x0000000000001134  5d                            pop        rbp ; pop(rbp:64)
+0x0000000000001135  c3                            ret        ; ret
+0x0000000000001136  66 2e 0f 1f 84 00 00 00 .     nop        [rax+rax] ; nop
+0x0000000000001140  c3                            ret        ; ret
+0x0000000000001141  0f 1f 40 00                   nop        [rax] ; nop
+0x0000000000001145  66 66 2e 0f 1f 84 00 00 .     nop        [rax+rax] ; nop
+0x0000000000001150  f3 0f 1e fa                   endbr64    ; nop
+0x0000000000001154  e9 67 ff ff ff                jmp        00000000000010C0h ; jmp(@0x10c0)
+
+;; ============================================================
+;; function <unnamed> [0x000000000000115c..0x0000000000001169) (13 bytes)
+;;   confidence: derived 0.600
+;;   sources:   prologue
+;; ============================================================
+0x000000000000115c  f3 0f 1e fa                   endbr64    ; nop
+0x0000000000001160  48 83 ec 08                   sub        rsp,8 ; sub(rsp:64, 8#64)
+0x0000000000001164  48 83 c4 08                   add        rsp,8 ; add(rsp:64, 8#64)
+0x0000000000001168  c3                            ret        ; ret
+

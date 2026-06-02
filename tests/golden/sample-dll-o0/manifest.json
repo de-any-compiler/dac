@@ -1,0 +1,26 @@
+{
+  "tool": {
+    "name": "dac",
+    "version": "0.1.0-pre",
+    "build_id": "dev"
+  },
+  "input": {
+    "path": "tests/fixtures/sample.dll",
+    "size": 29619,
+    "format": "PE",
+    "architecture": "x86-64"
+  },
+  "settings": {
+    "level": "O0",
+    "target": "c",
+    "deterministic": false,
+    "no_ai": false,
+    "emit_ir": false,
+    "emit_cfg": false,
+    "emit_report": false,
+    "emit_annotations": false,
+    "threads": null
+  },
+  "ai": { "provider": null },
+  "plugins": []
+}

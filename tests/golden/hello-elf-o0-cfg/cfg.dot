@@ -1,0 +1,97 @@
+digraph "fn__init_1000" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x1000\l0x1000: endbr64\l0x1004: sub rsp,8\l0x1008: mov rax,[3FD0h]\l0x100f: test rax,rax\l0x1012: je short 0000000000001016h\l", style=filled, fillcolor="#e0e0e0"];
+    BB1 [label="BB1 @ 0x1014\l0x1014: call rax\l"];
+    BB2 [label="BB2 @ 0x1016\l0x1016: add rsp,8\l0x101a: ret\l"];
+    BB0 -> BB2 [label="T"];
+    BB0 -> BB1 [label="F"];
+    BB1 -> BB2 [label="fall"];
+}
+
+digraph "fn_1030" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x1030\l0x1030: jmp qword ptr [4000h]\l", style=filled, fillcolor="#e0e0e0"];
+    BB1 [label="BB1 @ 0x1036\l0x1036: push 0\l0x103b: jmp 0000000000001020h\l", style=dashed, color="#808080"];
+}
+
+digraph "fn_main_1040" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x1040\l0x1040: push rax\l0x1041: mov edx,6\l0x1046: mov edi,1\l0x104b: lea rsi,[2004h]\l0x1052: call 0000000000001030h\l", style=filled, fillcolor="#e0e0e0"];
+    BB1 [label="BB1 @ 0x1057\l0x1057: mov eax,2Ah\l0x105c: pop rdx\l0x105d: ret\l"];
+    BB0 -> BB1 [label="fall"];
+}
+
+digraph "fn__start_1060" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x1060\l0x1060: endbr64\l0x1064: xor ebp,ebp\l0x1066: mov r9,rdx\l0x1069: pop rsi\l0x106a: mov rdx,rsp\l0x106d: and rsp,0FFFFFFFFFFFFFFF0h\l0x1071: push rax\l0x1072: push rsp\l0x1073: xor r8d,r8d\l0x1076: xor ecx,ecx\l0x1078: lea rdi,[1040h]\l0x107f: call qword ptr [3FC0h]\l", style=filled, fillcolor="#e0e0e0"];
+    BB1 [label="BB1 @ 0x1085\l0x1085: hlt\l"];
+    BB0 -> BB1 [label="fall"];
+}
+
+digraph "fn_deregister_tm_clones_1090" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x1090\l0x1090: lea rdi,[4018h]\l0x1097: lea rax,[4018h]\l0x109e: cmp rax,rdi\l0x10a1: je short 00000000000010B8h\l", style=filled, fillcolor="#e0e0e0"];
+    BB1 [label="BB1 @ 0x10a3\l0x10a3: mov rax,[3FC8h]\l0x10aa: test rax,rax\l0x10ad: je short 00000000000010B8h\l"];
+    BB2 [label="BB2 @ 0x10af\l0x10af: jmp rax\l"];
+    BB3 [label="BB3 @ 0x10b1\l0x10b1: nop [rax]\l", style=dashed, color="#808080"];
+    BB4 [label="BB4 @ 0x10b8\l0x10b8: ret\l"];
+    BB5 [label="BB5 @ 0x10b9\l0x10b9: nop [rax]\l", style=dashed, color="#808080"];
+    BB0 -> BB4 [label="T"];
+    BB0 -> BB1 [label="F"];
+    BB1 -> BB4 [label="T"];
+    BB1 -> BB2 [label="F"];
+    BB3 -> BB4 [label="fall"];
+}
+
+digraph "fn_register_tm_clones_10c0" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x10c0\l0x10c0: lea rdi,[4018h]\l0x10c7: lea rsi,[4018h]\l0x10ce: sub rsi,rdi\l0x10d1: mov rax,rsi\l0x10d4: shr rsi,3Fh\l0x10d8: sar rax,3\l0x10dc: add rsi,rax\l0x10df: sar rsi,1\l0x10e2: je short 00000000000010F8h\l", style=filled, fillcolor="#e0e0e0"];
+    BB1 [label="BB1 @ 0x10e4\l0x10e4: mov rax,[3FD8h]\l0x10eb: test rax,rax\l0x10ee: je short 00000000000010F8h\l"];
+    BB2 [label="BB2 @ 0x10f0\l0x10f0: jmp rax\l"];
+    BB3 [label="BB3 @ 0x10f2\l0x10f2: nop [rax+rax]\l", style=dashed, color="#808080"];
+    BB4 [label="BB4 @ 0x10f8\l0x10f8: ret\l"];
+    BB5 [label="BB5 @ 0x10f9\l0x10f9: nop [rax]\l", style=dashed, color="#808080"];
+    BB0 -> BB4 [label="T"];
+    BB0 -> BB1 [label="F"];
+    BB1 -> BB4 [label="T"];
+    BB1 -> BB2 [label="F"];
+    BB3 -> BB4 [label="fall"];
+}
+
+digraph "fn___do_global_dtors_aux_1100" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x1100\l0x1100: endbr64\l0x1104: cmp byte ptr [4018h],0\l0x110b: jne short 0000000000001140h\l", style=filled, fillcolor="#e0e0e0"];
+    BB1 [label="BB1 @ 0x110d\l0x110d: push rbp\l0x110e: cmp qword ptr [3FE0h],0\l0x1116: mov rbp,rsp\l0x1119: je short 0000000000001128h\l"];
+    BB2 [label="BB2 @ 0x111b\l0x111b: mov rdi,[4010h]\l0x1122: call qword ptr [3FE0h]\l"];
+    BB3 [label="BB3 @ 0x1128\l0x1128: call 0000000000001090h\l"];
+    BB4 [label="BB4 @ 0x112d\l0x112d: mov byte ptr [4018h],1\l0x1134: pop rbp\l0x1135: ret\l"];
+    BB5 [label="BB5 @ 0x1136\l0x1136: nop [rax+rax]\l", style=dashed, color="#808080"];
+    BB6 [label="BB6 @ 0x1140\l0x1140: ret\l"];
+    BB7 [label="BB7 @ 0x1141\l0x1141: nop [rax]\l0x1145: nop [rax+rax]\l", style=dashed, color="#808080"];
+    BB0 -> BB6 [label="T"];
+    BB0 -> BB1 [label="F"];
+    BB1 -> BB3 [label="T"];
+    BB1 -> BB2 [label="F"];
+    BB2 -> BB3 [label="fall"];
+    BB3 -> BB4 [label="fall"];
+    BB5 -> BB6 [label="fall"];
+}
+
+digraph "fn_frame_dummy_1150" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x1150\l0x1150: endbr64\l0x1154: jmp 00000000000010C0h\l", style=filled, fillcolor="#e0e0e0"];
+}
+
+digraph "fn__fini_115c" {
+    rankdir=TB;
+    node [shape=box, fontname="monospace"];
+    BB0 [label="BB0 @ 0x115c\l0x115c: endbr64\l0x1160: sub rsp,8\l0x1164: add rsp,8\l0x1168: ret\l", style=filled, fillcolor="#e0e0e0"];
+}

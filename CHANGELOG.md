@@ -1873,6 +1873,92 @@ the lifter → `RawFunction` bridge lands and feeds the
 sample corpus (B2.9); it is recorded here as a deferred
 follow-up rather than silently dropped.
 
+#### B2.9 — Golden test infrastructure (2026-06-02)
+
+Long-term drift gate for every deterministic `dac` output.
+`tests/golden/` becomes the recorded corpus; a new
+`cargo xtask golden {check, update}` runs each declared
+case through the `dac` CLI under workspace-relative paths,
+captures the produced sidecars, and either diffs (`check`)
+or overwrites (`update`) the bytes stored on disk. The
+canonical `cargo xtask ci` calls `golden check` after the
+test suite, so any drift fails the same command developers
+already run locally.
+
+- `xtask/src/golden.rs`:
+  - `Mode::{Check, Update}` switches the harness between
+    diff-and-fail and overwrite-on-disk behavior.
+  - `Case { name, fixture, args, outputs }` declares one
+    corpus row; the static `CASES` array is the corpus.
+    The array shape catches typos at compile time and
+    keeps `xtask` dependency-free (no TOML crate today).
+  - `OutputKind::{Listing, Manifest, Report, Cfg, Source}`
+    maps each captured sidecar to its on-disk file name
+    (`listing.txt`, `manifest.json`, `report.txt`,
+    `cfg.dot`, `source.c`) and to the suffix the `dac`
+    CLI writes (`""`, `.manifest.json`, `.report.txt`,
+    `.cfg.dot`, `.c`) — mirroring the contract documented
+    in `dac-cli::main::emit_outputs`.
+  - `run(mode)` builds `target/debug/dac` once, clears a
+    scratch dir under `target/xtask/golden/`, and for each
+    case invokes the CLI with `current_dir = workspace
+    root` plus the workspace-relative fixture path
+    (`tests/fixtures/<file>`). Workspace-relative paths
+    keep the manifest's `input.path` portable across
+    developer machines.
+  - `render_drift(...)` picks the first differing line
+    (UTF-8 inputs) or first differing byte (otherwise) and
+    formats a triage report: expected vs. actual paths,
+    byte counts, the offending line with `-`/`+` markers,
+    and a hint to re-run `cargo xtask golden update`.
+  - 6 unit tests pin the invariants the harness depends on:
+    case-name uniqueness, per-case output uniqueness, the
+    `OutputKind → sidecar suffix` mapping, fixture existence,
+    and the two drift-reporting paths.
+
+- `xtask/src/main.rs`:
+  - `cargo xtask golden check` (default sub) and
+    `cargo xtask golden update` dispatched from the existing
+    arg parser; unknown `golden` sub exits 2 with a hint.
+  - `ci()` runs `fmt → clippy → test → golden::Check`, so
+    the canonical CI command gates drift.
+  - Usage banner updated to list the new subcommands.
+
+- `tests/golden/`:
+  - 9 cases, 22 captured outputs:
+    - `hello-elf-o0` (listing, manifest),
+    - `hello-elf-o0-report` (listing, manifest, report),
+    - `hello-elf-o0-cfg` (listing, manifest, cfg),
+    - `hello-elf-o1-c` (listing, manifest, source),
+    - `hello-elf-stripped-o0` (listing, manifest),
+    - `hello-pe-o0` (listing, manifest),
+    - `hello-pe-o1-c` (listing, manifest, source),
+    - `libsample-o0` (listing, manifest),
+    - `sample-dll-o0` (listing, manifest).
+  - `README.md` documents the layout, the update flow, the
+    workspace-relative path contract, and how to add a
+    case.
+
+- The integration tests `crates/dac-cli/tests/o0_golden.rs`,
+  `crates/dac-cli/tests/cfg_emit.rs`, and
+  `crates/dac-cli/tests/o1_target_c.rs` continue to assert
+  within-run determinism (run-twice, byte-identical). The
+  goldens layer the across-run / across-PR check on top.
+
+`cargo xtask ci`: green. Test groups climb by 1 (xtask
+now ships 6 unit tests) and the golden harness re-runs the
+nine-case corpus at the end of every CI invocation.
+
+Closes: NFR-9 (same input + settings → same output, gated
+in CI) at the CLI surface for the artifacts shipping today
+(listing, manifest, report, CFG DOT, target source).
+Satisfies spec §16 "golden-file tests for emitted source"
+for the C backend. Closes the deferred B2.8 follow-up at
+the corpus level: every `--target c -O1` reconstruction in
+the corpus is now byte-pinned across runs, even though the
+lifter → `RawFunction` bridge (the second leg of the B2.8
+"run with matching behavior" rubric) remains future work.
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 

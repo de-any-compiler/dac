@@ -41,13 +41,7 @@ disassembly-style listing.
 
 ## Milestone 2 — Core decompilation (matches spec §15 M2)
 
-Goal: real C output for small programs at `-O1`.
-
-### B2.9 — Golden test infrastructure
-- `tests/golden/` with corpus binaries + expected output.
-- `xtask golden update` regenerates goldens.
-- CI fails on drift.
-- **Done when:** all goldens stable, drift gated in CI.
+*All M2 batches complete — see [CHANGELOG.md](./CHANGELOG.md).*
 
 ---
 
