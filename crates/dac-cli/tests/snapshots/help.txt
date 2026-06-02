@@ -23,6 +23,8 @@ Output:
       --emit-cfg            Export control-flow graphs (DOT).
       --emit-report         Export the analysis report.
       --emit-annotations    Export annotations alongside the source.
+      --callgraph           Export the whole-program call graph (DOT).
+      --xrefs <subject>     Print xrefs for <subject> (symbol or hex VA).
 
 AI:
       --no-ai               Disable all AI providers.

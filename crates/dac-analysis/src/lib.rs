@@ -25,6 +25,10 @@
 //!   loop forest into a [`dac_ir::sem::SemFunction`] tree
 //!   (`if` / `loop` / `break` / `continue` / `return`), with a goto
 //!   fallback for irreducible CFGs.
+//! - [`xrefs`] — whole-program call graph and cross-reference index
+//!   (B3.1, FR-26, FR-27). Reads `ControlFlow::{Call, IndirectCall,
+//!   UnconditionalBranch}` per function plus the relocation table and
+//!   export table to produce a [`CallGraph`] and an [`XrefIndex`].
 //!
 //! ## What's coming
 //!
@@ -41,8 +45,15 @@ pub mod dom;
 pub mod loops;
 pub mod ssa;
 pub mod structuring;
+pub mod xrefs;
 
 pub use structuring::structure;
+pub use xrefs::{
+    build_call_graph, build_xref_index, render_callgraph_dot, resolve_subject, CallEdge, CallGraph,
+    CallNode, CallNodeKind, Xref, XrefIndex, XrefKind, DIRECT_CALL_CONFIDENCE, EXPORT_CONFIDENCE,
+    EXTERNAL_VA, INDIRECT_CALL_CONFIDENCE, RELOC_CONFIDENCE, TAIL_CALL_CONFIDENCE,
+    UNRESOLVED_DIRECT_CALL_CONFIDENCE,
+};
 
 #[cfg(test)]
 mod test_support;

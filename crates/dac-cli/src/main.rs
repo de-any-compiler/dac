@@ -22,6 +22,7 @@
 mod listing;
 mod manifest;
 mod report;
+mod xrefs;
 
 use std::ffi::OsString;
 use std::fs::File;
@@ -30,6 +31,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use dac_analysis::cfg::{build_cfgs, render_dot_all};
+use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, resolve_subject};
 use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter};
 use dac_arch_x86::X86_64;
 use dac_backend_c::ast::{
@@ -45,6 +47,7 @@ use crate::manifest::{
     render_manifest_json, Manifest, ManifestInput, ManifestSettings, ManifestTool,
 };
 use crate::report::{render_report_text, Report};
+use crate::xrefs::render_xrefs_report;
 
 const HELP_TEXT: &str = include_str!("../tests/snapshots/help.txt");
 
@@ -100,6 +103,8 @@ fn main() -> ExitCode {
         emit_cfg = args.emit_cfg,
         emit_report = args.emit_report,
         emit_annotations = args.emit_annotations,
+        emit_callgraph = args.emit_callgraph,
+        xrefs = ?args.xrefs_subject,
         plugin = ?args.plugin,
         "parsed cli arguments"
     );
@@ -150,6 +155,8 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let report_text;
     let cfg_text;
     let source_text;
+    let callgraph_text;
+    let xrefs_text;
     match &backend {
         Some(b) => {
             let mut graph = EvidenceGraph::new();
@@ -182,6 +189,29 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 None
             };
             source_text = render_source_text(args, &input_label, &model, &functions);
+            callgraph_text = if args.emit_callgraph {
+                let cg = build_call_graph(&model, &bytes, b.decoder.as_ref(), &functions);
+                Some(render_callgraph_dot(&cg, &input_label))
+            } else {
+                None
+            };
+            xrefs_text = match &args.xrefs_subject {
+                Some(raw) => {
+                    let xidx = build_xref_index(&model, &bytes, b.decoder.as_ref(), &functions);
+                    match resolve_subject(raw, &model, &functions) {
+                        Some((va, name)) => Some(render_xrefs_report(
+                            raw,
+                            va,
+                            name.as_deref(),
+                            &xidx,
+                            &model,
+                            &functions,
+                        )),
+                        None => Some(unresolved_xrefs_subject_text(raw)),
+                    }
+                }
+                None => None,
+            };
         }
         None => {
             listing_text = unsupported_arch_listing(&input_label, &model);
@@ -204,6 +234,15 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                     stats: Default::default(),
                 },
             );
+            callgraph_text = if args.emit_callgraph {
+                Some(unsupported_arch_callgraph(&model))
+            } else {
+                None
+            };
+            xrefs_text = args
+                .xrefs_subject
+                .as_deref()
+                .map(unresolved_xrefs_subject_text);
         }
     }
 
@@ -214,6 +253,21 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         report_text.as_deref(),
         cfg_text.as_deref(),
         source_text.as_deref(),
+        callgraph_text.as_deref(),
+        xrefs_text.as_deref(),
+    )
+}
+
+fn unresolved_xrefs_subject_text(subject: &str) -> String {
+    format!(
+        ";; dac --xrefs report (FR-26, FR-31)\n;; subject:   {subject}\n;; (unresolved: no matching symbol or address)\n",
+    )
+}
+
+fn unsupported_arch_callgraph(model: &BinaryModel) -> String {
+    format!(
+        "digraph \"callgraph_unsupported_arch_{}\" {{\n}}\n",
+        sanitize_dot_ident(model.architecture.name())
     )
 }
 
@@ -414,14 +468,17 @@ fn build_manifest(input_path: &str, model: &BinaryModel, args: &Args) -> Manifes
     }
 }
 
-/// Emit the listing, manifest, optional report / CFG, and (for
-/// `--target c` at `-O1`+) the lowered C translation unit.
+/// Emit the listing, manifest, optional report / CFG / callgraph /
+/// xrefs sidecars, and (for `--target c` at `-O1`+) the lowered C
+/// translation unit.
 ///
 /// - No `--output`: listing → stdout, then delimited blocks for
-///   manifest, report, CFG, and the reconstructed source.
+///   manifest, report, CFG, source, callgraph, and the xrefs report.
 /// - With `--output <path>`: listing → `<path>`, manifest →
 ///   `<path>.manifest.json`, report → `<path>.report.txt`, CFG →
-///   `<path>.cfg.dot`, reconstructed source → `<path>.c`.
+///   `<path>.cfg.dot`, reconstructed source → `<path>.c`,
+///   callgraph → `<path>.callgraph.dot`, xrefs → `<path>.xrefs.txt`.
+#[allow(clippy::too_many_arguments)]
 fn emit_outputs(
     output: Option<&Path>,
     listing: &str,
@@ -429,6 +486,8 @@ fn emit_outputs(
     report: Option<&str>,
     cfg: Option<&str>,
     source: Option<&str>,
+    callgraph: Option<&str>,
+    xrefs: Option<&str>,
 ) -> dac_core::Result<()> {
     match output {
         None => {
@@ -449,6 +508,14 @@ fn emit_outputs(
                 h.write_all(b"\n;; ---- target source (FR-21) ----\n")?;
                 h.write_all(s.as_bytes())?;
             }
+            if let Some(g) = callgraph {
+                h.write_all(b"\n;; ---- callgraph (FR-27) ----\n")?;
+                h.write_all(g.as_bytes())?;
+            }
+            if let Some(x) = xrefs {
+                h.write_all(b"\n;; ---- xrefs (FR-26, FR-31) ----\n")?;
+                h.write_all(x.as_bytes())?;
+            }
             Ok(())
         }
         Some(path) => {
@@ -466,6 +533,14 @@ fn emit_outputs(
             if let Some(s) = source {
                 let source_path = sidecar(path, ".c");
                 write_file(&source_path, s)?;
+            }
+            if let Some(g) = callgraph {
+                let cg_path = sidecar(path, ".callgraph.dot");
+                write_file(&cg_path, g)?;
+            }
+            if let Some(x) = xrefs {
+                let xrefs_path = sidecar(path, ".xrefs.txt");
+                write_file(&xrefs_path, x)?;
             }
             Ok(())
         }
@@ -574,6 +649,8 @@ struct Args {
     emit_cfg: bool,
     emit_report: bool,
     emit_annotations: bool,
+    emit_callgraph: bool,
+    xrefs_subject: Option<String>,
     no_ai: bool,
     ai_provider: Option<String>,
     deterministic: bool,
@@ -606,6 +683,8 @@ where
             "--emit-cfg" => args.emit_cfg = true,
             "--emit-report" => args.emit_report = true,
             "--emit-annotations" => args.emit_annotations = true,
+            "--callgraph" => args.emit_callgraph = true,
+            "--xrefs" => args.xrefs_subject = Some(take_value("--xrefs", &mut it)?),
             "--no-ai" => args.no_ai = true,
             "--ai-provider" => args.ai_provider = Some(take_value("--ai-provider", &mut it)?),
             "--deterministic" => args.deterministic = true,

@@ -1960,7 +1960,107 @@ lifter → `RawFunction` bridge (the second leg of the B2.8
 "run with matching behavior" rubric) remains future work.
 
 ### Milestone 3 — Usable RE tool
-*(not started)*
+
+#### B3.1 — Call graph + xrefs (2026-06-02)
+
+Whole-program call graph and an address-indexed cross-reference table
+land in `dac-analysis`, with two new CLI surfaces (`--xrefs <subject>`,
+`--callgraph`) wiring them through the existing sidecar machinery in
+`dac-cli`. The B3.1 "done when" rubric — `dac sample.elf --xrefs sym`
+prints sane results — is gated by an integration test that asserts the
+expected `CALL` edges and caller annotations against the corpus ELF
+fixture.
+
+- `dac-analysis::xrefs` (new ~600-line module):
+  - `XrefKind` — `Call`, `TailCall`, `IndirectCall`, `CodeToData`,
+    `DataToCode`, `DataToData`, `Import`, `Export`. Each kind has a
+    stable two-to-five-letter tag (`tag()`) for the textual renderer
+    and an explicit doc-comment recording when it is minted.
+  - `Xref { from, to, kind, confidence }` and `XrefIndex` with
+    `from(addr)` / `to(addr)` lookups backed by `BTreeMap<u64,
+    Vec<u32>>` parallel indices. The underlying `Vec<Xref>` is sorted
+    `(to, from, kind)` so the renderer walks every report row in a
+    byte-stable order (NFR-9, I-4).
+  - `CallNode { id, kind, address, name }` with
+    `CallNodeKind ∈ Function | Import | Unresolved | IndirectSite`,
+    `CallEdge { from, to, site, indirect, confidence }`, and
+    `CallGraph { nodes, edges, by_function }`. Function nodes land in
+    ascending address order; imports / unresolved / indirect-site
+    nodes follow as edges are discovered. Edges are sorted
+    `(from, site, to, indirect)` so the DOT output is stable.
+  - `build_call_graph(model, bytes, decoder, functions)` walks every
+    function through `decoder.iter`, surfacing
+    `ControlFlow::Call { target: Some }` (direct call → Function /
+    Import / Unresolved), `ControlFlow::IndirectCall` (anchored at
+    `indirect@<va>`), and `ControlFlow::UnconditionalBranch
+    { target: Some }` (tail call only when the target leaves the
+    source function *and* lands at another recovered function entry).
+    Confidence is `Observed` for direct call→function / Import,
+    `Derived` for unresolved-direct / tail-call, `Speculative` for
+    indirect calls.
+  - `build_xref_index(model, bytes, decoder, functions)` mirrors the
+    callgraph walk for the code↔code half, then minters
+    relocation-derived xrefs (`Code→Data`, `Data→Code`, `Data→Data`,
+    `Import` for undefined-symbol relocations against code), and
+    finally `Export` xrefs from `model.entry` and `model.exports`,
+    rooted at the synthetic external VA `0`.
+  - `resolve_subject(raw, model, functions)` accepts a hex VA
+    (`0x...` / bare hex / decimal) or a symbol name, preferring an
+    exact function-entry match before falling back to symbols and
+    exports. Used by the CLI.
+  - `render_callgraph_dot(graph, binary_name)` emits a single
+    `digraph` with node shapes per kind (box / diamond / ellipse /
+    circle) and dashed indirect edges; the call-site VA is the edge
+    label.
+- `dac-cli::xrefs` (new module): `render_xrefs_report(subject_raw,
+  subject_va, subject_name, index, model, functions)` formats the
+  textual `;;`-prefixed report — preamble + `;; xrefs to: N` block +
+  `;; xrefs from: N` block — with two-line annotations
+  (`->  fn <name>` / `-> sym <name>`) that fall back to the
+  *containing* function so call sites inside a function body still
+  surface the caller's name.
+- `dac-cli::main`:
+  - `Args` gains `emit_callgraph` (`--callgraph`) and
+    `xrefs_subject` (`--xrefs <subject>`). The parser, the tracing
+    debug line, and `tests/snapshots/help.txt` are updated in lock
+    step.
+  - `emit_outputs` grows two new sidecars: `<output>.callgraph.dot`
+    and `<output>.xrefs.txt`, with matching delimited stdout blocks
+    when `--output` is absent.
+  - The unsupported-arch branch returns a valid-but-empty
+    `digraph "callgraph_unsupported_arch_<arch>"` and an "unresolved
+    subject" placeholder so downstream tooling never receives
+    invalid DOT or empty text.
+- Tests:
+  - `dac_analysis::xrefs::tests` — 9 unit tests covering the direct
+    call edge, indirect-site anchoring, unresolved-target safety
+    net, tail-call promotion (positive + negative), xref-index
+    `to/from` ordering, exports + entry → `Export` xrefs, data↔data
+    relocations, subject resolution by name + hex, and DOT
+    determinism.
+  - `dac-cli::xrefs::tests` — 4 unit tests covering caller-symbol
+    annotation, zero-xref subjects, the `<external>` marker, and the
+    data-kind constant.
+  - `crates/dac-cli/tests/xrefs_cli.rs` (new) — 5 integration tests
+    against the corpus ELF: `--xrefs deregister_tm_clones` lists the
+    `CALL` edge from `0x1128` with the
+    `__do_global_dtors_aux` annotation; `--xrefs 0x1090` matches
+    `--xrefs deregister_tm_clones` on every expected substring;
+    `--xrefs _start` records the `EXP` xref from `<external>` (the
+    binary's entry point); unknown subjects emit the
+    `(unresolved: …)` block; `--callgraph --output <path>` lands a
+    DOT file with the expected header, at least one
+    `shape=box` function node, and a `style=solid` edge.
+
+Closes FR-26 (cross-references), FR-27 (whole-program call graph),
+FR-31 (CLI query interface for symbols / strings / refs). All goldens
+unchanged — the new sidecars are opt-in and the listing / manifest /
+report / CFG / source corpus rows remain byte-identical. The current
+implementation is limited to the signals the decoder's `ControlFlow`
+enum and the relocation table expose: per-instruction operand-level
+code↔data xrefs (lea / mov of an absolute address) land alongside
+B3.2's struct recovery, when the lifter's operand-walk becomes the
+shared substrate.
 
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*

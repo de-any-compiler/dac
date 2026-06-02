@@ -49,12 +49,6 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-### B3.1 — Call graph + xrefs
-- Whole-program call graph (FR-27).
-- Cross-references: code↔code, code↔data, data↔code (FR-26).
-- CLI query interface for symbols/strings/refs (FR-31).
-- **Done when:** `dac sample.elf --xrefs sym` prints sane results.
-
 ### B3.2 — Struct and array recovery
 - Cluster offsets into struct field candidates; promote to structs when
   evidence supports (FR-17).
