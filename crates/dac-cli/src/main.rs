@@ -41,7 +41,7 @@ use dac_backend_c::ast::{
 };
 use dac_backend_c::{
     default_includes as c_default_includes, emit as c_emit, lower_function as c_lower_function,
-    NameResolver as CNameResolver,
+    NameResolver as CNameResolver, Recovered as CRecovered,
 };
 use dac_backend_cpp::{
     class_recovery::recover_classes as recover_cpp_classes,
@@ -499,8 +499,13 @@ fn lower_one_c_function(
         .unwrap_or_else(|| format!("fn_{:x}", f.address));
     let sanitized = sanitize_c_identifier(&raw_name);
     match outcome {
-        Some(LiftOutcome::Real { ssa, sem }) => {
-            let mut lowered = c_lower_function(ssa, sem, resolver);
+        Some(LiftOutcome::Real { ssa, sem, facts }) => {
+            let recovered = CRecovered::new(
+                facts.convention.as_ref().map(|c| &c.signature),
+                Some(&facts.types),
+                Some(&facts.structs),
+            );
+            let mut lowered = c_lower_function(ssa, sem, resolver, &recovered);
             // `lower_function` derives the name from `sem.function_name`
             // (the recovered symbol); sanitise to keep emitted C
             // syntactically valid for symbols that contain `@`, `.`
@@ -509,10 +514,11 @@ fn lower_one_c_function(
             // Replace the structurer's auto-generated leading comment
             // (a duplicate of the address line plus the structurer
             // stats) with a single unified head that carries the
-            // recovered-function provenance + structuring stats. The
-            // `--debug` block from the annotation channel is appended
-            // when requested.
-            lowered.leading_comment = Some(real_body_leading_comment(f, sem, annot, debug));
+            // recovered-function provenance + structuring stats and the
+            // recovered convention citation (B3.10). The `--debug`
+            // block from the annotation channel is appended when
+            // requested.
+            lowered.leading_comment = Some(real_body_leading_comment(f, sem, facts, annot, debug));
             lowered
         }
         outcome => {
@@ -572,12 +578,13 @@ fn stub_body_leading_comment(
 /// was lifted end-to-end. Combines the recovered-function header
 /// (address / end / discovery confidence) with the structurer's
 /// own stats (source blocks visited, gotos emitted, label count,
-/// irreducible flag) so the reader can trace both halves of the
-/// pipeline from one block. With `--debug`, also embeds the
+/// irreducible flag), the B3.10 recovery facts (convention name +
+/// score, struct / switch counts), and — under `--debug` — the
 /// annotation channel's "Why this name? / type?" trail.
 fn real_body_leading_comment(
     f: &dac_recovery::Function,
     sem: &dac_ir::sem::SemFunction,
+    facts: &crate::lift::RecoveryFacts,
     annot: Option<&FunctionAnnotation>,
     debug: bool,
 ) -> String {
@@ -601,6 +608,37 @@ fn real_body_leading_comment(
         sem.stats.label_count,
         sem.stats.irreducible,
     );
+    // B3.10: surface the recovered convention + side-table counts so
+    // the reader sees what FR-13 / FR-14 / FR-17 / FR-18 produced for
+    // this function (or didn't).
+    match &facts.convention {
+        Some(c) => {
+            let regs: Vec<&str> = c.signature.int_args.iter().map(|a| a.register).collect();
+            let arg_list = if regs.is_empty() {
+                "(no register args)".to_string()
+            } else {
+                regs.join(",")
+            };
+            let return_desc = c.signature.return_register.unwrap_or("none");
+            s.push_str(&format!(
+                "\nconvention: {} (score {:.2})\n\
+                 args: {arg_list}\n\
+                 return_reg: {return_desc}",
+                c.convention_name,
+                c.confidence.value(),
+            ));
+        }
+        None => s.push_str("\nconvention: (none inferred)"),
+    }
+    s.push_str(&format!(
+        "\nstack_locals: {}\n\
+         struct_layouts: pointer={} stack={}\n\
+         switch_tables: {}",
+        facts.stack_frame.locals.len(),
+        facts.structs.pointer_structs.len(),
+        facts.structs.stack_structs.len(),
+        facts.idioms.switch_tables.len(),
+    ));
     if debug {
         if let Some(a) = annot {
             s.push_str("\n\n");

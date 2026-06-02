@@ -173,6 +173,11 @@ pub(crate) fn render_report_text(r: &Report) -> String {
         lift_pct,
         r.lift.stub,
     );
+    let _ = writeln!(
+        out,
+        ";; recovery:    typed_sigs={} struct_fields={} switch_tables={}",
+        r.lift.typed_signatures, r.lift.struct_field_functions, r.lift.switch_functions,
+    );
     out.push('\n');
     out.push_str("functions:\n");
     for f in &r.functions {

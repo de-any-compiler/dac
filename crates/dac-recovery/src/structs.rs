@@ -440,7 +440,16 @@ fn decompose_address(
 fn lookup_def_op(value: ValueId, ssa: &SsaFunction) -> Option<&SsaOp> {
     let def = ssa.value(value);
     if let dac_ir::ssa::ValueSource::Instruction { block, index } = def.source {
-        return Some(&ssa.blocks[block as usize].instructions[index as usize].op);
+        // Defensive bounds check: a malformed `ValueSource` reference
+        // (observed on the PE corpus when an instruction-source
+        // value's index lands past the end of the block's
+        // instruction list) returns `None` rather than panicking. The
+        // decomposition then degrades to the `addr_val` self-base
+        // shape, matching the behavior the caller already handles
+        // for non-instruction sources.
+        let block = ssa.blocks.get(block as usize)?;
+        let instr = block.instructions.get(index as usize)?;
+        return Some(&instr.op);
     }
     None
 }

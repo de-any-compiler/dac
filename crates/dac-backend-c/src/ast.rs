@@ -142,6 +142,16 @@ pub enum Stmt {
         address: Expr,
         value: Expr,
     },
+    /// `base.field = value;` (when `arrow` is false) or
+    /// `base->field = value;` (when `arrow` is true). Produced by
+    /// the B3.10 lowering when a `Store` address decomposes to a
+    /// known struct-field offset (FR-17).
+    FieldStore {
+        base: Expr,
+        field: String,
+        arrow: bool,
+        value: Expr,
+    },
     /// `expr;` — for side-effect expressions (calls, opaque ops).
     ExprStmt(Expr),
     /// `if (cond) { then_body } [else { else_body }]`.
@@ -171,6 +181,18 @@ pub enum Stmt {
     Label(LabelId),
     /// `goto L<id>;`
     Goto(LabelId),
+    /// `switch (scrutinee) { case v: …; … [default: …] }`. Arms are
+    /// emitted in `SwitchArm.value` order; `default` lowers to a
+    /// `default:` arm. The B3.10 switch post-pass produces this when
+    /// it recognises a [`dac_recovery::SwitchTableIdiom`]; arms are
+    /// empty at B3.10 (table-entry resolution is a follow-up) but the
+    /// scrutinee is surfaced so the reader sees the recognised idiom
+    /// (FR-18, I-6).
+    Switch {
+        scrutinee: Expr,
+        arms: Vec<SwitchArm>,
+        default: Option<Block>,
+    },
     /// `/* … */` comment carrier.
     Comment(String),
     /// `__builtin_unreachable();` — emitted for SSA blocks whose
@@ -214,11 +236,41 @@ pub enum Expr {
     /// `((void (*)())0xdeadbeef)` — call-target literal for direct
     /// calls whose name we don't know yet.
     AddrLit(u64),
+    /// `base.field` (when `arrow` is false) or `base->field` (when
+    /// `arrow` is true). Produced by the B3.10 lowering when a
+    /// `Load` address decomposes to a known struct-field offset
+    /// (FR-17). The `field` string is the field name as it appears
+    /// in the emitted source — the lowering pass synthesises
+    /// `field_<offset>` for recovered fields without a recovered
+    /// name.
+    Field {
+        base: Box<Expr>,
+        field: String,
+        arrow: bool,
+    },
+    /// `((ty)(expr))` — explicit C cast. Used to bridge the boundary
+    /// between recovery-typed parameters and width-typed locals so
+    /// the round-trip compile gate stays green when the recovered
+    /// parameter type doesn't match the local's width-based type
+    /// (B3.10).
+    Cast { ty: CType, expr: Box<Expr> },
     /// `(/* opaque: <text> */ 0)` — opaque operation whose semantics
     /// the lowering pass can't faithfully render. The compile pipeline
     /// degrades by emitting a comment-wrapped zero so the C compiler
     /// has something with the right type (NFR-7, I-6).
     Opaque(String),
+}
+
+/// One arm of a [`Stmt::Switch`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchArm {
+    /// Constant matched by this arm. Emitter renders as
+    /// `case <value>:`.
+    pub value: i64,
+    /// Body executed when the scrutinee equals `value`. The lowering
+    /// pass terminates each arm with the appropriate `break;` /
+    /// `return;` / `goto` to keep fall-through explicit.
+    pub body: Block,
 }
 
 /// Binary operators. The set mirrors the SSA-layer
@@ -332,6 +384,7 @@ mod tests {
             Stmt::Decl { .. }
             | Stmt::Assign { .. }
             | Stmt::Store { .. }
+            | Stmt::FieldStore { .. }
             | Stmt::ExprStmt(_)
             | Stmt::If { .. }
             | Stmt::Loop { .. }
@@ -342,6 +395,7 @@ mod tests {
             | Stmt::Return(_)
             | Stmt::Label(_)
             | Stmt::Goto(_)
+            | Stmt::Switch { .. }
             | Stmt::Comment(_)
             | Stmt::Unreachable => {}
         }
@@ -359,6 +413,8 @@ mod tests {
             | Expr::Load { .. }
             | Expr::Call { .. }
             | Expr::AddrLit(_)
+            | Expr::Field { .. }
+            | Expr::Cast { .. }
             | Expr::Opaque(_) => {}
         }
     }

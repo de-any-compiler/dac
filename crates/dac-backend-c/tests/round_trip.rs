@@ -34,7 +34,7 @@ use std::collections::BTreeMap;
 use dac_backend_c::{
     ast::{Block as CBlock, CType, Expr, Function, Item, TranslationUnit},
     compile::CompileResult,
-    emit, emit_function, lower_function, lower_unit, try_compile, NameResolver,
+    emit, emit_function, lower_function, lower_unit, try_compile, NameResolver, Recovered,
 };
 use dac_core::{EvidenceGraph, EvidenceId, EvidenceNode, IrLayer};
 use dac_ir::sem::{Block as SemBlock, SemFunction, SsaRef, Stmt as SemStmt, StructuringStats};
@@ -107,7 +107,7 @@ fn empty_resolver() -> NameResolver {
 /// Drive one round-trip: lower, emit, compile-check. Returns the
 /// emitted source for diagnostic display in the test message.
 fn round_trip(ssa: &SsaFunction, sem: &SemFunction) -> (String, CompileResult) {
-    let lowered = lower_function(ssa, sem, &empty_resolver());
+    let lowered = lower_function(ssa, sem, &empty_resolver(), &Recovered::default());
     let unit = TranslationUnit {
         includes: dac_backend_c::default_includes(),
         items: vec![Item::Function(lowered)],
@@ -586,7 +586,7 @@ fn multi_function_translation_unit_round_trips() {
     ];
     let ssas: Vec<_> = fixtures.iter().map(|(s, _)| s.clone()).collect();
     let sems: Vec<_> = fixtures.iter().map(|(_, m)| m.clone()).collect();
-    let unit = lower_unit(&ssas, &sems, &empty_resolver());
+    let unit = lower_unit(&ssas, &sems, &empty_resolver(), &[]);
     let source = emit(&unit);
     let result = try_compile(&source);
     assert_round_trip_ok(&source, &result);
@@ -595,8 +595,18 @@ fn multi_function_translation_unit_round_trips() {
 #[test]
 fn lowering_then_emission_is_byte_deterministic() {
     let (ssa, sem) = fixture_arith_chain();
-    let a = emit_function(&lower_function(&ssa, &sem, &empty_resolver()));
-    let b = emit_function(&lower_function(&ssa, &sem, &empty_resolver()));
+    let a = emit_function(&lower_function(
+        &ssa,
+        &sem,
+        &empty_resolver(),
+        &Recovered::default(),
+    ));
+    let b = emit_function(&lower_function(
+        &ssa,
+        &sem,
+        &empty_resolver(),
+        &Recovered::default(),
+    ));
     assert_eq!(a, b);
 }
 
@@ -607,6 +617,7 @@ fn lowered_translation_unit_includes_stdint_and_stddef() {
         std::slice::from_ref(&ssa),
         std::slice::from_ref(&sem),
         &empty_resolver(),
+        &[],
     );
     let source = emit(&unit);
     assert!(source.starts_with("#include <stdint.h>\n"));
@@ -619,7 +630,7 @@ fn empty_function_renders_without_unreferenced_includes_when_locals_empty() {
     // (no spurious local-declaration line, blank-line separator
     // unaffected).
     let (ssa, sem) = fixture_empty();
-    let f = lower_function(&ssa, &sem, &empty_resolver());
+    let f = lower_function(&ssa, &sem, &empty_resolver(), &Recovered::default());
     assert!(f.locals.is_empty());
     let s = emit_function(&Function { ..f });
     assert!(!s.contains("int64_t v"));

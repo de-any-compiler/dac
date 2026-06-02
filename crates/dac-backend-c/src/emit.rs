@@ -26,7 +26,8 @@
 use std::fmt::Write as _;
 
 use crate::ast::{
-    BinaryOp, Block, CType, Expr, Function, Item, Local, Param, Stmt, TranslationUnit, UnaryOp,
+    BinaryOp, Block, CType, Expr, Function, Item, Local, Param, Stmt, SwitchArm, TranslationUnit,
+    UnaryOp,
 };
 
 /// Render a [`TranslationUnit`] as formatted C source.
@@ -138,6 +139,19 @@ fn emit_stmt(p: &mut Printer<'_>, stmt: &Stmt) {
                 render_expr(value)
             ));
         }
+        Stmt::FieldStore {
+            base,
+            field,
+            arrow,
+            value,
+        } => {
+            let op = if *arrow { "->" } else { "." };
+            p.write_line(&format!(
+                "{}{op}{field} = {};",
+                render_expr(base),
+                render_expr(value)
+            ));
+        }
         Stmt::ExprStmt(expr) => {
             p.write_line(&format!("{};", render_expr(expr)));
         }
@@ -191,6 +205,26 @@ fn emit_stmt(p: &mut Printer<'_>, stmt: &Stmt) {
         // achieve this by dedenting one step for the label line.
         Stmt::Label(id) => p.write_label(*id),
         Stmt::Goto(id) => p.write_line(&format!("goto L{id};")),
+        Stmt::Switch {
+            scrutinee,
+            arms,
+            default,
+        } => {
+            p.write_line(&format!("switch ({}) {{", render_expr(scrutinee)));
+            p.indent();
+            for arm in arms {
+                emit_switch_arm(p, arm);
+            }
+            if let Some(def) = default {
+                p.write_line("default: {");
+                p.indent();
+                emit_block_inner(p, def);
+                p.dedent();
+                p.write_line("}");
+            }
+            p.dedent();
+            p.write_line("}");
+        }
         Stmt::Comment(text) => {
             for line in text.lines() {
                 p.write_line(&format!("/* {line} */"));
@@ -198,6 +232,14 @@ fn emit_stmt(p: &mut Printer<'_>, stmt: &Stmt) {
         }
         Stmt::Unreachable => p.write_line("__builtin_unreachable();"),
     }
+}
+
+fn emit_switch_arm(p: &mut Printer<'_>, arm: &SwitchArm) {
+    p.write_line(&format!("case {}LL: {{", arm.value));
+    p.indent();
+    emit_block_inner(p, &arm.body);
+    p.dedent();
+    p.write_line("}");
 }
 
 fn render_param(p: &Param) -> String {
@@ -302,6 +344,13 @@ fn render_expr(expr: &Expr) -> String {
             // integer literal so an `int64_t` slot can hold it. The
             // `Call` path above synthesises its own cast.
             format!("{addr:#x}")
+        }
+        Expr::Field { base, field, arrow } => {
+            let op = if *arrow { "->" } else { "." };
+            format!("{}{op}{field}", render_expr(base))
+        }
+        Expr::Cast { ty, expr } => {
+            format!("(({})({}))", render_type_prefix(ty), render_expr(expr))
         }
         Expr::Opaque(text) => {
             // Compile-safe placeholder. Wrapping in `(int)0` so the

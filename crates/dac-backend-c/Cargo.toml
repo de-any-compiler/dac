@@ -11,10 +11,10 @@ repository.workspace = true
 [dependencies]
 dac-core.workspace = true
 dac-ir.workspace = true
+dac-recovery.workspace = true
 
 [dev-dependencies]
 dac-analysis.workspace = true
-dac-recovery.workspace = true
 
 [lints]
 workspace = true

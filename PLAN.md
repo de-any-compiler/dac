@@ -49,14 +49,15 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-**Recommended execution order before M4:** B3.10 → B3.6 → B3.7.
+**Recommended execution order before M4:** B3.6 → B3.7.
 Rationale: every M2/M3 recovery pass exists in `dac-recovery` /
-`dac-analysis` today; B3.8 + B3.9 already wired the
+`dac-analysis` today; B3.8 + B3.9 + B3.10 already wired the
 `InstructionIr → RawFunction → SsaFunction → SemFunction →
-C AST` bridge into `--target c -O1`. B3.10 surfaces the recovered
-calling conventions / types / switch tables / struct fields in the
-emitted source — which is what gives B3.6's hints a typed surface
-to retype, and B3.7's names a real local-binding to rename.
+C AST` bridge into `--target c -O1` and surfaced the recovered
+calling conventions / types / switch tables / struct fields in
+the emitted source. B3.6's hints now have a typed signature
+surface to retype, and B3.7's names a real local-binding to
+rename.
 
 ### B3.6 — User hints / signatures
 - TOML or JSON file: per-function signatures, struct definitions, type
@@ -71,32 +72,6 @@ to retype, and B3.7's names a real local-binding to rename.
 - Deterministic only at this milestone — no AI yet.
 - **Done when:** generated names beat `v1, v2, v3` on the corpus per a
   measurable rubric (heuristic-name coverage %).
-
-### B3.10 — Recovery facts → emitted source
-- Close the "facts in `dac-recovery` side tables don't surface in the
-  emitted source" debt explicitly recorded across B2.5 / B2.6 / B3.2 /
-  B3.3 / B3.4 CHANGELOG entries.
-- Thread `dac-recovery::infer_calling_convention` →
-  `pick_best` → `InferredSignature` into the C / C++ lowering pass:
-  functions emit `int f(int arg0, char *arg1)` instead of
-  `void f(void)`. The chosen convention's name + score lands in the
-  annotation channel so the leading comment cites it.
-- Thread the recovered `TypeMap` (B2.6) so each `vN` local carries its
-  recovered type instead of the `int64_t` fallback.
-- Lower `dac-recovery::idioms::SwitchTableIdiom` (B3.3) into
-  `Stmt::Switch` arms — resolves the deferred jump-table follow-up
-  from the B3.3 CHANGELOG entry. Per-entry resolution reads the
-  binary's `.rodata` (and where applicable, the relocation table).
-- Lower `dac-recovery::structs::RecoveredStructs` field accesses as
-  `s->field` / `s.field` in emitted C / C++ instead of
-  `*(int*)(s+8)`.
-- Closes: FR-14 (parameter / return inference reflected in source),
-  FR-16 (type propagation), FR-17 (struct / array surface in emitted
-  source), FR-18 (switch idiom lowered, not just recorded).
-- **Done when:** a function in the corpus with a recovered convention
-  emits a typed signature; a function with a recovered switch table
-  emits `switch (…)` instead of a goto chain; a function with
-  recovered struct field offsets emits `s->field`.
 
 ### B3 follow-up shelf
 
@@ -133,6 +108,39 @@ they are listed here so they stay visible.
   emit/lowering rules) lets the C-side `SsaFunction → SemFunction`
   shape feed the C++ printer the same way it now feeds the C
   printer.
+- **Typed-local refinement** (B3.10 follow-up). The C lowering at
+  B3.10 retypes parameters and return types from
+  `dac-recovery::TypeMap`, but every local stays at the SSA
+  variable's `width_bits` (e.g. `int64_t`). Retyping locals
+  directly from the lattice exposes pointer / int mixes that the
+  lifter's sub-register arithmetic produces; pairing it with
+  per-use casts or a memory-SSA fix on the lifter side is the
+  next step.
+- **Struct typedef surface** (B3.10 follow-up, FR-17). B3.10
+  detects pointer-anchored struct layouts via
+  `dac-recovery::RecoveredStructs` and records a `/* recovered
+  field: base=v_<id> offset=0x<hex> field=field_<hex> */` comment
+  above each matching `Load` / `Store`; promoting them to
+  `s->field` requires the C AST to grow translation-unit-level
+  `struct` typedefs so the dereferenced expression has a
+  declared shape in scope.
+- **Switch-arm resolution** (B3.10 follow-up, FR-18). B3.10's
+  switch post-pass rewrites `Stmt::Unreachable` whose source
+  block matches a recognised `SwitchTableIdiom` into
+  `Stmt::Switch { scrutinee, arms: [], default: …unreachable… }`
+  — the scrutinee surfaces but the arms stay empty. Resolving
+  per-entry targets requires reading bytes from the binary's
+  `.rodata` (and, on PE, walking the relocation table for
+  rebased table entries) plus minting labels at each target
+  block; that lands once the structurer learns to anchor labels
+  outside its existing recursive walk.
+- **`dac-recovery::structs` SSA-source bounds correctness**
+  (B3.10 surfaced). `lookup_def_op` in `dac-recovery/src/structs.rs`
+  now bounds-checks the `ValueSource::Instruction { block, index }`
+  reference defensively after the PE corpus surfaced a case where
+  the recorded index landed past the end of the block's
+  instructions. The underlying inconsistency in the SSA
+  constructor / value-source bookkeeping is worth chasing down.
 - **Mach-O parser** (FR-3). The format is detected and the model has a
   `BinaryFormat::MachO` variant, but no parser populates it.
 

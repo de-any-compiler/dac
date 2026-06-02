@@ -21,6 +21,7 @@ dac-backend-cpp.workspace = true
 dac-binfmt.workspace = true
 dac-core.workspace = true
 dac-ir.workspace = true
+dac-knowledge.workspace = true
 dac-lift.workspace = true
 dac-recovery.workspace = true
 tracing.workspace = true

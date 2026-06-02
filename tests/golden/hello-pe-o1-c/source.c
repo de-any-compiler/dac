@@ -12,6 +12,12 @@
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t __mingw_invalidParameterHandler(void) {
     int64_t v0 = 0LL;
 
@@ -26,8 +32,14 @@ int64_t __mingw_invalidParameterHandler(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void safe_flush(void) {
-    int64_t v0 = 0LL;
+/* convention: ms-x64 (score 0.48) */
+/* args: rcx */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+void safe_flush(int64_t arg0) {
+    int64_t v0 = arg0;
     int64_t v1 = 0LL;
 
     v1 = (v0 ^ v0);
@@ -43,7 +55,13 @@ void safe_flush(void) {
 /* goto_count: 2 */
 /* label_count: 2 */
 /* irreducible: true */
-int64_t __tmainCRTStartup(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 11 */
+/* struct_layouts: pointer=4 stack=1 */
+/* switch_tables: 0 */
+int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -56,9 +74,9 @@ int64_t __tmainCRTStartup(void) {
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg0;
     int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
+    int64_t v14 = arg1;
     int64_t v15 = 0LL;
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
@@ -74,15 +92,15 @@ int64_t __tmainCRTStartup(void) {
     int64_t v27 = 0LL;
     int64_t v28 = 0LL;
     int64_t v29 = 0LL;
-    int64_t v30 = 0LL;
+    int64_t v30 = arg3;
     int64_t v31 = 0LL;
     int64_t v32 = 0LL;
     int64_t v33 = 0LL;
     int8_t v34 = 0LL;
     int64_t v35 = 0LL;
-    int64_t v36 = 0LL;
-    int64_t v37 = 0LL;
-    int64_t v38 = 0LL;
+    int64_t v36 = arg2;
+    int64_t v37 = arg4;
+    int64_t v38 = arg5;
     int64_t v39 = 0LL;
     int64_t v40 = 0LL;
     int64_t v41 = 0LL;
@@ -590,6 +608,7 @@ L1:;
                 v197 = (*((int64_t *)(v196)));
                 v198 = v197;
                 v199 = (v23 + 5368741896LL);
+                /* recovered field: base=v23 offset=0x140008008 field=field_140008008 */
                 *((int32_t *)(v199)) = v193;
                 v200 = (*((int32_t *)(v198)));
                 v201 = v200;
@@ -633,6 +652,7 @@ L1:;
             }
         } else {
             v53 = (v23 + 5368741892LL);
+            /* recovered field: base=v23 offset=0x140008004 field=field_140008004 */
             *((int32_t *)(v53)) = 1LL;
             /* phi v54 <- (bb8: v29) (bb70: v315) */
             /* phi v55 <- (bb8: v22) (bb70: v316) */
@@ -691,6 +711,7 @@ L1:;
                 v97 = (v96 == 0LL);
                 if (v97) {
                     v124 = (v17 + 60LL);
+                    /* recovered field: base=v17 offset=0x3c field=field_3c */
                     *((int32_t *)(v124)) = v87;
                     v125 = ((long long (*)(long long, long long, long long, long long, long long, long long))_cexit)(v54, v55, v95, v90, v80, v60);
                     v126 = (v17 + 60LL);
@@ -737,19 +758,25 @@ L1:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t WinMainCRTStartup(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+int64_t WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
-    int64_t v7 = 0LL;
-    int64_t v8 = 0LL;
-    int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
-    int64_t v11 = 0LL;
+    int64_t v6 = arg0;
+    int64_t v7 = arg1;
+    int64_t v8 = arg2;
+    int64_t v9 = arg3;
+    int64_t v10 = arg4;
+    int64_t v11 = arg5;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
 
@@ -771,19 +798,25 @@ int64_t WinMainCRTStartup(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t mainCRTStartup(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+int64_t mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
-    int64_t v7 = 0LL;
-    int64_t v8 = 0LL;
-    int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
-    int64_t v11 = 0LL;
+    int64_t v6 = arg0;
+    int64_t v7 = arg1;
+    int64_t v8 = arg2;
+    int64_t v9 = arg3;
+    int64_t v10 = arg4;
+    int64_t v11 = arg5;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
 
@@ -805,6 +838,12 @@ int64_t mainCRTStartup(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void atexit(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -818,7 +857,13 @@ void atexit(void) {
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-void __gcc_register_frame(void) {
+/* convention: sysv-amd64 (score 0.35) */
+/* args: rdi,rsi,rdx */
+/* return_reg: none */
+/* stack_locals: 4 */
+/* struct_layouts: pointer=1 stack=1 */
+/* switch_tables: 0 */
+void __gcc_register_frame(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -830,9 +875,9 @@ void __gcc_register_frame(void) {
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
-    int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
+    int64_t v11 = arg0;
+    int64_t v12 = arg1;
+    int64_t v13 = arg2;
     int64_t v14 = 0LL;
     int64_t v15 = 0LL;
     int64_t v16 = 0LL;
@@ -903,6 +948,7 @@ void __gcc_register_frame(void) {
         v61 = (v8 + 5368714352LL);
         v62 = v61;
         v63 = (v8 + 5368721408LL);
+        /* recovered field: base=v8 offset=0x140003000 field=field_140003000 */
         *((int64_t *)(v63)) = v60;
 L0:;
         /* phi v43 <- (bb5: v39) (bb8: v62) */
@@ -923,6 +969,7 @@ L0:;
         v27 = v26;
         v28 = v17;
         v29 = (v8 + 5368741952LL);
+        /* recovered field: base=v8 offset=0x140008040 field=field_140008040 */
         *((int64_t *)(v29)) = v22;
         v30 = (v7 + -16LL);
         *((int64_t *)(v30)) = v25;
@@ -937,6 +984,7 @@ L0:;
         v38 = (*((int64_t *)(v37)));
         v39 = v38;
         v40 = (v8 + 5368721408LL);
+        /* recovered field: base=v8 offset=0x140003000 field=field_140003000 */
         *((int64_t *)(v40)) = v36;
         v41 = (v39 & v39);
         v42 = (v41 == 0LL);
@@ -966,7 +1014,13 @@ L0:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t __gcc_deregister_frame(void) {
+/* convention: sysv-amd64 (score 0.50) */
+/* args: rdi,rsi,rdx */
+/* return_reg: rax */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=1 stack=0 */
+/* switch_tables: 0 */
+int64_t __gcc_deregister_frame(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -980,9 +1034,9 @@ int64_t __gcc_deregister_frame(void) {
     int8_t v10 = 0LL;
     int64_t v11 = 0LL;
     int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
+    int64_t v13 = arg0;
+    int64_t v14 = arg1;
+    int64_t v15 = arg2;
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
@@ -1046,7 +1100,13 @@ int64_t __gcc_deregister_frame(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t __do_global_dtors(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+int64_t __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -1057,13 +1117,13 @@ int64_t __do_global_dtors(void) {
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int8_t v9 = 0LL;
-    int64_t v10 = 0LL;
+    int64_t v10 = arg2;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
-    int64_t v16 = 0LL;
+    int64_t v12 = arg0;
+    int64_t v13 = arg1;
+    int64_t v14 = arg3;
+    int64_t v15 = arg4;
+    int64_t v16 = arg5;
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
@@ -1120,10 +1180,16 @@ int64_t __do_global_dtors(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void __do_global_ctors(void) {
+/* convention: sysv-amd64 (score 0.30) */
+/* args: rdi,rsi */
+/* return_reg: none */
+/* stack_locals: 2 */
+/* struct_layouts: pointer=0 stack=1 */
+/* switch_tables: 0 */
+void __do_global_ctors(int64_t arg0, int64_t arg1) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg1;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
@@ -1151,7 +1217,7 @@ void __do_global_ctors(void) {
     int64_t v27 = 0LL;
     int64_t v28 = 0LL;
     int64_t v29 = 0LL;
-    int64_t v30 = 0LL;
+    int64_t v30 = arg0;
     int64_t v31 = 0LL;
     int64_t v32 = 0LL;
     int64_t v33 = 0LL;
@@ -1254,6 +1320,12 @@ void __do_global_ctors(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.55) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t __main(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
@@ -1286,6 +1358,12 @@ int64_t __main(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t _setargv(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
@@ -1302,6 +1380,12 @@ int64_t _setargv(void) {
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.30) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t __dyn_tls_dtor(void) {
     int64_t v0 = 0LL;
     int8_t v1 = 0LL;
@@ -1333,10 +1417,16 @@ L0:;
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-int64_t __dyn_tls_init(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 2 */
+/* struct_layouts: pointer=0 stack=1 */
+/* switch_tables: 0 */
+int64_t __dyn_tls_init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg1;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
@@ -1346,7 +1436,7 @@ int64_t __dyn_tls_init(void) {
     int64_t v9 = 0LL;
     int32_t v10 = 0LL;
     int8_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg2;
     int8_t v13 = 0LL;
     int8_t v14 = 0LL;
     int64_t v15 = 0LL;
@@ -1373,10 +1463,10 @@ int64_t __dyn_tls_init(void) {
     int64_t v36 = 0LL;
     int64_t v37 = 0LL;
     int8_t v38 = 0LL;
-    int64_t v39 = 0LL;
-    int64_t v40 = 0LL;
-    int64_t v41 = 0LL;
-    int64_t v42 = 0LL;
+    int64_t v39 = arg0;
+    int64_t v40 = arg3;
+    int64_t v41 = arg4;
+    int64_t v42 = arg5;
     int64_t v43 = 0LL;
     int64_t v44 = 0LL;
     int64_t v45 = 0LL;
@@ -1473,6 +1563,12 @@ L0:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t __tlregdtor(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
@@ -1489,14 +1585,20 @@ int64_t __tlregdtor(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t _matherr(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 2 */
+/* struct_layouts: pointer=1 stack=1 */
+/* switch_tables: 1 */
+int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg1;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
+    int64_t v6 = arg3;
     int32_t v7 = 0LL;
     int8_t v8 = 0LL;
     int32_t v9 = 0LL;
@@ -1515,10 +1617,10 @@ int64_t _matherr(void) {
     int64_t v22 = 0LL;
     int64_t v23 = 0LL;
     int64_t v24 = 0LL;
-    int64_t v25 = 0LL;
-    int64_t v26 = 0LL;
-    int64_t v27 = 0LL;
-    int64_t v28 = 0LL;
+    int64_t v25 = arg0;
+    int64_t v26 = arg2;
+    int64_t v27 = arg4;
+    int64_t v28 = arg5;
     int64_t v29 = 0LL;
     int64_t v30 = 0LL;
     int64_t v31 = 0LL;
@@ -1587,8 +1689,13 @@ int64_t _matherr(void) {
         v16 = (*((int32_t *)(v15)));
         v17 = v16;
         v18 = (v17 + v13);
-        /* structurally unreachable: block 1 */
-        __builtin_unreachable();
+        /* recovered switch table at block 1 (arm resolution pending) */
+        switch (v10) {
+            default: {
+                /* structurally unreachable: block 1 */
+                __builtin_unreachable();
+            }
+        }
     }
 }
 
@@ -1600,24 +1707,30 @@ int64_t _matherr(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void __report_error(void) {
+/* convention: ms-x64 (score 0.80) */
+/* args: rcx,rdx,r8,r9 */
+/* return_reg: none */
+/* stack_locals: 6 */
+/* struct_layouts: pointer=1 stack=1 */
+/* switch_tables: 0 */
+void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
+    int64_t v6 = arg0;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg2;
     int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
+    int64_t v14 = arg3;
     int64_t v15 = 0LL;
-    int64_t v16 = 0LL;
+    int64_t v16 = arg1;
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
@@ -1647,9 +1760,12 @@ void __report_error(void) {
     v9 = v8;
     v10 = 2LL;
     v11 = (v5 + 96LL);
+    /* recovered field: base=v5 offset=0x60 field=field_60 */
     *((int64_t *)(v11)) = v12;
     v13 = (v5 + 104LL);
+    /* recovered field: base=v5 offset=0x68 field=field_68 */
     *((int64_t *)(v13)) = v14;
+    /* recovered field: base=v5 offset=0x58 field=field_58 */
     *((int64_t *)(v8)) = v16;
     v17 = (v5 + 40LL);
     *((int64_t *)(v17)) = v9;
@@ -1680,12 +1796,18 @@ void __report_error(void) {
 /* goto_count: 3 */
 /* label_count: 3 */
 /* irreducible: true */
-int64_t mark_section_writable(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 6 */
+/* struct_layouts: pointer=6 stack=1 */
+/* switch_tables: 0 */
+int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg0;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg1;
     int64_t v5 = 0LL;
     int64_t v6 = 0LL;
     int64_t v7 = 0LL;
@@ -1693,13 +1815,13 @@ int64_t mark_section_writable(void) {
     int64_t v9 = 0LL;
     int32_t v10 = 0LL;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg3;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
     int8_t v15 = 0LL;
-    int64_t v16 = 0LL;
-    int64_t v17 = 0LL;
-    int64_t v18 = 0LL;
+    int64_t v16 = arg5;
+    int64_t v17 = arg4;
+    int64_t v18 = arg2;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
     int64_t v21 = 0LL;
@@ -1888,6 +2010,7 @@ L0:;
             v60 = (v59 << 3LL);
             v61 = (v56 + v60);
             v62 = (v61 + 32LL);
+            /* recovered field: base=v61 offset=0x20 field=field_20 */
             *((int64_t *)(v62)) = v51;
             *((int32_t *)(v61)) = 0LL;
             v63 = ((long long (*)(long long, long long, long long, long long, long long, long long))_GetPEImageBase)(v51, v44, v48, v49, v47, v46);
@@ -1998,7 +2121,13 @@ L1:;
 /* goto_count: 9 */
 /* label_count: 5 */
 /* irreducible: true */
-int64_t _pei386_runtime_relocator(void) {
+/* convention: sysv-amd64 (score 0.70) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 9 */
+/* struct_layouts: pointer=7 stack=1 */
+/* switch_tables: 0 */
+int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -2011,9 +2140,9 @@ int64_t _pei386_runtime_relocator(void) {
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg0;
     int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
+    int64_t v14 = arg1;
     int64_t v15 = 0LL;
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
@@ -2054,10 +2183,10 @@ int64_t _pei386_runtime_relocator(void) {
     int64_t v52 = 0LL;
     int64_t v53 = 0LL;
     int64_t v54 = 0LL;
-    int64_t v55 = 0LL;
-    int64_t v56 = 0LL;
-    int64_t v57 = 0LL;
-    int64_t v58 = 0LL;
+    int64_t v55 = arg2;
+    int64_t v56 = arg3;
+    int64_t v57 = arg4;
+    int64_t v58 = arg5;
     int64_t v59 = 0LL;
     int64_t v60 = 0LL;
     int64_t v61 = 0LL;
@@ -2324,6 +2453,7 @@ int64_t _pei386_runtime_relocator(void) {
     v25 = (v24 == 0LL);
     if (v25) {
         v54 = (v20 + 5368742144LL);
+        /* recovered field: base=v20 offset=0x140008100 field=field_140008100 */
         *((int32_t *)(v54)) = 1LL;
         v59 = ((long long (*)(long long, long long, long long, long long, long long, long long))__mingw_GetSectionCount)(v12, v23, v55, v56, v57, v58);
         (/* opaque: cdqe */ 0);
@@ -2343,10 +2473,12 @@ int64_t _pei386_runtime_relocator(void) {
         v73 = v72;
         v74 = (v17 - v67);
         v75 = (v20 + 5368742148LL);
+        /* recovered field: base=v20 offset=0x140008104 field=field_140008104 */
         *((int32_t *)(v75)) = 0LL;
         v76 = (v74 + 48LL);
         v77 = v76;
         v78 = (v20 + 5368742152LL);
+        /* recovered field: base=v20 offset=0x140008108 field=field_140008108 */
         *((int64_t *)(v78)) = v77;
         v79 = v70;
         v80 = (v79 - v73);
@@ -2601,7 +2733,13 @@ L4:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t __mingw_raise_matherr(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 2 */
+/* struct_layouts: pointer=0 stack=1 */
+/* switch_tables: 0 */
+int64_t __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -2611,15 +2749,15 @@ int64_t __mingw_raise_matherr(void) {
     int64_t v6 = 0LL;
     int8_t v7 = 0LL;
     int64_t v8 = 0LL;
-    int64_t v9 = 0LL;
+    int64_t v9 = arg3;
     int64_t v10 = 0LL;
     int64_t v11 = 0LL;
     int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
-    int64_t v16 = 0LL;
-    int64_t v17 = 0LL;
+    int64_t v13 = arg2;
+    int64_t v14 = arg0;
+    int64_t v15 = arg1;
+    int64_t v16 = arg4;
+    int64_t v17 = arg5;
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
@@ -2656,10 +2794,16 @@ int64_t __mingw_raise_matherr(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void __mingw_setusermatherr(void) {
+/* convention: ms-x64 (score 0.48) */
+/* args: rcx */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+void __mingw_setusermatherr(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg0;
 
     v1 = (v0 + 5368742160LL);
     *((int64_t *)(v1)) = v2;
@@ -2675,10 +2819,16 @@ void __mingw_setusermatherr(void) {
 /* goto_count: 7 */
 /* label_count: 3 */
 /* irreducible: false */
-int64_t __mingw_SEH_error_handler(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=1 stack=0 */
+/* switch_tables: 1 */
+int64_t __mingw_SEH_error_handler(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg3;
     int64_t v3 = 0LL;
     int8_t v4 = 0LL;
     int64_t v5 = 0LL;
@@ -2704,13 +2854,13 @@ int64_t __mingw_SEH_error_handler(void) {
     int8_t v25 = 0LL;
     int8_t v26 = 0LL;
     int8_t v27 = 0LL;
-    int64_t v28 = 0LL;
+    int64_t v28 = arg2;
     int64_t v29 = 0LL;
     int64_t v30 = 0LL;
-    int64_t v31 = 0LL;
-    int64_t v32 = 0LL;
-    int64_t v33 = 0LL;
-    int64_t v34 = 0LL;
+    int64_t v31 = arg0;
+    int64_t v32 = arg1;
+    int64_t v33 = arg4;
+    int64_t v34 = arg5;
     int64_t v35 = 0LL;
     int8_t v36 = 0LL;
     int64_t v37 = 0LL;
@@ -2809,8 +2959,13 @@ L2:;
                         v22 = (*((int32_t *)(v21)));
                         v23 = v22;
                         v24 = (v23 + v19);
-                        /* structurally unreachable: block 5 */
-                        __builtin_unreachable();
+                        /* recovered switch table at block 5 (arm resolution pending) */
+                        switch (v15) {
+                            default: {
+                                /* structurally unreachable: block 5 */
+                                __builtin_unreachable();
+                            }
+                        }
                     }
                 }
             }
@@ -2826,12 +2981,18 @@ L2:;
 /* goto_count: 5 */
 /* label_count: 3 */
 /* irreducible: false */
-int64_t _gnu_exception_handler(void) {
+/* convention: ms-x64 (score 0.43) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=1 stack=0 */
+/* switch_tables: 1 */
+int64_t _gnu_exception_handler(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg0;
     int64_t v5 = 0LL;
     int64_t v6 = 0LL;
     int32_t v7 = 0LL;
@@ -2997,8 +3158,13 @@ L1:;
                         v22 = (*((int32_t *)(v21)));
                         v23 = v22;
                         v24 = (v23 + v19);
-                        /* structurally unreachable: block 4 */
-                        __builtin_unreachable();
+                        /* recovered switch table at block 4 (arm resolution pending) */
+                        switch (v15) {
+                            default: {
+                                /* structurally unreachable: block 4 */
+                                __builtin_unreachable();
+                            }
+                        }
                     }
                 }
             }
@@ -3018,21 +3184,27 @@ L1:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void __mingwthr_run_key_dtors_part_0(void) {
+/* convention: sysv-amd64 (score 0.35) */
+/* args: rdi,rsi,rdx */
+/* return_reg: none */
+/* stack_locals: 4 */
+/* struct_layouts: pointer=2 stack=1 */
+/* switch_tables: 0 */
+void __mingwthr_run_key_dtors_part_0(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg0;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
+    int64_t v6 = arg1;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
     int64_t v11 = 0LL;
     int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
+    int64_t v13 = arg2;
     int64_t v14 = 0LL;
     int64_t v15 = 0LL;
     int64_t v16 = 0LL;
@@ -3169,14 +3341,20 @@ void __mingwthr_run_key_dtors_part_0(void) {
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-int64_t ___w64_mingwthr_add_key_dtor(void) {
+/* convention: ms-x64 (score 0.88) */
+/* args: rcx,rdx,r8 */
+/* return_reg: rax */
+/* stack_locals: 3 */
+/* struct_layouts: pointer=3 stack=0 */
+/* switch_tables: 0 */
+int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
     int32_t v4 = 0LL;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
+    int64_t v6 = arg0;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int8_t v9 = 0LL;
@@ -3185,13 +3363,13 @@ int64_t ___w64_mingwthr_add_key_dtor(void) {
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
+    int64_t v15 = arg1;
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
-    int64_t v21 = 0LL;
+    int64_t v21 = arg2;
     int64_t v22 = 0LL;
     int64_t v23 = 0LL;
     int8_t v24 = 0LL;
@@ -3228,10 +3406,12 @@ int64_t ___w64_mingwthr_add_key_dtor(void) {
     v9 = (v8 != 0LL);
     if (v9) {
         v14 = (v1 + 72LL);
+        /* recovered field: base=v1 offset=0x48 field=field_48 */
         *((int64_t *)(v14)) = v15;
         v16 = 1LL;
         v17 = 24LL;
         v18 = (v1 + 64LL);
+        /* recovered field: base=v1 offset=0x40 field=field_40 */
         *((int32_t *)(v18)) = v7;
         v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))calloc)(v19, v20, v17, v16, v21, v7);
         v23 = (v22 & v22);
@@ -3246,11 +3426,13 @@ int64_t ___w64_mingwthr_add_key_dtor(void) {
             v29 = (*((int64_t *)(v28)));
             v30 = v29;
             v31 = (v1 + 40LL);
+            /* recovered field: base=v1 offset=0x28 field=field_28 */
             *((int64_t *)(v31)) = v22;
             v32 = (v2 + 5368742240LL);
             v33 = v32;
             *((int32_t *)(v22)) = v27;
             v34 = (v22 + 8LL);
+            /* recovered field: base=v22 offset=0x8 field=field_8 */
             *((int64_t *)(v34)) = v30;
             v35 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v19, v20, v17, v33, v30, v27);
             v36 = (v2 + 5368742208LL);
@@ -3263,6 +3445,7 @@ int64_t ___w64_mingwthr_add_key_dtor(void) {
             v43 = v42;
             v44 = (v41 + 16LL);
             *((int64_t *)(v44)) = v38;
+            /* recovered field: base=v2 offset=0x140008140 field=field_140008140 */
             *((int64_t *)(v36)) = v41;
             v46 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v19, v20, v38, v43, v30, v27);
 L0:;
@@ -3285,7 +3468,13 @@ L0:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: true */
-int64_t ___w64_mingwthr_remove_key_dtor(void) {
+/* convention: ms-x64 (score 0.95) */
+/* args: rcx,rdx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=2 stack=0 */
+/* switch_tables: 0 */
+int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -3297,14 +3486,14 @@ int64_t ___w64_mingwthr_remove_key_dtor(void) {
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
-    int64_t v11 = 0LL;
+    int64_t v11 = arg0;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
     int64_t v15 = 0LL;
-    int64_t v16 = 0LL;
-    int64_t v17 = 0LL;
-    int64_t v18 = 0LL;
+    int64_t v16 = arg1;
+    int64_t v17 = arg2;
+    int64_t v18 = arg3;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
     int64_t v21 = 0LL;
@@ -3397,10 +3586,16 @@ int64_t ___w64_mingwthr_remove_key_dtor(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t __mingw_TLScallback(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=1 stack=0 */
+/* switch_tables: 0 */
+int64_t __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg2;
     int8_t v3 = 0LL;
     int64_t v4 = 0LL;
     int8_t v5 = 0LL;
@@ -3413,10 +3608,10 @@ int64_t __mingw_TLScallback(void) {
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
-    int64_t v16 = 0LL;
-    int64_t v17 = 0LL;
-    int64_t v18 = 0LL;
+    int64_t v15 = arg0;
+    int64_t v16 = arg1;
+    int64_t v17 = arg4;
+    int64_t v18 = arg5;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
     int32_t v21 = 0LL;
@@ -3449,7 +3644,7 @@ int64_t __mingw_TLScallback(void) {
     int64_t v48 = 0LL;
     int64_t v49 = 0LL;
     int64_t v50 = 0LL;
-    int64_t v51 = 0LL;
+    int64_t v51 = arg3;
     int64_t v52 = 0LL;
     int64_t v53 = 0LL;
     int64_t v54 = 0LL;
@@ -3485,6 +3680,12 @@ int64_t __mingw_TLScallback(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t _fpreset(void) {
     int64_t v0 = 0LL;
 
@@ -3500,10 +3701,16 @@ int64_t _fpreset(void) {
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-int64_t _ValidateImageBase(void) {
+/* convention: ms-x64 (score 0.47) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=2 stack=0 */
+/* switch_tables: 0 */
+int64_t _ValidateImageBase(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg0;
     int16_t v3 = 0LL;
     int8_t v4 = 0LL;
     int64_t v5 = 0LL;
@@ -3549,8 +3756,14 @@ L0:;
 /* goto_count: 2 */
 /* label_count: 2 */
 /* irreducible: false */
-int64_t _FindPESection(void) {
-    int64_t v0 = 0LL;
+/* convention: ms-x64 (score 0.70) */
+/* args: rcx,rdx */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=2 stack=0 */
+/* switch_tables: 0 */
+int64_t _FindPESection(int64_t arg0, int64_t arg1) {
+    int64_t v0 = arg0;
     int64_t v1 = 0LL;
     int32_t v2 = 0LL;
     int64_t v3 = 0LL;
@@ -3579,7 +3792,7 @@ int64_t _FindPESection(void) {
     int32_t v26 = 0LL;
     int64_t v27 = 0LL;
     int64_t v28 = 0LL;
-    int64_t v29 = 0LL;
+    int64_t v29 = arg1;
     int8_t v30 = 0LL;
     int64_t v31 = 0LL;
     int32_t v32 = 0LL;
@@ -3659,22 +3872,28 @@ L1:;
 /* goto_count: 5 */
 /* label_count: 1 */
 /* irreducible: false */
-int64_t _FindPESectionByName(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 4 */
+/* struct_layouts: pointer=2 stack=1 */
+/* switch_tables: 0 */
+int64_t _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg0;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
+    int64_t v6 = arg1;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
+    int64_t v10 = arg3;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
+    int64_t v12 = arg2;
+    int64_t v13 = arg4;
+    int64_t v14 = arg5;
     int64_t v15 = 0LL;
     int8_t v16 = 0LL;
     int64_t v17 = 0LL;
@@ -3842,7 +4061,13 @@ L0:;
 /* goto_count: 5 */
 /* label_count: 2 */
 /* irreducible: false */
-int64_t __mingw_GetSectionForAddress(void) {
+/* convention: ms-x64 (score 0.47) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=3 stack=0 */
+/* switch_tables: 0 */
+int64_t __mingw_GetSectionForAddress(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -3868,7 +4093,7 @@ int64_t __mingw_GetSectionForAddress(void) {
     int64_t v22 = 0LL;
     int16_t v23 = 0LL;
     int64_t v24 = 0LL;
-    int64_t v25 = 0LL;
+    int64_t v25 = arg0;
     int64_t v26 = 0LL;
     int64_t v27 = 0LL;
     int64_t v28 = 0LL;
@@ -3991,12 +4216,18 @@ L1:;
 /* goto_count: 2 */
 /* label_count: 1 */
 /* irreducible: false */
-int64_t __mingw_GetSectionCount(void) {
+/* convention: ms-x64 (score 0.62) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=2 stack=0 */
+/* switch_tables: 0 */
+int64_t __mingw_GetSectionCount(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg0;
     int64_t v5 = 0LL;
     int16_t v6 = 0LL;
     int8_t v7 = 0LL;
@@ -4059,7 +4290,13 @@ L0:;
 /* goto_count: 5 */
 /* label_count: 2 */
 /* irreducible: false */
-int64_t _FindPESectionExec(void) {
+/* convention: ms-x64 (score 0.47) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=2 stack=0 */
+/* switch_tables: 0 */
+int64_t _FindPESectionExec(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -4097,7 +4334,7 @@ int64_t _FindPESectionExec(void) {
     int64_t v34 = 0LL;
     int64_t v35 = 0LL;
     int64_t v36 = 0LL;
-    int64_t v37 = 0LL;
+    int64_t v37 = arg0;
     int64_t v38 = 0LL;
     int64_t v39 = 0LL;
     int64_t v40 = 0LL;
@@ -4206,6 +4443,12 @@ L1:;
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.45) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=2 stack=0 */
+/* switch_tables: 0 */
 int64_t _GetPEImageBase(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
@@ -4263,7 +4506,13 @@ L0:;
 /* goto_count: 4 */
 /* label_count: 2 */
 /* irreducible: false */
-int64_t _IsNonwritableInCurrentImage(void) {
+/* convention: ms-x64 (score 0.47) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=3 stack=0 */
+/* switch_tables: 0 */
+int64_t _IsNonwritableInCurrentImage(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -4289,7 +4538,7 @@ int64_t _IsNonwritableInCurrentImage(void) {
     int64_t v22 = 0LL;
     int16_t v23 = 0LL;
     int64_t v24 = 0LL;
-    int64_t v25 = 0LL;
+    int64_t v25 = arg0;
     int64_t v26 = 0LL;
     int64_t v27 = 0LL;
     int64_t v28 = 0LL;
@@ -4420,7 +4669,13 @@ L1:;
 /* goto_count: 6 */
 /* label_count: 3 */
 /* irreducible: true */
-int64_t __mingw_enum_import_library_names(void) {
+/* convention: ms-x64 (score 0.52) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=4 stack=0 */
+/* switch_tables: 0 */
+int64_t __mingw_enum_import_library_names(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -4474,7 +4729,7 @@ int64_t __mingw_enum_import_library_names(void) {
     int64_t v50 = 0LL;
     int8_t v51 = 0LL;
     int64_t v52 = 0LL;
-    int64_t v53 = 0LL;
+    int64_t v53 = arg0;
     int64_t v54 = 0LL;
     int64_t v55 = 0LL;
     int64_t v56 = 0LL;
@@ -4647,10 +4902,16 @@ L1:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void fn_1400027e0(void) {
+/* convention: ms-x64 (score 0.47) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 2 */
+/* struct_layouts: pointer=1 stack=1 */
+/* switch_tables: 0 */
+int64_t fn_1400027e0(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg0;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
@@ -4692,22 +4953,28 @@ void fn_1400027e0(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t vfprintf(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 4 */
+/* struct_layouts: pointer=1 stack=1 */
+/* switch_tables: 0 */
+int64_t vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg0;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg1;
     int64_t v5 = 0LL;
     int64_t v6 = 0LL;
     int64_t v7 = 0LL;
-    int64_t v8 = 0LL;
+    int64_t v8 = arg3;
     int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
+    int64_t v10 = arg2;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg4;
     int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
+    int64_t v14 = arg5;
     int64_t v15 = 0LL;
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
@@ -4744,6 +5011,7 @@ int64_t vfprintf(void) {
     v19 = (*((int64_t *)(v15)));
     v20 = v19;
     v21 = (v7 + 32LL);
+    /* recovered field: base=v7 offset=0x20 field=field_20 */
     *((int64_t *)(v21)) = v13;
     v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))__stdio_common_vfprintf)(v13, v11, v18, v20, v17, v16);
     v23 = (v7 + 48LL);
@@ -4767,7 +5035,13 @@ int64_t vfprintf(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t fprintf(void) {
+/* convention: ms-x64 (score 0.95) */
+/* args: rcx,rdx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 7 */
+/* struct_layouts: pointer=1 stack=1 */
+/* switch_tables: 0 */
+int64_t fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -4778,14 +5052,14 @@ int64_t fprintf(void) {
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
+    int64_t v10 = arg0;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg1;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
+    int64_t v15 = arg2;
     int64_t v16 = 0LL;
-    int64_t v17 = 0LL;
+    int64_t v17 = arg3;
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
@@ -4817,6 +5091,7 @@ int64_t fprintf(void) {
     v9 = v8;
     v11 = v10;
     v13 = v12;
+    /* recovered field: base=v7 offset=0x70 field=field_70 */
     *((int64_t *)(v8)) = v15;
     v16 = (v7 + 120LL);
     *((int64_t *)(v16)) = v17;
@@ -4829,6 +5104,7 @@ int64_t fprintf(void) {
     v23 = (*((int64_t *)(v19)));
     v24 = v23;
     v25 = (v7 + 32LL);
+    /* recovered field: base=v7 offset=0x20 field=field_20 */
     *((int64_t *)(v25)) = v9;
     v26 = ((long long (*)(long long, long long, long long, long long, long long, long long))__stdio_common_vfprintf)(v9, v13, v22, v24, v21, v20);
     v27 = (v7 + 64LL);
@@ -4852,6 +5128,12 @@ int64_t fprintf(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.55) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t __local_stdio_printf_options(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
@@ -4870,6 +5152,12 @@ int64_t __local_stdio_printf_options(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.55) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t __p___initenv(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
@@ -4894,19 +5182,25 @@ int64_t __p___initenv(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void _amsg_exit(void) {
+/* convention: sysv-amd64 (score 0.70) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: none */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+void _amsg_exit(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg3;
     int64_t v5 = 0LL;
     int64_t v6 = 0LL;
-    int64_t v7 = 0LL;
-    int64_t v8 = 0LL;
-    int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
-    int64_t v11 = 0LL;
+    int64_t v7 = arg0;
+    int64_t v8 = arg1;
+    int64_t v9 = arg2;
+    int64_t v10 = arg4;
+    int64_t v11 = arg5;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
@@ -4942,24 +5236,30 @@ void _amsg_exit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t __getmainargs(void) {
+/* convention: sysv-amd64 (score 0.90) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 5 */
+/* struct_layouts: pointer=1 stack=1 */
+/* switch_tables: 0 */
+int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    int64_t v4 = arg0;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
+    int64_t v6 = arg1;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
+    int64_t v10 = arg5;
     int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
+    int64_t v12 = arg2;
     int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
+    int64_t v14 = arg4;
     int64_t v15 = 0LL;
-    int64_t v16 = 0LL;
+    int64_t v16 = arg3;
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
@@ -5055,6 +5355,12 @@ int64_t __getmainargs(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void strlen(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5068,6 +5374,12 @@ void strlen(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void strncmp(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5081,6 +5393,12 @@ void strncmp(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __acrt_iob_func(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5094,6 +5412,12 @@ void __acrt_iob_func(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __p__commode(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5107,6 +5431,12 @@ void __p__commode(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __p__fmode(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5120,6 +5450,12 @@ void __p__fmode(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __stdio_common_vfprintf(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5133,6 +5469,12 @@ void __stdio_common_vfprintf(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void fflush(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5146,6 +5488,12 @@ void fflush(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void setvbuf(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5159,6 +5507,12 @@ void setvbuf(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __set_app_type(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5172,6 +5526,12 @@ void __set_app_type(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __p___argc(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5185,6 +5545,12 @@ void __p___argc(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __p___argv(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5198,6 +5564,12 @@ void __p___argv(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _cexit(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5211,6 +5583,12 @@ void _cexit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _configure_narrow_argv(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5224,6 +5602,12 @@ void _configure_narrow_argv(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _crt_atexit(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5237,6 +5621,12 @@ void _crt_atexit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _exit(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5250,6 +5640,12 @@ void _exit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _initialize_narrow_environment(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5263,6 +5659,12 @@ void _initialize_narrow_environment(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _initterm(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5276,6 +5678,12 @@ void _initterm(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _initterm_e(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5289,6 +5697,12 @@ void _initterm_e(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _set_invalid_parameter_handler(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5302,6 +5716,12 @@ void _set_invalid_parameter_handler(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void abort(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5315,6 +5735,12 @@ void abort(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void exit(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5328,6 +5754,12 @@ void exit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void signal(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5341,6 +5773,12 @@ void signal(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void memcpy(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5354,6 +5792,12 @@ void memcpy(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __setusermatherr(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5367,6 +5811,12 @@ void __setusermatherr(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _configthreadlocale(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5380,6 +5830,12 @@ void _configthreadlocale(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void _set_new_mode(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5393,6 +5849,12 @@ void _set_new_mode(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void calloc(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5406,6 +5868,12 @@ void calloc(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void free(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5419,6 +5887,12 @@ void free(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void malloc(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5432,6 +5906,12 @@ void malloc(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void __p__environ(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -5445,15 +5925,21 @@ void __p__environ(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t main(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 3 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
-    int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
-    int64_t v7 = 0LL;
+    int64_t v2 = arg0;
+    int64_t v3 = arg1;
+    int64_t v4 = arg2;
+    int64_t v5 = arg3;
+    int64_t v6 = arg4;
+    int64_t v7 = arg5;
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
@@ -5505,6 +5991,12 @@ int64_t main(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void register_frame_ctor(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();

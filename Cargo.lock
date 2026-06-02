@@ -169,6 +169,7 @@ dependencies = [
  "dac-binfmt",
  "dac-core",
  "dac-ir",
+ "dac-knowledge",
  "dac-lift",
  "dac-recovery",
  "rand 0.8.6",

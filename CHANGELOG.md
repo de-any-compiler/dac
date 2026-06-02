@@ -2843,6 +2843,146 @@ address-sorted layout — `cargo xtask ci`'s
 `hello-elf-o1-c/source.c` golden regenerates byte-identically
 on two runs.
 
+### B3.10 — Recovery facts → emitted source (FR-13, FR-14, FR-17, FR-18, NFR-9)
+
+Surfaces the per-function recovery side tables in the C source the
+orchestrator emits at `--target c -O1`. Closes the "facts in
+`dac-recovery` don't surface in the emitted source" debt recorded
+across the B2.5 / B2.6 / B3.2 / B3.3 / B3.4 CHANGELOG entries.
+
+**Per-function orchestrator (`dac-cli::lift`).** `LiftOutcome::Real`
+now carries a boxed `RecoveryFacts { stack_frame, convention,
+types, structs, idioms }`. Each constituent pass runs in the
+order its data dependencies require: `analyze_stack_frame` →
+`infer_calling_convention` (picks the highest-scoring match from
+`X86_64_CONVENTIONS`) → `propagate_types` (seeded by the
+convention's `int_args` and the stack frame) → `recover_structs`
+(consults the type map for field types) → `recover_idioms`. The
+orchestrator picks the binary-format-correct `StackConvention`
+(`SysVAmd64` for ELF / Mach-O, `MsX64` for PE) and builds a
+`BinaryImportResolver` against the binary's `Import` / `Symbol`
+tables so `propagate_types` can seed types at direct-call sites
+whose target VA matches an entry in `dac-knowledge`'s libc /
+Win32 API catalogue.
+
+A new switch-idiom post-pass (`lower_switch_idioms`) rewrites
+every `SemStmt::Unreachable` whose `source_block` matches a
+recognised `SwitchTableIdiom` into `SemStmt::Switch { scrutinee,
+arms: [], default: Some(<the original Unreachable>),
+source_block }`. The scrutinee surfaces; per-entry resolution
+(reading `.rodata` and minting per-arm goto targets) is recorded
+as a B3 follow-up shelf entry — the structurer's recursive walk
+doesn't naturally visit blocks reachable only through the
+indirect dispatch, so resolving arms cleanly needs more
+plumbing.
+
+The `lift_one` helper now takes a single `LiftCtx` reference
+(bundling model + bytes + decoder + lifter + register file +
+stack convention + API resolver) instead of a long arg list.
+
+**C backend surface (`dac-backend-c`).** Three new AST nodes land:
+
+- `Expr::Field { base, field, arrow }` and
+  `Stmt::FieldStore { base, field, arrow, value }` model
+  `base->field` / `base.field` accesses. The lowering pass at
+  B3.10 detects the matching shape via
+  `RecoveredStructs::pointer_structs` but, until the AST grows
+  translation-unit-level `struct` typedefs (a B3 follow-up shelf
+  entry), surfaces the recovery as a `/* recovered field:
+  base=v_<id> offset=0x<hex> field=field_<hex> */` comment above
+  the bare `Load` / `Store`. The arrow / dot rendering is
+  exercised by `dac-backend-c`'s AST exhaustivity tests so the
+  path stays warm.
+- `Stmt::Switch { scrutinee, arms, default }` plus `SwitchArm
+  { value, body }` model `switch (s) { case N: …; default: … }`.
+  The emitter renders the `default` arm as `default: { … }` and
+  arms as `case <value>LL: { … }` so per-arm break / fall-through
+  semantics stay explicit when arm bodies start landing in the
+  follow-up.
+- `Expr::Cast { ty, expr }` for `((ty)(expr))`. The lowering pass
+  uses it at the two int / pointer boundaries B3.10 introduces:
+  parameter → local init (`int64_t v0 = (int64_t)arg0;`) and
+  `Return { value: Some(_) }` operands when the return type is
+  not `int64_t`.
+
+`lower_function` now takes a `Recovered<'a>` view that bundles
+optional refs to `InferredSignature`, `TypeMap`, and
+`RecoveredStructs`. The lowering pass commits to:
+
+- Materialising the convention's `int_args` as named C parameters
+  (`arg0, arg1, …`) whose types come from `TypeMap::value_type`.
+  Pre-declared `v<id>` locals for each parameter initialise from
+  the matching `arg<n>` through an explicit `Expr::Cast` so the
+  int / pointer boundary is explicit (FR-13, FR-14).
+- Picking the return type from the convention's
+  `return_register` and the join of every `Return { value:
+  Some(_) }` operand's recovered type. The B2.8 fallback
+  (`value: Some(_)` → `int64_t`, otherwise `void`) stays in
+  force when the convention has no return register.
+- Keeping non-parameter locals typed by `width_bits` for now.
+  Refining local types directly from the lattice exposes
+  pointer / int mixes the lifter's sub-register arithmetic
+  produces, so refining is a B3 follow-up shelf entry.
+
+`lower_unit` takes a parallel `&[Recovered<'_>]` slice; passing
+`&[]` falls back to the B2.8 behaviour.
+
+**CLI plumbing (`dac-cli`).** `lift.rs` now imports `dac-knowledge`
+and `dac-recovery` enough to build the orchestrator's
+recovery-facts pipeline. `main.rs`'s `lower_one_c_function`
+threads `facts.convention.signature`, `facts.types`, and
+`facts.structs` into the C backend's `Recovered` view, and
+`real_body_leading_comment` cites the chosen convention name +
+score, the inferred arg-register sequence, the return register,
+the stack-local count, the pointer / stack struct layout counts,
+and the recognised switch-table count.
+
+**Report (`dac-cli::report`).** `--emit-report` gains a new line:
+
+```
+;; recovery:    typed_sigs=7 struct_fields=1 switch_tables=0
+```
+
+…between `;; body cover.: …` and the per-function table.
+`LiftStats` accumulates `typed_signatures`, `struct_field_functions`,
+and `switch_functions` per the new criteria: a "useful" convention
+(at least one inferred arg or a return register), a recovered
+`pointer_structs` entry, and a recognised `SwitchTableIdiom`.
+
+**Bugfix in `dac-recovery::structs::lookup_def_op`.** Running
+`recover_structs` on the PE corpus surfaced an out-of-bounds
+panic: a `ValueSource::Instruction { block, index }` pointed past
+the end of `block.instructions`. The function now bounds-checks
+defensively and returns `None`, matching the existing degradation
+path for non-instruction sources. The underlying SSA-source
+inconsistency is recorded as a follow-up shelf entry in PLAN.md.
+
+**Tests.** `cargo xtask ci` is green:
+
+- `dac-backend-c`'s 26 unit tests (including `Recovered::default`
+  paths) and 12 round-trip cases pass.
+- `dac-cli`'s `o1_target_c_round_trips_through_system_compiler`
+  passes after the int / pointer boundary casts.
+- 25 golden outputs across 10 cases match; three updated
+  intentionally:
+  - `hello-elf-o0-report/report.txt` gained the new
+    `;; recovery: …` line.
+  - `hello-elf-o1-c/source.c` now shows the recovered convention
+    in the leading comment (`/* convention: sysv-amd64 (score
+    0.85) */`), typed parameters
+    (`int64_t _init(int64_t arg0, int64_t arg1, …)`), and
+    parameter → local init casts.
+  - `hello-pe-o1-c/source.c` regenerates with the same plumbing
+    against the MS x64 corpus.
+
+Closes B3.10, FR-13 (convention surfaced in the source), FR-14
+(parameter + return inference reflected in the C signature),
+FR-17 (struct field recovery comment-surfaced ahead of the
+typedef follow-up), FR-18 (switch idiom lowered into
+`Stmt::Switch`, scrutinee visible), and NFR-9 (every new pass is
+`Determinism::Pure`; the corpus output is byte-stable across
+runs).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

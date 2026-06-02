@@ -12,7 +12,13 @@
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t _init(void) {
+/* convention: sysv-amd64 (score 0.85) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+int64_t _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -21,12 +27,12 @@ int64_t _init(void) {
     int64_t v5 = 0LL;
     int64_t v6 = 0LL;
     int8_t v7 = 0LL;
-    int64_t v8 = 0LL;
-    int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
-    int64_t v11 = 0LL;
-    int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
+    int64_t v8 = arg0;
+    int64_t v9 = arg1;
+    int64_t v10 = arg2;
+    int64_t v11 = arg3;
+    int64_t v12 = arg4;
+    int64_t v13 = arg5;
     int64_t v14 = 0LL;
     int64_t v15 = 0LL;
     int64_t v16 = 0LL;
@@ -54,6 +60,12 @@ int64_t _init(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void fn_1030(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -67,7 +79,13 @@ void fn_1030(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t main(void) {
+/* convention: ms-x64 (score 0.28) */
+/* args: rcx */
+/* return_reg: rax */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+int64_t main(int64_t arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -76,7 +94,7 @@ int64_t main(void) {
     int64_t v5 = 0LL;
     int64_t v6 = 0LL;
     int64_t v7 = 0LL;
-    int64_t v8 = 0LL;
+    int64_t v8 = arg0;
     int64_t v9 = 0LL;
     int64_t v10 = 0LL;
     int64_t v11 = 0LL;
@@ -107,10 +125,16 @@ int64_t main(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void _start(void) {
+/* convention: ms-x64 (score 0.47) */
+/* args: rcx,rdx,r8 */
+/* return_reg: none */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+void _start(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = 0LL;
+    int64_t v2 = arg1;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
@@ -121,9 +145,9 @@ void _start(void) {
     int64_t v10 = 0LL;
     int64_t v11 = 0LL;
     int64_t v12 = 0LL;
-    int64_t v13 = 0LL;
+    int64_t v13 = arg2;
     int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
+    int64_t v15 = arg0;
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
@@ -159,6 +183,12 @@ void _start(void) {
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.55) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t deregister_tm_clones(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
@@ -203,7 +233,13 @@ L0:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-void register_tm_clones(void) {
+/* convention: sysv-amd64 (score 0.55) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
+int64_t register_tm_clones(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -242,7 +278,13 @@ void register_tm_clones(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-int64_t __do_global_dtors_aux(void) {
+/* convention: sysv-amd64 (score 0.70) */
+/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* return_reg: rax */
+/* stack_locals: 1 */
+/* struct_layouts: pointer=1 stack=0 */
+/* switch_tables: 0 */
+int64_t __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int8_t v2 = 0LL;
@@ -253,15 +295,15 @@ int64_t __do_global_dtors_aux(void) {
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
-    int64_t v10 = 0LL;
+    int64_t v10 = arg0;
     int64_t v11 = 0LL;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
-    int64_t v15 = 0LL;
-    int64_t v16 = 0LL;
-    int64_t v17 = 0LL;
-    int64_t v18 = 0LL;
+    int64_t v14 = arg1;
+    int64_t v15 = arg2;
+    int64_t v16 = arg3;
+    int64_t v17 = arg4;
+    int64_t v18 = arg5;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
     int64_t v21 = 0LL;
@@ -295,6 +337,12 @@ int64_t __do_global_dtors_aux(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: none */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 void frame_dummy(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
@@ -308,6 +356,12 @@ void frame_dummy(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
+/* convention: sysv-amd64 (score 0.40) */
+/* args: (no register args) */
+/* return_reg: rax */
+/* stack_locals: 0 */
+/* struct_layouts: pointer=0 stack=0 */
+/* switch_tables: 0 */
 int64_t _fini(void) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
