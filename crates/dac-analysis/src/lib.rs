@@ -20,11 +20,18 @@
 //! - [`dataflow`] — SSA-level def-use chains and per-block liveness
 //!   (B2.4, FR-11). Use-def is implicit in SSA so the module exposes
 //!   a thin [`dataflow::def_of`] wrapper rather than a separate table.
+//! - [`structuring`] — control-flow structuring (B2.7, FR-18,
+//!   spec §11.3). Folds SSA + CFG + dominators + post-dominators +
+//!   loop forest into a [`dac_ir::sem::SemFunction`] tree
+//!   (`if` / `loop` / `break` / `continue` / `return`), with a goto
+//!   fallback for irreducible CFGs.
 //!
 //! ## What's coming
 //!
 //! Calling-convention inference (B2.5) and type lattice / propagation
-//! (B2.6) land into this crate behind their own modules and milestones.
+//! (B2.6) live in `dac-recovery` instead — the doc comment in the
+//! diagram above is the architectural intent, the actual home is the
+//! crate that already consumes `dac-knowledge`.
 
 #![forbid(unsafe_code)]
 
@@ -33,6 +40,9 @@ pub mod dataflow;
 pub mod dom;
 pub mod loops;
 pub mod ssa;
+pub mod structuring;
+
+pub use structuring::structure;
 
 #[cfg(test)]
 mod test_support;

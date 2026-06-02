@@ -1584,6 +1584,149 @@ be measured yet — `tests/golden/` and the sample corpus arrive
 in B2.9. The propagation algorithm, lattice, and signature
 table are in place; corpus calibration follows.
 
+#### B2.7 — Semantic IR + structuring (2026-06-02)
+
+A Semantic IR module lands in `dac-ir::sem` and a control-
+flow structuring pass lands in `dac-analysis::structuring`.
+The structurer consumes the SSA function from B2.3 together
+with its CFG (B2.1), dominator and post-dominator trees, and
+loop forest (B2.2) and folds them into a tree of structured
+statements — `if` / `else`, endless `loop` with explicit
+`break` / `continue`, early `return`, and a `goto` /
+`Label` fallback for irreducible CFGs. The Semantic IR also
+defines `while`, `do { … } while`, and `switch` variants
+for use by later batches (B3.3 idiom recognition / B2.8
+lowering); the B2.7 structurer itself emits the canonical
+`Loop` + `If` + `Break` + `Continue` shape, leaving the
+`while` / `do-while` / `for` rewriting to a downstream
+recognition pass that has access to inferred types.
+
+The algorithm is a top-down recursive walk seeded at the SSA
+entry. Each recursion takes a `region_exit` (the
+post-dominator-derived merge point that caps the current
+sub-tree) and a stack of enclosing `LoopCtx { header, exit
+}`. Bases: `current == None` or `current == region_exit`
+returns an empty block; `current == loop_stack.last().header`
+becomes a `Continue`; `current == loop_stack.last().exit`
+becomes a `Break`; an already-emitted block becomes a `Goto`
+with a freshly allocated `LabelId`. Otherwise the block is
+marked emitted, its phis and instructions are lifted into
+statement-position `SsaRef` carriers, and the terminator is
+dispatched: `Jump` recurses into the target; `Branch` builds
+an `If` whose then/else arms are recursive structurings
+toward the IPDOM-filtered join, then continues from the join
+when one exists; `Return` becomes a `Return` statement;
+`Indirect` / `Unreachable` produce a `Stmt::Unreachable`
+marker (I-6, degrade — don't invent).
+
+Loop entry pre-computes the loop's uniform exit (the
+not-in-body side of the header's conditional terminator, or
+the single CFG-level block any body member exits to) and
+pushes a `LoopCtx`, then processes the header normally inside
+the loop scope. Back-edges into the header automatically
+become `Continue`; edges to the exit automatically become
+`Break`; nested loops recurse with their own pushed
+`LoopCtx`.
+
+A label-anchoring post-pass walks the produced body once and
+inserts `Stmt::Label` at the first emission of every block
+demoted into a goto target. `Stmt::Goto` carries the
+`source_block` of the demoted CFG block so the anchor can be
+placed even when the block produced no other statements (the
+irreducible-ping-pong case). Any label that survives the
+walk without being anchored — possible when both a goto's
+source and the structurer's recursion through the source's
+target produced no anchor-eligible statements — is appended
+at the tail of the body so every `Stmt::Goto::target`
+resolves to a `Stmt::Label::id` somewhere in the tree
+(degrade, never silently drop).
+
+- `dac-ir::sem`:
+  - `SemFunction { function_address, function_name, body,
+    evidence, stats }` — the structured tree.
+  - `Block { stmts: Vec<Stmt> }` with `Block::empty()` /
+    `is_empty()` ergonomics.
+  - `SsaRef { block: SsaBlockId, index: u32 }` — stable
+    handle back into the source SSA function. Per I-2, the
+    Sem layer references SSA instructions rather than
+    cloning them, so the lowering pass (B2.8) has one
+    canonical place to resolve types / evidence / dst.
+  - `Stmt` enum (13 variants): `Phi`, `Instr`, `If`,
+    `While`, `DoWhile`, `Loop`, `Switch`, `Break`,
+    `Continue`, `Return`, `Label`, `Goto`, `Unreachable`.
+    Closed and exhaustively pattern-matched downstream so
+    new constructs surface as compile-time misses (the I-6
+    lever that keeps backends from inventing semantics).
+  - `SwitchArm { value: i64, body: Block }` — placeholder
+    for the B3.3 jump-table recognizer.
+  - `StructuringStats { source_blocks, goto_count,
+    label_count, irreducible }` plus
+    `StructuringStats::is_goto_free()` — the per-function
+    rubric.
+  - `LabelId` is `u32`. Labels are dense indices allocated
+    in source-order so a renderer can produce stable `L0`,
+    `L1`, … names without bookkeeping.
+  - 6 unit tests covering the empty-block identity, the
+    goto-free predicate, the exhaustive-match guard,
+    `SsaRef` copy / equality, label-id density, and the
+    `SemFunction` carrier shape.
+- `dac-analysis::structuring`:
+  - `structure(ssa, cfg, doms, pdoms, loops) -> SemFunction`
+    — entrypoint, re-exported as `dac_analysis::structure`.
+  - Recursive structuring with `region_exit` and a loop
+    context stack; emits `Stmt::If` at conditional
+    branches, `Stmt::Loop` at loop headers, `Stmt::Break` /
+    `Stmt::Continue` at exit / back-edge transitions, and
+    falls back to `Stmt::Goto` only when the recursion
+    re-enters an already-emitted block.
+  - `compute_loop_exit` picks the canonical exit when the
+    loop header's conditional terminator splits one way
+    into the body and the other way outside; falls back to
+    "any single block successor outside the body", then to
+    the header's IPDOM when neither shape applies.
+  - `find_join` consults the post-dominator tree, filtered
+    so the join is suppressed when it sits at the
+    surrounding `region_exit` or outside the enclosing
+    loop body (the arms reach the loop exit via `Break`
+    rather than a structural merge).
+  - `insert_labels` post-pass walks the body and prepends
+    `Stmt::Label` at the first emission of every labelled
+    block; orphan labels are appended at the body tail so
+    every `Stmt::Goto::target` resolves.
+  - 15 unit tests covering: single return, linear chain,
+    diamond merge with empty / populated arms, early-return
+    diamond, canonical while-loop (Loop + If + Break +
+    Continue), self-loop endless `Loop`, nested while
+    loops, irreducible CFG goto fallback (every Goto
+    resolves to a Label), byte-determinism, phi-before-
+    instr order, indirect terminator → Unreachable, empty
+    function, and conditional cond preservation.
+
+Wiring: `dac-ir` re-exports `Block`, `LabelId`,
+`SemFunction`, `SsaRef`, `Stmt`, `StructuringStats`,
+`SwitchArm` at the crate root. `dac-analysis::structuring`
+consumes `dac_ir::sem` and `dac_ir::ssa`, plus the existing
+`crate::{cfg, dom, loops}` modules — no new external deps.
+
+Test counts: `cargo xtask ci` reports 44 green `test result:
+ok` lines (clippy + tests + doc-tests across the workspace),
+zero warnings, zero errors. New lib tests: `dac-ir` 22 → 28
+(+6 for `sem`), `dac-analysis` 62 → 77 (+15 for
+`structuring`). Cumulative test count climbs by 21.
+
+Closes: FR-18 (control-flow structuring producing `if`,
+`while`, `for`, `switch`, early returns plus a goto fallback
+— the variants exist in the Semantic IR vocabulary; the
+structurer emits `If` + `Loop` + `Break` + `Continue` +
+`Return` reliably; `While` / `DoWhile` / `For` / `Switch`
+recognition is layered on top in later batches with access
+to inferred types). The "goto-free on the sample corpus for
+at least the simple functions" criterion in PLAN.md cannot
+be measured yet — `tests/golden/` and the sample corpus
+arrive in B2.9. `StructuringStats::is_goto_free()` and
+`StructuringStats::goto_count` are wired up so the rubric
+can be evaluated immediately when the corpus lands.
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 

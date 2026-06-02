@@ -10,17 +10,23 @@
 //!   long-term home is `dac-ir::cfg`, but no consumer has needed the
 //!   split yet.
 //! - **B2.3.** [`ssa`] — phi nodes, def-use chains.
-//! - **B2.6 (this batch).** [`ty`] — type lattice (`Unknown`,
-//!   `Int{width, sign}`, `Ptr<T>`, `Struct{…}`, `Array<T,n>`, `Top`)
-//!   with join (FR-14, FR-16).
-//! - **B2.7.** `sem` — semantic IR (typed, structured).
+//! - **B2.6.** [`ty`] — type lattice (`Unknown`, `Int{width, sign}`,
+//!   `Ptr<T>`, `Struct{…}`, `Array<T,n>`, `Top`) with join (FR-14,
+//!   FR-16).
+//! - **B2.7 (this batch).** [`sem`] — semantic IR (structured control
+//!   flow: `if` / `while` / `do-while` / endless `loop` / `break` /
+//!   `continue` / `return`, plus goto fallback for irreducible CFGs).
+//!   The structurer that builds it lives in
+//!   `dac_analysis::structuring`.
 //! - **B2.7 / M3.** `src` — language-neutral source AST.
 
 #![forbid(unsafe_code)]
 
 pub mod instr;
+pub mod sem;
 pub mod ssa;
 pub mod ty;
 
 pub use instr::{Condition, InstructionIr, Operand, Operation, Target};
+pub use sem::{Block, LabelId, SemFunction, SsaRef, Stmt, StructuringStats, SwitchArm};
 pub use ty::{ArrayType, IntType, Signedness, StructField, StructType, Type};

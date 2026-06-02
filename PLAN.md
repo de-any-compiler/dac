@@ -43,14 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.7 — Semantic IR + structuring
-- `dac-ir::sem`.
-- Structuring algorithm (Cifuentes-style or no-more-gotos) producing `if`,
-  `while`, `for`, `switch`, early returns (FR-18, spec §11.3).
-- Goto fallback for irreducible CFGs.
-- **Done when:** structuring is goto-free on the sample corpus for at least
-  the simple functions; metrics reported.
-
 ### B2.8 — C backend (`-O1`)
 - `dac-backend-c`: Source IR → C AST → formatted source (FR-21).
 - Compilability check: emitted C is fed to a system C compiler in CI
