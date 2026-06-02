@@ -5,18 +5,24 @@
 //!
 //! ## What ships when
 //!
-//! - **B2.5 (this batch).** [`convention`] — calling-convention
-//!   table for x86-64 (SysV AMD64 and Microsoft x64). Consumed by
+//! - **B2.5.** [`convention`] — calling-convention table for x86-64
+//!   (SysV AMD64 and Microsoft x64). Consumed by
 //!   `dac_recovery::convention` to infer per-function conventions
 //!   (FR-13).
-//! - **B2.6.** API signatures (libc, Win32 minimal set) for type
-//!   propagation.
+//! - **B2.6 (this batch).** [`api`] — minimal libc and Win32 API
+//!   signature catalogue. Consumed by `dac_recovery::types` to seed
+//!   the type lattice at known call sites (FR-14, FR-16).
 //! - **B3.3.** Pattern catalogue for idiom recognition.
 
 #![forbid(unsafe_code)]
 
+pub mod api;
 pub mod convention;
 
+pub use api::{
+    api_signatures, lookup_api_signature, lookup_api_signature_in, ApiLibrary, ApiParameter,
+    ApiSignature,
+};
 pub use convention::{
     x86_64_convention_by_name, CallingConvention, MS_X64, SYSV_AMD64, X86_64_CONVENTIONS,
 };

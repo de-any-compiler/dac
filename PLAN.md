@@ -43,13 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.6 — Type lattice + propagation
-- Initial type lattice: `Unknown`, `IntN`, `Ptr<T>`, `Struct{…}`, `Array<T,n>`,
-  `Top`.
-- Propagation from API signatures in `dac-knowledge` (libc, Win32 minimal
-  set) and from load/store widths (FR-14, FR-16).
-- **Done when:** types are recovered for ≥ 70% of locals in the corpus.
-
 ### B2.7 — Semantic IR + structuring
 - `dac-ir::sem`.
 - Structuring algorithm (Cifuentes-style or no-more-gotos) producing `if`,

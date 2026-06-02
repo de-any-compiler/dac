@@ -182,6 +182,9 @@ dependencies = [
 [[package]]
 name = "dac-knowledge"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-ir",
+]
 
 [[package]]
 name = "dac-lift"

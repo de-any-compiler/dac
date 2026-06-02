@@ -1424,6 +1424,166 @@ inference algorithm and scoring are in place; corpus
 calibration will be tracked as a follow-up once `tests/golden/`
 exists.
 
+#### B2.6 — Type lattice + propagation (2026-06-02)
+
+A type lattice lands in `dac-ir::ty`, an API signature
+catalogue lands in `dac-knowledge::api`, and a type-propagation
+pass lands in `dac-recovery::types`. The propagation pass
+consumes the SSA function from B2.3, the stack frame from
+B2.4, the convention-inferred signature from B2.5, and a
+caller-supplied resolver from call-target VAs to API
+signatures; it seeds the lattice from four observation sources
+and iterates `Type::join` through Move, arithmetic, and phi
+nodes to a fixed point. The pass never mutates the IR — its
+output is a side table of `(ValueId → Type, Confidence)` and
+`(stack offset → Type, Confidence)` (I-1).
+
+The lattice keeps `Unknown` as the bottom and `Top` as the
+top: any cross-variant join (`Int` against `Ptr`, two `Int`s
+with differing widths, two `Struct`s with differing shapes,
+two `Array`s with differing lengths) lands at `Top` rather
+than silently picking a winner (I-6). The signedness
+sub-lattice within `Int` has its own `Unknown` bottom and a
+`Conflict` element distinct from `Unknown` so the propagation
+pass can surface contradictions in `--debug` later without
+losing the width fact.
+
+Seeds, in decreasing strength:
+
+1. **API signature call sites.** When a `Call { target:
+   Some(va) }` resolves via the caller-supplied
+   `ApiResolver`, the destination joins the signature's
+   `return_ty` and each `args[i]` operand joins the
+   signature's `parameters[i].ty`. Confidence `0.90`.
+2. **Load / Store widths.** A `Load { width: w }` constrains
+   its destination to `Int(w*8, Unknown)`; a `Store { value,
+   width: w }` constrains `value` likewise. Both ops also
+   mark their address operand as `Ptr(Unknown)`. Confidence
+   `0.80`.
+3. **Stack-local widths.** Each `StackLocal` from the B2.4
+   stack frame contributes its widest observed access width
+   as a `locals` entry of `Int(width*8, Unknown)`. Confidence
+   `0.75`.
+4. **Inferred-signature parameter values.** Each
+   `RegisterArg.value` from B2.5 enters as `Int(64, Unknown)`
+   (the function's pointer width on x86-64). Confidence
+   `0.70`.
+
+Propagation steps are weaker than their seeds: `Move` is a
+pure passthrough capped at `0.85`; arithmetic ops join their
+operand types and cap the resulting confidence at `0.60`;
+`Compare` always publishes `Int(1, Unknown)` (the boolean
+result of a comparison) at `0.60`; `Opaque` is opaque (I-6) —
+its destination stays unconstrained. Phi destinations join
+the types of every incoming operand and surface only when the
+joined type is more specific than `Unknown`.
+
+- `dac-ir::ty`:
+  - `Type` enum: `Unknown` (bottom), `Int(IntType)`,
+    `Ptr(Box<Type>)`, `Struct(StructType)`,
+    `Array(ArrayType)`, `Top`. `Eq` + `Hash` are exact
+    equality — same shape, same type.
+  - `IntType { width_bits: u16, signedness: Signedness }` and
+    `Signedness { Unknown, Signed, Unsigned, Conflict }`.
+    `Signedness::join` follows the sub-lattice exactly.
+  - `StructType { name, fields: Vec<StructField> }`,
+    `StructField { offset, ty, name }`, `ArrayType { element,
+    length: Option<u64> }`. Fields are kept in ascending
+    offset for byte-stable hashing.
+  - `Type::join(other)` — lattice join, total, deterministic.
+    Idempotent, commutative, associative; `Unknown` is the
+    identity; `Top` is absorbing.
+  - Ergonomic constructors: `Type::signed_int(width)`,
+    `unsigned_int(width)`, `int_of_width(width)`,
+    `ptr_to(t)`.
+  - Predicates: `is_unknown()`, `is_top()`,
+    `int_width_bits()`.
+  - 13 unit tests covering each variant's join behavior,
+    signedness sub-lattice laws, and the four lattice
+    endpoints.
+- `dac-knowledge::api`:
+  - `ApiSignature { name, library, return_ty, parameters,
+    is_variadic }` — one catalogue entry.
+  - `ApiLibrary { Libc, Win32 }` — origin tag with
+    case-insensitive ordering for stable diagnostics.
+  - `ApiParameter { name, ty }` — positional formals.
+  - `lookup_api_signature(name)`,
+    `lookup_api_signature_in(name, library)`,
+    `api_signatures()` — deterministic lookups walking the
+    table in declaration order.
+  - Libc minimal set (24 entries): `strlen`, `strcmp`,
+    `strcpy`, `strncpy`, `memcpy`, `memset`, `memcmp`,
+    `malloc`, `calloc`, `realloc`, `free`, `printf`, `puts`,
+    `fopen`, `fclose`, `fread`, `fwrite`, `read`, `write`,
+    `open`, `close`, `exit`, `abort`, `getenv`.
+  - Win32 minimal set (9 entries): `CreateFileA`,
+    `CloseHandle`, `ReadFile`, `WriteFile`, `GetLastError`,
+    `HeapAlloc`, `HeapFree`, `GetProcessHeap`, `ExitProcess`.
+  - Behind a `LazyLock<Vec<ApiSignature>>` because
+    `Type::Ptr` boxes its pointee and is not `const`-
+    constructible. Parameter slices are leaked once at first
+    access (`Box::leak` on a stable, declaration-order list)
+    so the public surface is `&'static [ApiParameter]`.
+  - 10 unit tests: libc and Win32 lookups, variadic flag for
+    `printf`, library-scoped lookup, miss returns `None`,
+    no duplicate `(name, library)` pairs, minimal-set
+    completeness for libc and Win32, signature stability
+    across lookups (pointer-equal), library-name strings.
+- `dac-recovery::types`:
+  - `TypeMap { values: BTreeMap<ValueId, ValueType>, locals:
+    BTreeMap<i64, LocalType> }` — side table of recovered
+    types. Both maps are absent-as-`Unknown`.
+  - `ValueType { ty, confidence }` and `LocalType { ty,
+    confidence }`. `Eq` not derived (`Confidence` is f32-
+    typed).
+  - `propagate_types(ssa, inferred_signature: Option<&_>,
+    stack_frame: Option<&_>, api_resolver: &dyn
+    ApiResolver) -> TypeMap` — entrypoint. Both optional
+    inputs let the pass run before its B2.x dependencies
+    have lined up; degradation is graceful (fewer seeds, no
+    refusal to produce).
+  - `ApiResolver` trait + blanket impl for any `Fn(u64) ->
+    Option<&'static ApiSignature>`, plus a `NullApiResolver`
+    that always returns `None` for tests that exercise only
+    load / store / stack signals.
+  - `TypeMap::value_recovery_ratio()` and
+    `local_recovery_ratio()` — recovery-coverage helpers used
+    by the corpus rubric in PLAN.md ("≥ 70% of locals").
+  - All recovered facts carry [`Source::Derived`] (I-3).
+  - 15 unit tests covering load/store seeding, the
+    Ptr(Unknown) address-operand mark, API call-site seeding
+    of args and return, API arity-mismatch trimming, Move
+    passthrough, arithmetic width propagation, phi merging
+    across incoming SSA values, convention-inferred
+    parameter seeding through `infer_calling_convention`,
+    stack-local width pickup through `analyze_stack_frame`,
+    `Source::Derived` on every recovered fact, API seeds
+    outranking arithmetic propagation by confidence,
+    determinism across repeated runs, the recovery-ratio
+    helper, and `Opaque` contributing no constraint.
+
+Wiring: `dac-knowledge` now depends on `dac-ir` (for `Type`);
+`dac-ir` re-exports `Type`, `IntType`, `Signedness`,
+`StructField`, `StructType`, `ArrayType` at the crate root.
+`dac-recovery::types` consumes both `dac-knowledge` and
+`dac-recovery::{convention, stack}` — no new external deps.
+
+Test counts: `cargo xtask ci` reports 46 green
+`test result: ok` lines (44 → 46, +2 for the new `dac-ir::ty`
+and `dac-knowledge::api` doc-test slots; doctest lines stay
+at 0 each since neither module ships executable doctests).
+Lib test counts grew: `dac-ir` 9 → 22 (+13 for `ty`),
+`dac-knowledge` 6 → 16 (+10 for `api`), `dac-recovery` 35 →
+50 (+15 for `types`). No new warnings.
+
+Closes: FR-14 (parameter and return-type inference where
+evidence exists) and FR-16 (type propagation from API
+signatures, instruction patterns, and memory usage). The
+"≥ 70% of locals in the corpus" criterion in PLAN.md cannot
+be measured yet — `tests/golden/` and the sample corpus arrive
+in B2.9. The propagation algorithm, lattice, and signature
+table are in place; corpus calibration follows.
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 
