@@ -747,6 +747,133 @@ I-3 (every recovered function carries a `Confidence` value and a
 B2.1 (CFG construction) with a half-open byte range per function and
 an evidence handle to attach per-block facts onto.
 
+#### B1.6 — `-O0` text backend (2026-06-02)
+
+Closes Milestone 1: the CLI now drives an end-to-end pipeline from
+`dac-binfmt` through `dac-recovery` to a deterministic textual artifact
+set. `-O0` is not a "real" backend — it emits an annotated listing of
+the lifted IR — but it is the first user-visible end-to-end output and
+the first place every prior batch (parser → decoder → lifter →
+discovery) lands together. `dac sample.elf -O0` re-run twice produces
+byte-identical listing + manifest + report; the new
+`o0_golden.rs` integration test gates that for both ELF and PE
+fixtures, with and without `--emit-report`.
+
+- `dac-cli::listing` (new):
+  - `render_listing(input_name, model, bytes, decoder, lifter, functions, opts)`
+    produces a deterministic textual view of every discovered function.
+    Per-function header records address range, joined confidence, and
+    contributing signal mask (`symbol, entry, call, prologue`).
+    Per-instruction lines carry virtual address, the first 8 encoded
+    bytes (further bytes elided as ` .` so the column stays at fixed
+    width), the disassembly text from
+    `dac_arch::DecodedInstruction`, and the lifted-IR projection from
+    [`format_ir`] in the comment column.
+  - `ListingOptions { with_headers, with_bytes, with_ir }` for tighter
+    diffs; defaults to all-on so the canonical listing carries the
+    fullest provenance view.
+  - `format_ir` projects an `InstructionIr` onto a one-line semantic
+    form (e.g. `mov(rax:64, rbx:64)`, `call(@0x1030)`,
+    `opaque(vfmadd)`). Reads each `Operation` variant explicitly; new
+    variants get a new arm.
+  - 4 unit tests cover the empty-function-set note, byte-stability
+    across two renders of the same input, `format_ir` shape for lifted
+    + opaque instructions, and `format_sources` canonical bit ordering.
+- `dac-cli::manifest` (new):
+  - `Manifest { tool, input, settings, ai_provider, plugins }` with
+    sub-structs for each field group. `tool` records name + version +
+    build_id (NFR-10); `input` records path + size + format +
+    architecture; `settings` records `-O` level, target, and every
+    user-visible flag from the spec §10.1 surface.
+  - `render_manifest_json` hand-rolls the JSON (no `serde` /
+    `serde_json` dep) with a fixed key order, sorted output, escape
+    handling for control chars and quotes. Byte-stable across calls.
+  - Optional fields (`ai.provider`, `settings.threads`) render as JSON
+    `null` when absent so the schema does not shift between runs.
+  - 5 unit tests cover byte-stability, NFR-10 field presence, AI
+    provider rendering, threads rendering, and string escaping for the
+    quote / newline / sub-0x20 cases.
+- `dac-cli::report` (new):
+  - `Report { function_count, from_*, coverage, functions }` with
+    `FunctionSummary` for the per-function lines. `Report::build`
+    folds a `dac_arch::Coverage` across every discovered function by
+    pairing the decoder iterator with the lifter, so the report's
+    lifted-fraction is computed against *only* the function bytes
+    (not the full `.text`).
+  - `render_report_text` emits a deterministic text form. Header
+    declares function count + signals + lift coverage; per-function
+    block prints `address..end  name  source/confidence  sources`;
+    trailing "unresolved opaque mnemonics" block lists every opaque
+    mnemonic by lexicographic order.
+  - 3 unit tests cover the aggregate signal count, the per-function
+    summary lines, and byte-stability across two renders.
+- `dac-cli` orchestration changes in `main.rs`:
+  - `run_pipeline(path, args)` replaces the prior log-only `run()`. It
+    loads the binary, picks an architecture backend (currently
+    `X86_64`, returns `None` for unsupported archs), discovers
+    functions, builds the listing / manifest / optional report, and
+    writes the outputs.
+  - `Backend { decoder, lifter }` holds the architecture-specific
+    trait objects; the only x86 dispatch in the pipeline is here.
+  - Unsupported architectures land on `unsupported_arch_listing` /
+    `unsupported_arch_report` — they still emit a manifest + a stub
+    listing, never panic. This matches the format-detection contract
+    from B0.2 (NFR-4 robustness).
+  - Output routing: no `--output` writes listing + manifest (delimited
+    with `;; ---- manifest (NFR-10) ----`) and optional report to
+    stdout in one stream. `--output <path>` writes listing to
+    `<path>`, manifest to `<path>.manifest.json`, and the report to
+    `<path>.report.txt` when `--emit-report` is set. Sidecar paths
+    are computed by appending the suffix to the raw `OsStr` so paths
+    without extensions (`/tmp/out`) and paths with extensions
+    (`/tmp/out.c`) both round-trip predictably.
+- `crates/dac-cli/Cargo.toml`: adds `dac-arch`, `dac-arch-x86`,
+  `dac-ir`, `dac-recovery` as runtime deps. No new external deps.
+- `crates/dac-cli/tests/o0_golden.rs` (new) — the B1.6 done-when. Four
+  integration tests run `dac` twice against shared fixtures and assert
+  the listing, manifest, and (when emitted) report files are
+  byte-identical between the two runs:
+  - `elf_o0_output_is_stable_across_reruns` on `hello-x86_64`. Also
+    pins the preamble line, the `;; format:    ELF` / `;; arch:
+    x86-64` markers, and the NFR-10 manifest fields.
+  - `pe_o0_output_is_stable_across_reruns` on `hello-x86_64.exe`.
+    Pins the `;; format:    PE` marker.
+  - `elf_o0_with_emit_report_is_stable_across_reruns` adds
+    `--emit-report` to the run, asserts the listing still records the
+    function count line, and the report carries the FR-25 header.
+  - `stripped_elf_o0_output_is_stable_across_reruns` runs on the
+    stripped fixture so the test covers the entry / call / prologue
+    branch of the discoverer (the symbol set is empty here).
+- Sample output preamble for `dac -O0 hello-x86_64`:
+  ```text
+  ;; dac -O0 annotated listing
+  ;; input:     tests/fixtures/hello-x86_64
+  ;; format:    ELF
+  ;; arch:      x86-64
+  ;; entry:     0x0000000000001060
+  ;; size:      15968 bytes
+  ;; functions: 9
+  ;; signals:   symbol=8 entry=1 call=2 prologue=2
+
+  ;; ============================================================
+  ;; function _init [0x0000000000001000..0x000000000000101b) (27 bytes)
+  ;;   confidence: observed 1.000
+  ;;   sources:   symbol, prologue
+  ;; ============================================================
+  0x0000000000001000  f3 0f 1e fa                   endbr64    ; nop
+  0x0000000000001004  48 83 ec 08                   sub rsp,8  ; sub(rsp:64, 8#64)
+  …
+  ```
+
+Closes: FR-22 (`-O0` is wired end-to-end; the higher `-O` levels build
+on the same orchestration in B2.x / M4), FR-25 (analysis report with
+per-function confidence + source attribution + lift coverage +
+opaque mnemonic histogram), NFR-9 (deterministic across re-runs gated
+by `o0_golden.rs`), NFR-10 (reproducibility manifest records tool
+version + build id + analysis settings + backend + AI + plugins).
+Completes Milestone 1 of `PLAN.md` — every M1 batch (B1.1 through
+B1.6) has now landed.
+
 ### Milestone 2 — Core decompilation
 *(not started)*
 

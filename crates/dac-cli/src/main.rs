@@ -1,21 +1,39 @@
 //! `dac` — command-line frontend.
 //!
-//! Status: B0.5 declares the full CLI surface from spec §10.1. Every flag
-//! is parsed and validated today; most do not yet drive behavior and become
-//! active milestone by milestone (`--target` / `--emit-*` in M1/M2,
-//! `--ai-provider` / `--no-ai` in M4, `--plugin` in M5). `--deterministic`
-//! gates `NonDeterministic` passes through the pass manager once the CLI
-//! drives a real pipeline (B1.6); the manager-level enforcement is already
+//! Status: B0.5 declared the full CLI surface from spec §10.1. B1.6 wires
+//! `-O0` end-to-end: the binary is loaded through `dac-binfmt`, functions
+//! are discovered through `dac-recovery`, and a deterministic annotated
+//! listing (plus a reproducibility manifest per NFR-10 and an optional
+//! analysis report per FR-25) is emitted on the user-selected output
+//! path. `--target`, `--emit-ir`, `--emit-cfg`, `--emit-annotations`,
+//! `--ai-provider`, `--no-ai`, and `--plugin` are still parsed but
+//! become live milestone by milestone (M2 / M4 / M5). `--deterministic`
+//! is surfaced on the manifest today; manager-level enforcement remains
 //! covered by `dac-core` unit tests.
 
 #![forbid(unsafe_code)]
 
+mod listing;
+mod manifest;
+mod report;
+
 use std::ffi::OsString;
+use std::fs::File;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use dac_binfmt::{load_from_bytes, BinaryModel};
-use dac_core::init_tracing;
+use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter};
+use dac_arch_x86::X86_64;
+use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
+use dac_core::{init_tracing, EvidenceGraph};
+use dac_recovery::discover_functions;
+
+use crate::listing::{render_listing, ListingOptions};
+use crate::manifest::{
+    render_manifest_json, Manifest, ManifestInput, ManifestSettings, ManifestTool,
+};
+use crate::report::{render_report_text, Report};
 
 const HELP_TEXT: &str = include_str!("../tests/snapshots/help.txt");
 
@@ -75,41 +93,209 @@ fn main() -> ExitCode {
         "parsed cli arguments"
     );
 
-    match run(&input) {
-        Ok(model) => {
-            tracing::info!(
-                format = %model.format.name(),
-                arch = %model.architecture.name(),
-                size = model.size,
-                sections = model.sections.len(),
-                segments = model.segments.len(),
-                symbols = model.symbols.len(),
-                imports = model.imports.len(),
-                exports = model.exports.len(),
-                relocations = model.relocations.len(),
-                strings = model.strings.len(),
-                needed_libraries = model.needed_libraries.len(),
-                entry = ?model.entry,
-                deterministic = args.deterministic,
-                path = %input.display(),
-                "loaded input"
-            );
-            ExitCode::SUCCESS
-        }
+    match run_pipeline(&input, &args) {
+        Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             tracing::error!(
                 error = %err,
                 path = %input.display(),
-                "failed to load input"
+                "pipeline failed"
             );
             ExitCode::FAILURE
         }
     }
 }
 
-fn run(path: &Path) -> dac_core::Result<BinaryModel> {
+fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let bytes = std::fs::read(path)?;
-    load_from_bytes(&bytes)
+    let model = load_from_bytes(&bytes)?;
+    tracing::info!(
+        format = %model.format.name(),
+        arch = %model.architecture.name(),
+        size = model.size,
+        sections = model.sections.len(),
+        segments = model.segments.len(),
+        symbols = model.symbols.len(),
+        imports = model.imports.len(),
+        exports = model.exports.len(),
+        relocations = model.relocations.len(),
+        strings = model.strings.len(),
+        needed_libraries = model.needed_libraries.len(),
+        entry = ?model.entry,
+        deterministic = args.deterministic,
+        path = %path.display(),
+        "loaded input"
+    );
+
+    let input_label = path.to_string_lossy().into_owned();
+    let manifest = build_manifest(&input_label, &model, args);
+    let manifest_json = render_manifest_json(&manifest);
+
+    // The pipeline picks a backend lazily so that formats without an
+    // arch backend (everything but x86-64 today) still produce the
+    // manifest + a minimal listing rather than failing.
+    let backend = pick_backend(&model);
+    let listing_text;
+    let report_text;
+    match &backend {
+        Some(b) => {
+            let mut graph = EvidenceGraph::new();
+            let functions = discover_functions(&model, &bytes, b.decoder.as_ref(), &mut graph);
+            listing_text = render_listing(
+                &input_label,
+                &model,
+                &bytes,
+                b.decoder.as_ref(),
+                b.lifter.as_ref(),
+                &functions,
+                &ListingOptions::default(),
+            );
+            if args.emit_report {
+                let r = Report::build(
+                    &model,
+                    &bytes,
+                    b.decoder.as_ref(),
+                    b.lifter.as_ref(),
+                    &functions,
+                );
+                report_text = Some(render_report_text(&r));
+            } else {
+                report_text = None;
+            }
+            let _ = functions; // evidence handles already wired
+        }
+        None => {
+            listing_text = unsupported_arch_listing(&input_label, &model);
+            report_text = if args.emit_report {
+                Some(unsupported_arch_report(&model))
+            } else {
+                None
+            };
+        }
+    }
+
+    emit_outputs(
+        args.output.as_deref(),
+        &listing_text,
+        &manifest_json,
+        report_text.as_deref(),
+    )
+}
+
+struct Backend {
+    decoder: Box<dyn InstructionDecoder>,
+    lifter: Box<dyn InstructionLifter>,
+}
+
+fn pick_backend(model: &BinaryModel) -> Option<Backend> {
+    match model.architecture {
+        Architecture::X86_64 => Some(Backend {
+            decoder: X86_64.decoder(),
+            lifter: X86_64.lifter(),
+        }),
+        _ => None,
+    }
+}
+
+fn unsupported_arch_listing(input_name: &str, model: &BinaryModel) -> String {
+    let mut s = String::new();
+    s.push_str(";; dac -O0 annotated listing\n");
+    s.push_str(&format!(";; input:     {input_name}\n"));
+    s.push_str(&format!(";; format:    {}\n", model.format.name()));
+    s.push_str(&format!(";; arch:      {}\n", model.architecture.name()));
+    s.push_str(";; (no architecture backend available; listing skipped)\n");
+    s
+}
+
+fn unsupported_arch_report(model: &BinaryModel) -> String {
+    let mut s = String::new();
+    s.push_str(";; dac analysis report (FR-25)\n");
+    s.push_str(&format!(";; arch:      {}\n", model.architecture.name()));
+    s.push_str(";; (no architecture backend available; report skipped)\n");
+    s
+}
+
+fn build_manifest(input_path: &str, model: &BinaryModel, args: &Args) -> Manifest {
+    Manifest {
+        tool: ManifestTool {
+            name: "dac".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            build_id: BUILD_ID.to_string(),
+        },
+        input: ManifestInput {
+            path: input_path.to_string(),
+            size: model.size as u64,
+            format: model.format.name().to_string(),
+            architecture: model.architecture.name().to_string(),
+        },
+        settings: ManifestSettings {
+            level: args.opt.as_str().to_string(),
+            target: args.target.as_str().to_string(),
+            deterministic: args.deterministic,
+            no_ai: args.no_ai,
+            emit_ir: args.emit_ir,
+            emit_cfg: args.emit_cfg,
+            emit_report: args.emit_report,
+            emit_annotations: args.emit_annotations,
+            threads: args.threads,
+        },
+        ai_provider: args.ai_provider.clone(),
+        plugins: args
+            .plugin
+            .as_ref()
+            .map(|p| vec![p.display().to_string()])
+            .unwrap_or_default(),
+    }
+}
+
+/// Emit the listing, manifest, and optional report.
+///
+/// - No `--output`: listing → stdout, manifest → stdout (delimited),
+///   report (if any) → stdout.
+/// - With `--output <path>`: listing → `<path>`, manifest →
+///   `<path>.manifest.json`, report → `<path>.report.txt`.
+fn emit_outputs(
+    output: Option<&Path>,
+    listing: &str,
+    manifest: &str,
+    report: Option<&str>,
+) -> dac_core::Result<()> {
+    match output {
+        None => {
+            let stdout = io::stdout();
+            let mut h = stdout.lock();
+            h.write_all(listing.as_bytes())?;
+            h.write_all(b"\n;; ---- manifest (NFR-10) ----\n")?;
+            h.write_all(manifest.as_bytes())?;
+            if let Some(r) = report {
+                h.write_all(b"\n;; ---- analysis report (FR-25) ----\n")?;
+                h.write_all(r.as_bytes())?;
+            }
+            Ok(())
+        }
+        Some(path) => {
+            write_file(path, listing)?;
+            let manifest_path = sidecar(path, ".manifest.json");
+            write_file(&manifest_path, manifest)?;
+            if let Some(r) = report {
+                let report_path = sidecar(path, ".report.txt");
+                write_file(&report_path, r)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn sidecar(base: &Path, suffix: &str) -> PathBuf {
+    let mut s = base.as_os_str().to_owned();
+    s.push(suffix);
+    PathBuf::from(s)
+}
+
+fn write_file(path: &Path, contents: &str) -> dac_core::Result<()> {
+    let mut f = File::create(path)?;
+    f.write_all(contents.as_bytes())?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

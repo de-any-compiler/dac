@@ -35,13 +35,7 @@ Goal: load an ELF or PE, decode x86-64, lift to Instruction IR, recover
 functions, and emit `-O0` textual output that is a faithful annotated
 disassembly-style listing.
 
-### B1.6 — `-O0` text backend
-- Not a "real" backend — emits an annotated listing of lifted IR.
-- Output is grouped per function, shows IR with byte-offset annotations.
-- `--emit-report` produces the analysis report from FR-25.
-- Reproducibility manifest emitted (NFR-10).
-- **Done when:** running `dac sample.elf -O0` produces stable output across
-  re-runs (golden test).
+*All M1 batches complete — see [CHANGELOG.md](./CHANGELOG.md).*
 
 ---
 

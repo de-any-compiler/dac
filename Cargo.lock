@@ -141,8 +141,12 @@ name = "dac-cli"
 version = "0.1.0-pre"
 dependencies = [
  "assert_cmd",
+ "dac-arch",
+ "dac-arch-x86",
  "dac-binfmt",
  "dac-core",
+ "dac-ir",
+ "dac-recovery",
  "rand 0.8.6",
  "tempfile",
  "tracing",
