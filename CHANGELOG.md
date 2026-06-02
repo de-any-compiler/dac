@@ -2540,6 +2540,183 @@ the next pass can pick them up without re-reading this entry:
   level vtable scanner across `.data.rel.ro` reservation
   patterns lands in a later batch.
 
+#### B3.8 — `dac-lift`: Instruction IR → RawFunction bridge (2026-06-02)
+
+The missing leg in the per-function pipeline. Until this batch
+landed, `dac-lift` had been a stub since M0 (`Status: stub. Real
+lifting lands with B1.4.`) — B1.4 actually delivered the
+`InstructionIr` decoder/lifter inside `dac-arch-x86`, so the
+*bridge* the spec assigned to this crate (per-instruction `Operation`
+→ per-block `RawFunction` for the SSA constructor) was never written.
+The B2.x / B3.x deferral trail repeats the same phrase across
+`dac-cli`, both backends, and the B2.8 / B3.4 / B3.5 CHANGELOG
+entries: *"the lifter → `RawFunction` bridge is not yet a batch in
+PLAN.md"*. This batch makes it one and closes it.
+
+Closes both legs of the PLAN.md B3.8 done-when rubric:
+
+- A hand-crafted x86-64 if-then-else CFG lifts through
+  `lift_function` → `construct_ssa` → `structure` to a
+  [`SemFunction`] whose body carries a `Stmt::If`
+  (`end_to_end_diamond_construct_ssa_then_structure_produces_if`).
+- The `hello-x86_64` fixture's `main` lifts end-to-end to a
+  non-trivial `SemFunction` — at least one statement, at least one
+  SSA value, at least one block with body ops
+  (`hello_x86_64_main_lifts_to_a_non_trivial_sem_function`).
+
+What landed in `dac-lift`:
+
+- `bridge::lift_function(cfg, instructions_per_block, register_file)
+  -> RawFunction` — the public entry. Asserts the
+  `instructions_per_block.len() == cfg.blocks.len()` shape but
+  degrades every other failure mode to honest IR rather than
+  panicking (I-6). `must_use`.
+- `Builder` — translation state. Holds the variable table, the
+  canonical-name cache (`BTreeMap<String, VariableId>` for
+  deterministic iteration), the pending flag-setter from the
+  most-recent in-block `Compare`/`Test`, and a monotonic
+  `synth_counter` for address / compare-result temporaries.
+- Register variable model — one [`VariableId`] per *canonical*
+  64-bit register. Sub-register operands (`eax`, `ax`, `al`, etc.)
+  walk `RegisterFile::register(parent_id)` and land on the same
+  variable as their 64-bit parent. The known-loss — that a 32-bit
+  write doesn't zero the upper 32 in this representation — is
+  documented at the call site and listed first in the PLAN.md
+  "B3 follow-up shelf".
+- Operation translation:
+  - `Move`, `Add`, `Sub`, `Mul`, `And`, `Or`, `Xor`, `Shl`,
+    `Shr`, `Sar` (lossy → `Shr`), `Neg`, `Not`, `LoadAddress`
+    land on the corresponding `RawOpKind`. `dst = dst <op> src`
+    read-modify-write semantics handled inline.
+  - `Push` / `Pop` synthesise `rsp ±= 8` plus a `Store` / `Load`.
+  - `Compare` and `Test` are *stashed* on the builder, not
+    emitted. The next conditional `Operation::Jump` consumes the
+    pending flag-setter at terminator-build time, emits a
+    [`RawOpKind::Compare`] with the Jcc-derived [`CompareKind`],
+    and wires the result into [`RawTerminator::Branch`].
+  - `Return` reads the SysV return register (`rax`) and lands on
+    [`RawTerminator::Return { value: Some(Variable(rax_var)) }`].
+  - `Call` translates as [`RawOpKind::Call`] with the resolved
+    target VA (or `None` for indirect), conservatively reads every
+    SysV argument register (`rdi`, `rsi`, `rdx`, `rcx`, `r8`,
+    `r9`) so liveness stays sound, and conservatively defines
+    `rax` so the call-site gets a fresh SSA name for the return
+    value. B3.10's argument-count inference narrows this when it
+    lands.
+  - `Opaque`, `Interrupt`, `Syscall`, `Div`, and any decode-error
+    Operation surface as [`RawOpKind::Opaque`] with mnemonic
+    preserved — the SSA constructor still sees a side-effect node
+    rather than the lifter silently skipping it (I-6).
+  - `Nop` is dropped (no SSA effect; CSE would erase it
+    immediately).
+- Memory-operand expansion. `[base + index*scale + disp]`
+  addressing modes expand inline into a chain of synthetic `Add` /
+  `Mul` raw ops that produce a single address [`RawOperand`]; that
+  operand drives a [`RawOpKind::Load`] (read) or
+  [`RawOpKind::Store`] (write) with the operand's width
+  (`mem_width_bytes` rounds `size_bits` up to bytes, capped at 8).
+- Branch-target resolution via the CFG. The bridge never re-parses
+  the target VA out of the `Jcc` instruction; it walks
+  `Cfg::edges` for the `EdgeKind::Taken` / `EdgeKind::NotTaken` /
+  `EdgeKind::Branch` / `EdgeKind::Fall` neighbour. Edges are
+  already sorted by the CFG builder, so the lookup is
+  deterministic. Unresolved branch targets (no matching edge)
+  degrade the terminator to [`RawTerminator::Indirect`].
+- `condition_to_compare_kind` maps every `Condition` to a
+  [`CompareKind`] when one exists. Sign / overflow / parity /
+  `CxZero` have no two-operand-compare counterpart in the SSA
+  vocabulary; their blocks fall back to [`RawTerminator::Indirect`]
+  so the structurer doesn't see a comparison the bridge couldn't
+  justify (I-6 honest degradation).
+
+Unit tests in `bridge::tests` (10, all `Determinism::Pure`):
+
+- `subreg_writes_canonicalise_to_64bit_parent` — `xor eax, eax`
+  materialises a single `rax` variable; no separate `eax`.
+- `return_terminator_reads_rax_value` — a bare `ret` block lands
+  on `RawTerminator::Return { value: Some(Variable(rax)) }`.
+- `compare_then_jcc_collapses_into_branch_terminator` —
+  `cmp rax, 0; je 0x10` produces a `Branch` terminator whose
+  `taken` / `not_taken` match the CFG's edge wiring and whose
+  body's last op is a `RawOpKind::Compare { kind: Eq, … }`.
+- `unsupported_condition_degrades_to_indirect` — `jp` degrades
+  honestly.
+- `nop_does_not_emit_a_raw_op` — `Nop` is dropped; the block has
+  zero body ops.
+- `opaque_passes_through_with_preserved_mnemonic` — an unmodelled
+  iced mnemonic surfaces in `RawOpKind::Opaque::mnemonic`
+  verbatim.
+- `jcc_without_prior_compare_degrades_to_indirect` — Jcc with no
+  pending `Compare`/`Test` becomes `Indirect`, never invents a
+  comparison.
+- `unconditional_jump_resolves_to_branch_edge_target` — `jmp 0x10`
+  picks the `EdgeKind::Branch` successor from the CFG.
+- `lift_function_is_deterministic_across_runs` — two runs over
+  the same input produce byte-identical `RawFunction` (NFR-9).
+- `end_to_end_diamond_construct_ssa_then_structure_produces_if`
+  — the PLAN.md done-when rubric, leg 1.
+
+Integration tests in `tests/end_to_end.rs` (2):
+
+- `hello_x86_64_main_lifts_to_a_non_trivial_sem_function` — the
+  PLAN.md done-when rubric, leg 2. Drives the whole pipeline on
+  the existing `hello-x86_64` fixture and asserts the resulting
+  `SemFunction` has at least one statement, the `SsaFunction`
+  has at least one value, and at least one `RawBlock` carries
+  body ops. Guards against the bridge silently regressing to the
+  pre-B3.8 stub state.
+- `lift_function_is_byte_stable_across_two_runs_on_a_real_binary`
+  — NFR-9 / I-4 on a real ELF.
+
+Wiring:
+
+- `crates/dac-lift/Cargo.toml`: drops the lone `[lints]` block in
+  favour of `[dependencies]` (dac-analysis, dac-arch, dac-ir
+  workspace-pinned) + `[dev-dependencies]` (dac-arch-x86,
+  dac-binfmt, dac-core, dac-recovery for the integration tests).
+- `crates/dac-lift/src/lib.rs`: full module doc, `pub mod bridge`,
+  `pub use bridge::lift_function`. Drops the `Status: stub` line.
+
+Closes: FR-8 (the lifter's output is finally consumable by the
+downstream pipeline), FR-11 (use-def / SSA actually reachable
+from real binaries), partial FR-13 (calling-convention drives
+call argument modelling at the bridge). Invariants: I-2 (the
+`SsaFunction` produced by the constructor inherits its evidence
+from the source CFG — no extra evidence-graph wiring needed
+here), I-4 (`Determinism::Pure`, validated by two byte-identity
+tests), I-6 (Opaque / Indirect / Unreachable degradations are
+honest about what the bridge can't yet model).
+
+Explicit B3.8 deferrals — each is documented at the call site
+and most are now listed on the PLAN.md "B3 follow-up shelf":
+
+- **Subreg-aliasing precision.** Sub-register writes land on the
+  full 64-bit parent variable. The x86-64 "32-bit write zeroes
+  the upper 32" semantics is dropped — a follow-up batch will
+  refine.
+- **Stack-slot detection before SSA.** The B2.4 stack-frame pass
+  runs *after* SSA construction (it reads the SSA function), so
+  pre-SSA stack-slot synthesis isn't this batch's job. `[rsp+N]`
+  / `[rbp+N]` memory operands land as ordinary `Load` / `Store`
+  with synthetic address-compute temporaries; B3.10's
+  recovery-facts-into-source pass surfaces them as named locals.
+- **Architecture other than x86-64.** The bridge takes a generic
+  [`RegisterFile`] for canonicalisation, but the return register
+  and call-argument register list are hard-coded to System V
+  AMD64. AArch64 lands with a parameterised convention table in
+  B5.2.
+- **Mid-block terminators.** `Operation::Return` /
+  `Operation::Jump` that appear mid-block (rather than as the
+  block's last instruction) surface as `RawOpKind::Opaque` —
+  the CFG builder already filters those into separate blocks in
+  practice, but the bridge is defensive.
+
+Closes B3.8. Test counts: `cargo xtask ci` reports green; 12 new
+tests in `dac-lift` (10 unit + 2 integration); 25 golden outputs
+across 10 cases still match without regeneration (the C / C++
+backends still emit stubs because the orchestrator-side wiring
+is B3.9's job).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

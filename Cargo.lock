@@ -203,6 +203,15 @@ dependencies = [
 [[package]]
 name = "dac-lift"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-analysis",
+ "dac-arch",
+ "dac-arch-x86",
+ "dac-binfmt",
+ "dac-core",
+ "dac-ir",
+ "dac-recovery",
+]
 
 [[package]]
 name = "dac-plugin"

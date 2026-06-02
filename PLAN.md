@@ -70,44 +70,6 @@ hints have nothing to retype, and B3.7's names have nothing to rename.
 - **Done when:** generated names beat `v1, v2, v3` on the corpus per a
   measurable rubric (heuristic-name coverage %).
 
-### B3.8 — `dac-lift`: Instruction IR → RawFunction bridge
-- `dac-lift` stops being a stub (it has lived as `Status: stub. Real
-  lifting lands with B1.4.` since M0; B1.4 actually delivered the
-  `InstructionIr` decoder/lifter inside `dac-arch-x86`, so the bridge
-  the spec assigned to this crate was never written).
-- `lift_function(cfg, instrs_per_block, frame: &StackFrame) -> RawFunction`
-  (signature is illustrative — exact crate boundaries pinned in the PR).
-- Variable model: one `VariableId` per architectural register canonical
-  name, one per `StackFrame` slot, and synthetic slots for const-address
-  memory accesses.
-- Translation rules:
-  - `Operation::{Move, Add, Sub, Mul, And, Or, Xor, Shl, Shr, Sar,
-    Not, Neg, Compare}` → matching `RawOpKind::*`.
-  - `Operation::Jump` + the prior `Operation::Compare` / `Test` in the
-    same block → `RawTerminator::Branch { cond, taken, not_taken }`.
-  - `Operation::Return` → `RawTerminator::Return { value:
-    Some(Variable(return_reg)) }`.
-  - `Operation::Call` → `RawOpKind::Call` with `target` from
-    `Operation::Call::target` and `args` from the inferred convention's
-    argument-register sequence.
-  - `Operation::Opaque` → `RawOpKind::Opaque` (vocabulary already exists).
-  - `Operation::{Push, Pop, LoadAddress}` → stack-slot `Load` / `Store`.
-- Subreg aliasing is lossy at this batch: sub-register writes are treated
-  as full-register writes. The bridge's module docs and the in-code
-  leading comment document the loss so the next batch can pick up the
-  precision improvement without re-reading this entry.
-- Closes: FR-8 (lifting end-to-end), FR-11 (use-def / SSA actually
-  reachable from real binaries), part of FR-13 (convention drives call
-  arg modelling at the bridge). Invariants: I-2 (per-RawOp evidence
-  inherits from the lifted `InstructionIr`), I-4 (`Determinism::Pure`),
-  I-6 (Opaque is honest about coverage gaps).
-- **Done when:** a hand-crafted x86-64 ELF function with a basic
-  if-then-else lifts through `lift_function` → `construct_ssa` →
-  `structure` to a `SemFunction` whose body matches the expected
-  `Stmt::If` shape; a second test exercises the existing
-  `hello-static-x86_64` fixture's `main` and asserts a non-trivial
-  `SemFunction` (not just `Return;`).
-
 ### B3.9 — End-to-end pipeline orchestration in `dac-cli`
 - Wire B3.8's bridge into the actual `--target c -O1` / `--target cpp -O1`
   reconstruction path so emitted source carries real bodies, not the
