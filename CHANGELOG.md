@@ -958,6 +958,89 @@ Closes: FR-10 (control-flow graphs for recovered functions), FR-28
 test (NFR-9). The CFG carries the function's evidence handle, so
 I-2 is preserved across the new layer.
 
+#### B2.2 — Dominators + loop nest (2026-06-02)
+
+Dominator and post-dominator trees, natural-loop detection, and a
+loop nest forest land in `dac-analysis::dom` and
+`dac-analysis::loops`. The dominator computation is the
+Cooper-Harvey-Kennedy iterative algorithm walking blocks in reverse
+postorder; the post-dominator computation runs the same algorithm
+on the reverse CFG augmented with a synthetic virtual exit that
+merges every CFG exit. Natural loops are derived from back-edges
+(CFG edges `u → v` where `v` dominates `u`), their bodies
+materialised by reverse BFS from each back-edge source. Reducibility
+is detected by counting external entry points per non-trivial SCC;
+irreducible CFGs are flagged so the structuring pass (B2.7) can
+fall back to `goto` in the C backend.
+
+- `dac-analysis::dom`:
+  - `DominatorTree { idoms, entry }` with `build(&Cfg) -> Self`,
+    `idom(b) -> Option<BlockId>`, `entry() -> BlockId`,
+    `dominates(a, b) -> bool`, `strictly_dominates(a, b) -> bool`,
+    `children(a) -> Vec<BlockId>`. Convention: `idom(entry) ==
+    Some(entry)`; `idom(unreachable) == None`. The dominance check
+    walks the idom chain so it never panics on out-of-range ids.
+  - `PostDominatorTree { ipdoms, n_blocks }` with `build(&Cfg) ->
+    Self`, `ipostdom(b) -> PostDom`, `post_dominates(a, b) -> bool`.
+    The synthetic virtual exit is internal; callers see the three
+    public states `PostDom::Block(id)` / `PostDom::Exit` /
+    `PostDom::Unreachable`, so a CFG exit and an infinite-loop
+    block are distinguishable without leaking sentinel ids.
+  - Crate-private helpers `predecessors_of` / `successors_of` build
+    sorted + de-duplicated adjacency from `Cfg::edges` so a block
+    with parallel edges of different `EdgeKind`s does not double-
+    count for dominance.
+- `dac-analysis::loops`:
+  - `LoopForest { loops, roots, header_of, innermost, irreducible }`
+    with `build(&Cfg, &DominatorTree) -> Self`. Loop ids are
+    assigned in ascending-header order; `roots` and `children` are
+    sorted; `innermost[i]` records the deepest loop containing
+    block `i` for cheap per-block queries.
+  - `Loop { id, header, body, back_edges, parent, children, depth }`.
+    `body` is sorted ascending and always contains `header`; the
+    parent relation is the smallest enclosing loop whose body
+    contains `header` (i.e. the natural nesting from header
+    containment, not just dominance).
+  - `LoopForest::irreducible` is true iff at least one non-trivial
+    SCC has more than one entry point — a node inside the SCC with
+    a predecessor outside it, or the CFG entry. Detected by an
+    iterative Tarjan SCC pass; trivial SCCs (single nodes without
+    self-loops) are skipped.
+  - Back-edge enumeration and body BFS both skip blocks unreachable
+    from the function entry — the dominance check is vacuously
+    false for them, so without filtering the BFS would leak into
+    orphan predecessor chains that never pass through the header.
+  - 13 unit tests cover the canonical reference topologies:
+    linear (no loops), self-loop, while-style, do-while with the
+    body as header, nested two-level forest, sibling loops, multi-
+    back-edge with merging, irreducible two-entry SCC,
+    early-exit / break, unreachable self-loop (not flagged),
+    plain natural-loop body, determinism across rebuilds, and a
+    single-block SCC with a self-loop.
+- Tests:
+  - `crates/dac-analysis/tests/corpus_loops.rs` runs the entire
+    discover → CFG → dom → loops pipeline on the ELF / PE /
+    stripped-ELF fixtures. For every recovered function it asserts
+    that every loop's header dominates every body block, every
+    back-edge source is dominated by its header, and the body
+    contains the header. A determinism test runs the pipeline
+    twice on the ELF fixture and asserts the resulting `LoopForest`
+    vectors are equal (NFR-9).
+
+Test counts: `cargo xtask ci` reports 43 green `test result: ok`
+lines (was 42 at end of B2.1) — +1 dac-analysis integration test
+binary (`corpus_loops`). Lib test count grew from 14 to 37 inside
+`dac-analysis` (the 14 existing CFG tests, plus 10 dominator /
+post-dominator tests and 13 loop tests). No new warnings.
+
+Closes: FR-10 (dominators / loops as part of the CFG analysis
+layer). The reducibility flag covers the prerequisite I-6 fallback
+the C backend will rely on at B2.7. Determinism is gated by the
+loop-forest equality test in the corpus integration suite (NFR-9).
+No new evidence nodes are minted — dominators and loops are
+derived facts attached to the existing per-function CFG node
+inherited from B1.5 (I-2).
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 

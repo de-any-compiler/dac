@@ -43,12 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.2 — Dominators + loop nest
-- Dominator tree, post-dominators, natural loops, loop nest forest.
-- Reducibility detection (irreducible CFGs flagged, handled with `goto`
-  fallback in the backend).
-- **Done when:** loop tree matches reference on the corpus.
-
 ### B2.3 — SSA construction
 - Pruned SSA with phi nodes (FR-11).
 - `dac-ir::ssa`.
