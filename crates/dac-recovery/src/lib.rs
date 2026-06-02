@@ -24,13 +24,21 @@
 //!   parameter list; iterates [`dac_ir::ty::Type::join`] through
 //!   Move / arithmetic / phi to a fixed point.
 //! - **B3.2.** struct / array recovery.
-//! - **B3.3.** idiom recognition.
+//! - **B3.3 (this batch).** [`idioms`] — proposal-style idiom
+//!   recognition (FR-18, spec §11.4). Side-table only: scans the SSA
+//!   function for compiler-emitted jump tables on x86-64 (terminator
+//!   [`dac_ir::ssa::SsaTerminator::Indirect`] anchoring a `Load` from
+//!   `Add(base, Mul(idx, c))` / `Add(base, Shl(idx, k))`) and surfaces
+//!   them as [`idioms::SwitchTableIdiom`] records, optionally pinned
+//!   by a bounding [`dac_ir::ssa::CompareKind::Ult`] /
+//!   [`dac_ir::ssa::CompareKind::Ule`] in the predecessor.
 //! - **B3.7.** variable-naming heuristics.
 
 #![forbid(unsafe_code)]
 
 pub mod convention;
 pub mod functions;
+pub mod idioms;
 pub mod stack;
 pub mod structs;
 pub mod types;
@@ -42,6 +50,7 @@ pub use functions::{
     discover_functions, DiscoveryStats, Function, FunctionSet, SourceMask, CALL_EDGE_CONFIDENCE,
     ENTRY_CONFIDENCE, PROLOGUE_CONFIDENCE, SYMBOL_CONFIDENCE,
 };
+pub use idioms::{recover_idioms, RecoveredIdioms, SwitchTableIdiom, SWITCH_TABLE_CONFIDENCE};
 pub use stack::{
     analyze_stack_frame, FramePointer, StackConvention, StackFrame, StackLocal, StackLocalKind,
 };

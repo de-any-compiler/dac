@@ -2159,6 +2159,99 @@ emit time are deliberately deferred. The B3.3 idiom-recognition
 pass and the B3.4 annotation channel will consume
 `RecoveredStructs` directly when they land.
 
+#### B3.3 — Idiom recognition (2026-06-02)
+
+Idiom recognition for `dac-recovery`. Lands as a new
+`dac_recovery::idioms` module that scans the SSA function for
+compiler-emitted jump tables on x86-64 and surfaces them as
+proposal-style annotations on a side table — never rewriting the IR
+(I-1). The B3.3 "done when" rubric — *switch recovery handles
+compiler-emitted jump tables on x86-64* — is gated by the
+`hand_built_jump_table_round_trip` unit test, which assembles a
+synthetic `if (idx < 4) { jmp table[idx*8]; } else { return; }`
+function and asserts the recovered `SwitchTableIdiom` carries the
+correct base, stride, width, and upper bound.
+
+- `dac-recovery::idioms` (new ~400-line module):
+  - `RecoveredIdioms { switch_tables }` — a single `BTreeMap` for
+    deterministic ordering, keyed by the [`SsaBlockId`] of the
+    [`SsaTerminator::Indirect`] dispatch block. Additional idiom
+    families (error-guard returns, ref-counting, simple state
+    machines) land as new sibling fields in later batches; the
+    module docs map each future detector to its prerequisite.
+  - `SwitchTableIdiom { source_block, scrutinee, table_base_const,
+    element_stride, element_width, bound, confidence }` — records
+    the *shape* of the dispatch without resolving the table's
+    entries. Per-entry resolution requires reading `.rodata` /
+    relocations and lives downstream (likely B3.4).
+  - `recover_idioms(ssa) -> RecoveredIdioms` — the single public
+    entry. Total: every block is walked; non-matches are silent.
+  - `SWITCH_TABLE_CONFIDENCE = 0.70` — `Source::Derived`. The
+    structural shape is observable but the *claim* "this is a
+    switch" is derived from it (I-3).
+  - Heuristics:
+    - **Switch table.** Scan blocks whose terminator is
+      [`SsaTerminator::Indirect`]; walk the block's instructions
+      in reverse looking for a [`SsaOp::Load`] whose address
+      decomposes via [`SsaOp::Add`] to `(table_base, scaled_idx)`
+      with `scaled_idx` matching `Mul(idx, c)` or `Shl(idx, k)`.
+      Stride 1 is rejected (mirrors the array-recovery rule from
+      [B3.2](#b32--struct-and-array-recovery-2026-06-02)). The
+      table base, when a constant or `Move`-of-const value, is
+      recorded as `table_base_const`; PIC-style relative tables
+      leave it as `None`.
+    - **Bound.** When the dispatch block has exactly one
+      predecessor whose terminator is
+      [`SsaTerminator::Branch`] with `taken == dispatch_block` and
+      `not_taken != dispatch_block`, and the branch condition is a
+      [`CompareKind::Ult`] / [`CompareKind::Ule`] of the
+      scrutinee against a constant, the constant is recorded as
+      the upper bound. Signed compares (`Lt`, `Le`) deliberately
+      do not contribute — they do not forbid a negative scrutinee.
+- `dac-recovery::lib`: `pub mod idioms;` plus re-exports of
+  `recover_idioms`, `RecoveredIdioms`, `SwitchTableIdiom`, and
+  `SWITCH_TABLE_CONFIDENCE`.
+- Tests (13 in `dac_recovery::idioms::tests`):
+  - `indirect_block_with_mul_indexed_load_is_a_switch_table` —
+    canonical `Add(base, Mul(idx, 8)) + Load(width=8)` shape.
+  - `indirect_block_with_shl_indexed_load_is_a_switch_table` —
+    `Shl(idx, 3)` (power-of-two stride) recognised.
+  - `indirect_block_with_stride_4_table_records_width_4` — relative
+    int32 tables register `stride = 4`, `width = 4`.
+  - `predecessor_compare_supplies_upper_bound` — `Compare(Ult, idx,
+    16)` in a single predecessor pins `bound = Some(16)`.
+  - `ule_compare_also_supplies_bound` — `Ule` is treated as a
+    valid bounding compare.
+  - `signed_lt_does_not_supply_bound` — signed `Lt` does not.
+  - `return_terminator_does_not_produce_switch` — non-`Indirect`
+    terminators never surface a switch.
+  - `indirect_without_indexed_load_produces_no_proposal` — a bare
+    `jmp rax` from a function pointer does not falsely match.
+  - `stride_one_is_not_a_switch_table` — stride 1 rejected.
+  - `recovery_is_deterministic_across_runs` and
+    `empty_function_produces_empty_output` pin determinism +
+    degraded inputs.
+  - `every_recovered_confidence_is_derived` checks that no
+    `Observed` / `Speculative` confidence leaks out (I-3).
+  - `hand_built_jump_table_round_trip` — the PLAN rubric: a
+    synthetic `if (idx < 4) { jmp table[idx*8]; }` resolves to a
+    `SwitchTableIdiom` with `table_base_const = Some(0x404000)`,
+    `element_stride = 8`, `element_width = 8`, `bound = Some(4)`.
+
+Closes FR-18 (idiom recognition for switches) and the relevant
+slice of spec §11.4. The pass is `Source::Derived` (no AI input),
+deterministic (NFR-9, I-4), and additive (the IR remains the
+source of truth, I-1). Error-handling patterns, ref-counting, and
+simple state-machine detection are deliberately deferred — each
+needs additional infrastructure (errno tables from
+`dac-knowledge`, atomic/lock-prefix modelling at the SSA layer,
+phi-of-state-constants tracking) and lands in a follow-up batch
+inside Milestone 3. Resolving individual jump-table entries (which
+requires reading the binary's `.rodata` or its relocation table)
+is left to the B3.4 annotation channel, which can carry table
+data; the [`SwitchTableIdiom`] shape it consumes is the deliverable
+here.
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

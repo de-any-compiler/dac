@@ -49,14 +49,6 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-### B3.3 — Idiom recognition
-- Switch tables, error-handling patterns, ref-counting, simple state
-  machines (FR-18, spec §11.4).
-- Each idiom is a pass that proposes annotations; non-matches do not
-  rewrite the IR.
-- **Done when:** switch recovery handles compiler-emitted jump tables on
-  x86-64.
-
 ### B3.4 — Annotation channel and confidence reporting
 - All recovered facts surface their confidence and source (FR-19, FR-25,
   spec §10.4).
