@@ -49,12 +49,6 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-### B3.2 — Struct and array recovery
-- Cluster offsets into struct field candidates; promote to structs when
-  evidence supports (FR-17).
-- Array detection from indexed access patterns.
-- **Done when:** recovers known structs on a hand-built test binary.
-
 ### B3.3 — Idiom recognition
 - Switch tables, error-handling patterns, ref-counting, simple state
   machines (FR-18, spec §11.4).

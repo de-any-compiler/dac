@@ -2062,6 +2062,103 @@ code↔data xrefs (lea / mov of an absolute address) land alongside
 B3.2's struct recovery, when the lifter's operand-walk becomes the
 shared substrate.
 
+#### B3.2 — Struct and array recovery (2026-06-02)
+
+Struct and array recovery for `dac-recovery`. Lands as a new
+`dac_recovery::structs` module that consumes the existing SSA, the
+B2.4 [`StackFrame`], and the B2.6 [`TypeMap`] and emits a
+[`RecoveredStructs`] side table — purely additive, no IR mutation
+(I-1). The B3.2 "done when" rubric — *recovers known structs on a
+hand-built test binary* — is gated by a unit test that builds a
+two-field `{int64 a; int32 b;}` stack struct out of synthetic SSA
+ops and asserts the recovered layout's field offsets and widths.
+
+- `dac-recovery::structs` (new ~600-line module):
+  - `RecoveredStructs { stack_structs, pointer_structs, arrays }` —
+    three `BTreeMap`s for deterministic ordering. Stack-anchored
+    layouts are keyed by their lowest (most negative) stack offset;
+    pointer-anchored layouts are keyed by the base SSA value;
+    arrays are keyed by the base SSA value addressing element 0.
+  - `StructLayout { fields, total_size, confidence }` with fields
+    sorted ascending by offset. Field offsets are *normalized* to
+    start at zero, so the same struct shape compares byte-equal
+    regardless of whether it lives on the stack or behind a pointer.
+  - `FieldCandidate { offset, width, ty, access_count, confidence }`
+    — the per-offset access record. `ty` is `Type::Unknown` when no
+    `TypeMap` is supplied or the type pass failed to constrain the
+    field's value.
+  - `ArrayLayout { element_size, element_width, confidence }` —
+    `element_size` is the stride from `Mul(idx, c)` /
+    `Shl(idx, log_c)`; `element_width` is the access width observed
+    at a load/store through the indexed value, when one fires.
+  - `recover_structs(ssa, frame, types) -> RecoveredStructs` — the
+    single public entry point. `frame` and `types` are independently
+    optional; passing `None` degrades the corresponding recovery
+    rather than refusing to produce output.
+  - Confidence constants (all `Source::Derived`):
+    `STACK_CLUSTER_CONFIDENCE = 0.75`,
+    `POINTER_BASE_CONFIDENCE = 0.65`,
+    `ARRAY_INDEXED_CONFIDENCE = 0.70`. Each value reflects how
+    directly the pattern is observable in SSA.
+  - Heuristics:
+    - **Stack cluster.** Greedy contiguity walk over
+      [`StackLocalKind::Local`] entries — a cluster extends as long
+      as the next offset sits within `max(prev.width, 8)` of the
+      previous one. Singleton clusters do not promote. The walk
+      excludes return-address, shadow, and incoming-arg slots
+      (those are not struct candidates).
+    - **Pointer base.** For every `Load`/`Store`, decompose the
+      address operand via `Add(base, Const)` / `Sub(base, Const)`
+      / `Add(base, Move-of-const-value)`. Bases with two or more
+      distinct offsets promote. Bases with a single observed
+      offset are not surfaced (one read is not enough to claim a
+      struct shape).
+    - **Indexed array.** Match `Add(base, scaled)` where
+      `scaled = Mul(idx, c)` or `Shl(idx, log_c)`. Stride 1 is
+      rejected (indistinguishable from plain pointer arithmetic
+      at this layer); strides ≥ 2 register.
+- `dac-recovery::lib`: `pub mod structs;` plus re-exports of
+  `recover_structs`, `ArrayLayout`, `FieldCandidate`,
+  `RecoveredStructs`, `StructLayout`, and the three confidence
+  constants.
+- Tests (12 in `dac_recovery::structs::tests`):
+  - `adjacent_stack_locals_form_struct_layout` — two adjacent
+    stack stores cluster into a 16-byte struct.
+  - `lone_stack_local_is_not_a_struct` — single stack local does
+    not promote.
+  - `stack_fields_inherit_recovered_types` — fields pick up
+    `int_of_width` types from the `TypeMap`.
+  - `two_loads_through_pointer_base_form_struct` — two distinct
+    offsets through `rdi` register the pointer struct.
+  - `single_offset_pointer_access_is_not_a_struct` — one load is
+    not enough.
+  - `indexed_load_with_mul_stride_recovers_array` — `Mul(idx, 4)`
+    plus a 4-byte load registers `element_size = 4`,
+    `element_width = Some(4)`.
+  - `indexed_load_with_shl_stride_recovers_array` — `Shl(idx, 3)`
+    plus an 8-byte load registers `element_size = 8`.
+  - `stride_of_one_is_not_an_array` — `base + idx` (stride 1)
+    deliberately rejected.
+  - `recovery_is_deterministic_across_runs` and
+    `empty_inputs_produce_empty_output` pin determinism + degraded
+    inputs.
+  - `every_recovered_confidence_is_derived` checks that no
+    `Observed` / `Speculative` confidence leaks out of the pass
+    (I-3).
+  - `hand_built_struct_round_trip` — the PLAN rubric: a synthetic
+    `struct { int64 a; int32 b; }` on the stack is exercised
+    through both a store and a load and the recovered layout
+    matches.
+
+Closes FR-17 (struct / array recovery from offset clustering and
+indexed access patterns). The pass is `Source::Derived` (no AI
+input), deterministic (NFR-9, I-4), and additive (the IR remains
+the source of truth, I-1). Union recovery, nested-struct chasing,
+and feeding the recovered layouts back into the C backend at
+emit time are deliberately deferred. The B3.3 idiom-recognition
+pass and the B3.4 annotation channel will consume
+`RecoveredStructs` directly when they land.
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

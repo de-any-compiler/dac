@@ -32,6 +32,7 @@
 pub mod convention;
 pub mod functions;
 pub mod stack;
+pub mod structs;
 pub mod types;
 
 pub use convention::{
@@ -43,5 +44,9 @@ pub use functions::{
 };
 pub use stack::{
     analyze_stack_frame, FramePointer, StackConvention, StackFrame, StackLocal, StackLocalKind,
+};
+pub use structs::{
+    recover_structs, ArrayLayout, FieldCandidate, RecoveredStructs, StructLayout,
+    ARRAY_INDEXED_CONFIDENCE, POINTER_BASE_CONFIDENCE, STACK_CLUSTER_CONFIDENCE,
 };
 pub use types::{propagate_types, ApiResolver, LocalType, NullApiResolver, TypeMap, ValueType};
