@@ -12,6 +12,7 @@ repository.workspace = true
 dac-arch = { workspace = true }
 dac-binfmt = { workspace = true }
 dac-core = { workspace = true }
+dac-ir = { workspace = true }
 dac-recovery = { workspace = true }
 
 [dev-dependencies]

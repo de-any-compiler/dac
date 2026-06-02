@@ -43,13 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.3 — SSA construction
-- Pruned SSA with phi nodes (FR-11).
-- `dac-ir::ssa`.
-- Value numbering for trivial CSE.
-- **Done when:** SSA round-trip preserves observable semantics on a
-  test-vector of small functions.
-
 ### B2.4 — Dataflow + liveness
 - Use-def, def-use chains; liveness; reaching definitions (FR-11).
 - Stack-frame analysis: identify stack locals (FR-12).

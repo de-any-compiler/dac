@@ -94,6 +94,7 @@ dependencies = [
  "dac-arch-x86",
  "dac-binfmt",
  "dac-core",
+ "dac-ir",
  "dac-recovery",
 ]
 
@@ -174,6 +175,9 @@ dependencies = [
 [[package]]
 name = "dac-ir"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-core",
+]
 
 [[package]]
 name = "dac-knowledge"

@@ -1041,6 +1041,132 @@ No new evidence nodes are minted — dominators and loops are
 derived facts attached to the existing per-function CFG node
 inherited from B1.5 (I-2).
 
+#### B2.3 — SSA construction (2026-06-02)
+
+Pruned SSA construction lands in `dac-ir::ssa` (the IR types) and
+`dac-analysis::ssa` (the algorithm). Phi placement uses the standard
+Cytron-Ferrante-Rosen-Wegman-Zadeck walk over dominance frontiers,
+pruned by a backward liveness pass so dead variables do not collect
+phi nodes at every merge. Renaming is a pre-order DFS of the
+dominator tree with one ValueId stack per abstract variable; phi
+incoming entries are filled in while each block's terminator is
+processed so the operands seen at the join match the definition
+visible to that predecessor at end-of-block. A block-local value-
+numbering pass collapses trivial CSE candidates by hashing
+instructions on `(op kind, operands)`. The construction is
+decoupled from the lifter: it takes a `RawFunction` of per-block
+variable-keyed operations so the SSA pass can be tested against
+hand-built programs without dragging in a real architecture
+lifter (the InstructionIR → `RawFunction` bridge is B2.4+ work).
+
+- `dac-ir::ssa`:
+  - `SsaFunction { function_address, function_name, blocks, entry,
+    variables, values, evidence }` — the per-function SSA graph.
+    Block ids match the source CFG; the `evidence` handle is
+    inherited from the function's CFG node so dataflow passes can
+    attach further facts to the same evidence id (I-2).
+  - `SsaBlock { id, predecessors (sorted), phis, instructions,
+    terminator }` and a closed `SsaTerminator` enum (`Jump`,
+    `Branch`, `Return`, `Indirect`, `Unreachable`). The
+    `Unreachable` variant is retained for CFG blocks the lifter
+    could not translate, so the SSA function still has one block
+    per CFG block (I-2 traceability).
+  - `Phi { dst, variable, incoming }` — the incoming list is
+    sorted by predecessor block id, with `Operand::Undef`
+    inserted on predecessors where the variable has no reaching
+    definition (rather than silently inventing a zero — I-6).
+  - `SsaInstruction { dst, op }`, `SsaOp` closed enum covering
+    arithmetic, bitwise, compare, load/store, call, and a final
+    `Opaque` arm mirroring `Operation::Opaque` in the Instruction
+    IR. New operations land as new variants.
+  - `Operand` (`Value(id) | Const(c) | Undef`) implements `Ord`
+    via a structural key (`Undef < Const < Value`) so passes can
+    use operand sequences as `BTreeMap` keys without re-deriving
+    the comparison.
+  - `ValueDef { id, source, variable }` with `ValueSource ::=
+    Instruction { block, index } | Phi { block, index } |
+    Parameter { variable }`. Parameter values represent reads of
+    a variable that has no reaching definition along the path
+    from entry — one Parameter id per variable, shared across
+    every use so value-numbering treats two reads of an unwritten
+    register as equal.
+- `dac-analysis::ssa`:
+  - `RawFunction { variables, blocks }`, `RawBlock { ops,
+    terminator }`, `RawOp { dst, kind }`, `RawOpKind`,
+    `RawOperand`, `RawTerminator` — the lifter-facing input
+    types. Mirrors the SSA op vocabulary but with `VariableId`
+    operands in place of `ValueId`.
+  - `construct_ssa(cfg, doms, raw) -> SsaFunction` — the whole
+    pipeline in one entrypoint. Asserts that
+    `raw.blocks.len() == cfg.blocks.len()` so the SSA function
+    shape mirrors the CFG.
+  - `dominance_frontiers(doms, preds, n)` — Cytron's iterative
+    DF computation. Skips unreachable predecessors so an orphan
+    block does not poison its ancestors' frontiers.
+  - `compute_live_in(...)` — backward liveness over the CFG,
+    returning per-block `LiveIn` sets. Drives the phi-pruning so
+    only variables actually consumed at a join carry a phi
+    there.
+  - `place_phis(...)` — worklist over variables, placing phis at
+    each `DF(defining_block)` whose `LiveIn` contains the
+    variable. A new phi counts as a fresh definition, so its
+    block joins the worklist.
+  - `RenameState` (internal) — drives the dominator-tree DFS
+    iteratively with explicit `(block, child_index)` work
+    entries so it never panics on deep dominator trees.
+    Pre-seeds phi slots in each block before rename so phi
+    incoming entries can be appended in DFS order, then sorted
+    by predecessor at build time for byte stability.
+  - `local_value_number(ssa)` — block-local CSE. Hashes
+    instructions by a `VnKey` (op discriminant + operands). The
+    first occurrence claims the key; later matches drop their
+    instruction and record a `ValueId → ValueId` remap. After
+    every block has been processed, the remap is applied
+    globally to phi incoming entries, instruction operands, and
+    terminators. `ValueDef` entries for folded ids are kept in
+    place so `values[id].id == id` stays stable; consumers reach
+    values through phi/instruction `dst` fields and never see
+    the orphan entries. Load/Store/Call/Opaque are excluded
+    from value-numbering keys — their result is not a function
+    of their operands alone (memory state / side effects).
+  - 15 unit tests covering linear renaming, diamond-join phi,
+    pruning (no phi for a dead variable), loop-header phi with
+    initial + back-edge incoming, parameter creation for
+    use-without-def, single-block and cross-block CSE behavior,
+    side-effect preservation (Load not folded), three-way phi
+    incoming sort order, evidence/address inheritance,
+    determinism across rebuilds, unreachable-terminator
+    preservation, dominance-frontier correctness on a diamond,
+    and a direct liveness check.
+- Tests:
+  - `crates/dac-analysis/tests/ssa_roundtrip.rs` is the
+    done-when. Five small functions are interpreted twice: once
+    against the raw (variable-based) form and once against the
+    constructed SSA form, with phi-arg selection threaded
+    through the predecessor block id at each block transition.
+    Every input must produce the same return value on both
+    interpreters — linear chain, branch-merge with phi, nested
+    branches with an inner join feeding the outer phi, a
+    while-style loop with header phi, and a CSE case where two
+    redundant adds must collapse without changing the
+    observable return value.
+
+Test counts: `cargo xtask ci` reports 44 green `test result: ok`
+lines (was 43 at end of B2.2) — +1 dac-analysis integration test
+binary (`ssa_roundtrip`). Lib test count grew from 37 to 52 inside
+`dac-analysis` (the 37 existing + 15 SSA tests); `dac-ir` lib
+tests grew from 5 to 7 (+2 for the new `ssa` module's basic
+helpers). No new warnings.
+
+Closes: FR-11 (use-def chains / SSA construction). Determinism
+is gated by the `ssa_12_construct_is_deterministic_across_runs`
+unit test (NFR-9). No new evidence nodes are minted — SSA is a
+derived rewrite of the existing CFG, inheriting the function's
+CFG evidence handle so the provenance chain at I-2 stays
+intact. The `RawFunction` input layer keeps the algorithm
+testable in isolation; wiring it to a real `InstructionIr`
+stream is B2.4's problem.
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 

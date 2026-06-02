@@ -14,18 +14,22 @@
 //!   FR-10). Back-edge detection via the dominator tree, body
 //!   construction by reverse BFS, irreducibility flagged via SCC
 //!   entry-point counts.
+//! - [`ssa`] — SSA construction (B2.3, FR-11). Pruned phi placement
+//!   via Cytron-Ferrante-Rosen-Wegman-Zadeck with liveness, dominator-
+//!   tree rename, and a local value-numbering pass for trivial CSE.
 //!
 //! ## What's coming
 //!
-//! SSA (B2.3), dataflow (B2.4), calling-convention inference (B2.5),
-//! and type lattice / propagation (B2.6) all land into this crate
-//! behind their own modules and milestones.
+//! Dataflow (B2.4), calling-convention inference (B2.5), and type
+//! lattice / propagation (B2.6) all land into this crate behind their
+//! own modules and milestones.
 
 #![forbid(unsafe_code)]
 
 pub mod cfg;
 pub mod dom;
 pub mod loops;
+pub mod ssa;
 
 #[cfg(test)]
 mod test_support;

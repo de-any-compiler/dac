@@ -5,14 +5,17 @@
 //!
 //! ## What ships when
 //!
-//! - **B1.4 (this batch).** [`instr`] — Instruction IR.
-//! - **B2.1.** `cfg` — basic blocks, edges, dominance, loop nest.
-//! - **B2.3.** `ssa` — phi nodes, def-use chains.
+//! - **B1.4.** [`instr`] — Instruction IR.
+//! - **B2.1.** CFG IR lives in `dac-analysis::cfg` for now; the
+//!   long-term home is `dac-ir::cfg`, but no consumer has needed the
+//!   split yet.
+//! - **B2.3 (this batch).** [`ssa`] — phi nodes, def-use chains.
 //! - **B2.7.** `sem` — semantic IR (typed, structured).
 //! - **B2.7 / M3.** `src` — language-neutral source AST.
 
 #![forbid(unsafe_code)]
 
 pub mod instr;
+pub mod ssa;
 
 pub use instr::{Condition, InstructionIr, Operand, Operation, Target};
