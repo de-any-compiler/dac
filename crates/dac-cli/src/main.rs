@@ -19,6 +19,7 @@
 
 #![forbid(unsafe_code)]
 
+mod annotations;
 mod listing;
 mod manifest;
 mod report;
@@ -42,6 +43,10 @@ use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph};
 use dac_recovery::{discover_functions, FunctionSet};
 
+use crate::annotations::{
+    render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
+    InputStamp, SettingsStamp, ToolStamp,
+};
 use crate::listing::{render_listing, ListingOptions};
 use crate::manifest::{
     render_manifest_json, Manifest, ManifestInput, ManifestSettings, ManifestTool,
@@ -157,6 +162,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let source_text;
     let callgraph_text;
     let xrefs_text;
+    let annotations_doc;
     match &backend {
         Some(b) => {
             let mut graph = EvidenceGraph::new();
@@ -188,7 +194,9 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
-            source_text = render_source_text(args, &input_label, &model, &functions);
+            annotations_doc = build_annotations_doc(&input_label, &model, args, &functions, &graph);
+            source_text =
+                render_source_text(args, &input_label, &model, &functions, &annotations_doc);
             callgraph_text = if args.emit_callgraph {
                 let cg = build_call_graph(&model, &bytes, b.decoder.as_ref(), &functions);
                 Some(render_callgraph_dot(&cg, &input_label))
@@ -225,15 +233,15 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
-            source_text = render_source_text(
-                args,
-                &input_label,
-                &model,
-                &FunctionSet {
-                    functions: Vec::new(),
-                    stats: Default::default(),
-                },
-            );
+            let empty_set = FunctionSet {
+                functions: Vec::new(),
+                stats: Default::default(),
+            };
+            let empty_graph = EvidenceGraph::new();
+            annotations_doc =
+                build_annotations_doc(&input_label, &model, args, &empty_set, &empty_graph);
+            source_text =
+                render_source_text(args, &input_label, &model, &empty_set, &annotations_doc);
             callgraph_text = if args.emit_callgraph {
                 Some(unsupported_arch_callgraph(&model))
             } else {
@@ -246,6 +254,12 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         }
     }
 
+    let annotations_text = if args.emit_annotations {
+        Some(render_annotations_json(&annotations_doc))
+    } else {
+        None
+    };
+
     emit_outputs(
         args.output.as_deref(),
         &listing_text,
@@ -255,6 +269,37 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         source_text.as_deref(),
         callgraph_text.as_deref(),
         xrefs_text.as_deref(),
+        annotations_text.as_deref(),
+    )
+}
+
+fn build_annotations_doc(
+    input_label: &str,
+    model: &BinaryModel,
+    args: &Args,
+    functions: &FunctionSet,
+    graph: &EvidenceGraph,
+) -> AnnotationDoc {
+    AnnotationDoc::build(
+        ToolStamp {
+            name: "dac".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            build_id: BUILD_ID.to_string(),
+        },
+        InputStamp {
+            path: input_label.to_string(),
+            format: model.format.name().to_string(),
+            architecture: model.architecture.name().to_string(),
+            size: model.size as u64,
+        },
+        SettingsStamp {
+            level: args.opt.as_str().to_string(),
+            target: args.target.as_str().to_string(),
+            debug: args.debug,
+        },
+        model,
+        functions,
+        graph,
     )
 }
 
@@ -287,17 +332,30 @@ fn render_source_text(
     input_label: &str,
     model: &BinaryModel,
     functions: &FunctionSet,
+    annotations: &AnnotationDoc,
 ) -> Option<String> {
     if args.opt == OptLevel::O0 {
         return None;
     }
     match args.target {
-        Target::C => Some(render_c_unit(input_label, model, functions)),
+        Target::C => Some(render_c_unit(
+            input_label,
+            model,
+            functions,
+            annotations,
+            args.debug,
+        )),
         Target::Cpp => Some(render_cpp_pending_stub(input_label)),
     }
 }
 
-fn render_c_unit(input_label: &str, model: &BinaryModel, functions: &FunctionSet) -> String {
+fn render_c_unit(
+    input_label: &str,
+    model: &BinaryModel,
+    functions: &FunctionSet,
+    annotations: &AnnotationDoc,
+    debug: bool,
+) -> String {
     let items: Vec<CItem> = functions
         .functions
         .iter()
@@ -307,18 +365,11 @@ fn render_c_unit(input_label: &str, model: &BinaryModel, functions: &FunctionSet
                 .clone()
                 .unwrap_or_else(|| format!("fn_{:x}", f.address));
             let name = sanitize_c_identifier(&name);
-            let leading_comment = Some(format!(
-                "dac-recovered function stub\n\
-                 address: {:#x}\n\
-                 end: {}\n\
-                 confidence: {:.2} ({:?})",
-                f.address,
-                f.end
-                    .map(|e| format!("{e:#x}"))
-                    .unwrap_or_else(|| "?".to_string()),
-                f.confidence.value(),
-                f.confidence.source()
-            ));
+            let annot = annotations
+                .functions
+                .iter()
+                .find(|a| a.address == f.address);
+            let leading_comment = Some(function_leading_comment(f, annot, debug));
             CItem::Function(CFunction {
                 name,
                 return_type: CType::Void,
@@ -343,6 +394,37 @@ fn render_c_unit(input_label: &str, model: &BinaryModel, functions: &FunctionSet
     );
     let unit = TranslationUnit { includes, items };
     c_emit(&unit)
+}
+
+/// Build the leading comment for a recovered function. Always lists
+/// the recovered address range and joined-discovery confidence; when
+/// `--debug` is requested, also embeds the per-fact "Why this name?"
+/// / "Why this return type?" trail from the annotation channel
+/// (spec §12, FR-25).
+fn function_leading_comment(
+    f: &dac_recovery::Function,
+    annot: Option<&FunctionAnnotation>,
+    debug: bool,
+) -> String {
+    let mut s = format!(
+        "dac-recovered function stub\n\
+         address: {:#x}\n\
+         end: {}\n\
+         confidence: {:.2} ({:?})",
+        f.address,
+        f.end
+            .map(|e| format!("{e:#x}"))
+            .unwrap_or_else(|| "?".to_string()),
+        f.confidence.value(),
+        f.confidence.source()
+    );
+    if debug {
+        if let Some(a) = annot {
+            s.push_str("\n\n");
+            s.push_str(&render_function_debug_block(a));
+        }
+    }
+    s
 }
 
 fn render_cpp_pending_stub(input_label: &str) -> String {
@@ -469,15 +551,16 @@ fn build_manifest(input_path: &str, model: &BinaryModel, args: &Args) -> Manifes
 }
 
 /// Emit the listing, manifest, optional report / CFG / callgraph /
-/// xrefs sidecars, and (for `--target c` at `-O1`+) the lowered C
-/// translation unit.
+/// xrefs / annotation sidecars, and (for `--target c` at `-O1`+) the
+/// lowered C translation unit.
 ///
 /// - No `--output`: listing → stdout, then delimited blocks for
-///   manifest, report, CFG, source, callgraph, and the xrefs report.
+///   manifest, report, CFG, source, callgraph, xrefs, annotations.
 /// - With `--output <path>`: listing → `<path>`, manifest →
 ///   `<path>.manifest.json`, report → `<path>.report.txt`, CFG →
 ///   `<path>.cfg.dot`, reconstructed source → `<path>.c`,
-///   callgraph → `<path>.callgraph.dot`, xrefs → `<path>.xrefs.txt`.
+///   callgraph → `<path>.callgraph.dot`, xrefs → `<path>.xrefs.txt`,
+///   annotations → `<path>.annot.json`.
 #[allow(clippy::too_many_arguments)]
 fn emit_outputs(
     output: Option<&Path>,
@@ -488,6 +571,7 @@ fn emit_outputs(
     source: Option<&str>,
     callgraph: Option<&str>,
     xrefs: Option<&str>,
+    annotations: Option<&str>,
 ) -> dac_core::Result<()> {
     match output {
         None => {
@@ -516,6 +600,10 @@ fn emit_outputs(
                 h.write_all(b"\n;; ---- xrefs (FR-26, FR-31) ----\n")?;
                 h.write_all(x.as_bytes())?;
             }
+            if let Some(a) = annotations {
+                h.write_all(b"\n;; ---- annotations (FR-19, FR-23, FR-25) ----\n")?;
+                h.write_all(a.as_bytes())?;
+            }
             Ok(())
         }
         Some(path) => {
@@ -541,6 +629,10 @@ fn emit_outputs(
             if let Some(x) = xrefs {
                 let xrefs_path = sidecar(path, ".xrefs.txt");
                 write_file(&xrefs_path, x)?;
+            }
+            if let Some(a) = annotations {
+                let annot_path = sidecar(path, ".annot.json");
+                write_file(&annot_path, a)?;
             }
             Ok(())
         }

@@ -49,16 +49,6 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-### B3.4 — Annotation channel and confidence reporting
-- All recovered facts surface their confidence and source (FR-19, FR-25,
-  spec §10.4).
-- `--emit-annotations` writes a separate annotation file alongside source
-  (FR-23).
-- "Why this name?" / "Why this type?" rendered in `--debug` output (spec
-  §12).
-- **Done when:** every name and type in emitted C is traceable through the
-  evidence graph in `--debug`.
-
 ### B3.5 — C++ backend (`-O2`)
 - `dac-backend-cpp`: class recovery from vtables, ctor/dtor patterns,
   member function naming (FR-21).

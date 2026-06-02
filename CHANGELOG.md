@@ -2252,6 +2252,145 @@ is left to the B3.4 annotation channel, which can carry table
 data; the [`SwitchTableIdiom`] shape it consumes is the deliverable
 here.
 
+#### B3.4 — Annotation channel and confidence reporting (2026-06-02)
+
+Annotation channel for `dac-cli`. Every name and type in the
+emitted C unit becomes traceable through the evidence graph
+(I-2, FR-19, FR-23, FR-25, spec §10.4 / §12). Lands as a new
+`dac_cli::annotations` module that lifts the recovered facts
+plus the `EvidenceGraph` predecessor chain into a structured
+document, plus two views:
+
+- `<output>.annot.json` — deterministic JSON sidecar written when
+  `--emit-annotations` is set (spec §10.2 "annotations / notes"
+  artifact). Hand-rolled writer with fixed key order; identical
+  inputs → byte-identical output, validated by the
+  `emit_annotations_output_is_byte_stable_across_reruns` golden.
+- `--debug` augmentation of the C unit — each recovered function's
+  `/* … */` leading comment gains a "Why this name?" /
+  "Why this return type?" block listing value, source class,
+  confidence, explanation, and the evidence-node chain. Emitted C
+  still compiles end-to-end (round-trip gate in
+  `debug_mode_emitted_c_still_compiles`).
+
+The B3.4 "done when" rubric — *every name and type in emitted C
+is traceable through the evidence graph in `--debug`* — is closed
+by `debug_mode_embeds_evidence_trail_in_c_function_comments`,
+which asserts both blocks plus the per-fact `explanation:` and
+`evidence:` lines appear in the `.c` sidecar.
+
+- `dac-cli::annotations` (new module):
+  - `AnnotationDoc { tool, input, settings, evidence, functions,
+    notes }` — top-level document. `EvidenceSummary` carries a
+    fixed-key histogram so the count-by-variant rendering is
+    byte-stable.
+  - `FunctionAnnotation { address, end, signals, name,
+    return_type }` — per-function fact bundle. Additional surface
+    facts (recovered stack locals, inferred parameters, struct /
+    array layouts, switch-table idioms) slot in as new fields when
+    the lifter → SSA → structurer bridge starts feeding them into
+    `TranslationUnit` in a later batch.
+  - `FactAnnotation { value, confidence, explanation, evidence }`
+    — single annotated fact. `confidence` is a `dac_core::Confidence`
+    (value + `Source` class, I-3); `evidence` is a vector of
+    `EvidenceRef` chained from the fact's own [`EvidenceId`]
+    through every `Supports` predecessor in the [`EvidenceGraph`]
+    via a single-pass reverse index.
+  - **Name annotation.** Symbol-table-backed names render as
+    `Source::Observed` with `SYMBOL_CONFIDENCE`; synthesized
+    `fn_<hex>` fallbacks render as `Source::Derived` value `0.0`
+    (the address carries no semantic content). Both cite the
+    function's IR-node and supporting byte-span node in the chain.
+  - **Return-type annotation.** All functions render `void`
+    `Source::Derived` value `0.0` today; the explanation records
+    "default void return; calling-convention return-value
+    inference lands with B3.6" so a reader can distinguish
+    *pending* void from *observed* void.
+  - `render_annotations_json(doc) -> String` — deterministic JSON
+    writer. Key order: tool → input → settings → evidence →
+    functions → notes. Confidence values formatted as `{:.3}`.
+  - `render_function_debug_block(fn_annot) -> String` — line-
+    oriented plain text safe to drop into a C comment (no `*/`).
+- `dac-cli::main`:
+  - `mod annotations;` plus a `build_annotations_doc` helper that
+    stamps the active CLI flags (`level`, `target`, `debug`) into
+    the document header.
+  - `run_pipeline` builds the doc both for the supported-arch
+    path (after `discover_functions`) and the unsupported-arch
+    path (with an empty graph), then routes it through
+    `render_source_text` and `emit_outputs`.
+  - `render_c_unit` consumes the doc plus the `args.debug` flag
+    and, when `--debug` is set, appends the per-function debug
+    block to each `leading_comment`.
+  - `emit_outputs` gains an optional `annotations` parameter:
+    written as `<output>.annot.json` when `--output` is set, or
+    as a delimited `;; ---- annotations (FR-19, FR-23, FR-25) ----`
+    block on stdout otherwise.
+- Tests (11 in `dac_cli::annotations::tests`):
+  - `symbol_derived_name_renders_as_observed_with_evidence_chain`
+    — symbol-table source → `Observed`, value ≥ 0.9, chain
+    contains both ir-node and bytes-node refs.
+  - `synthesized_name_is_derived_with_zero_value` — `fn_<hex>`
+    fallback → `Derived` value `0.0`.
+  - `return_type_is_void_derived_pending_signature_inference` —
+    return-type annotation explicitly cites B3.6 as the
+    prerequisite for the next refinement.
+  - `render_annotations_json_is_byte_stable_across_calls` and
+    `render_annotations_json_carries_every_top_level_section`
+    pin determinism (NFR-9) and the JSON contract.
+  - `evidence_summary_counts_match_graph` — histogram totals
+    equal `graph.node_count()`.
+  - `debug_block_renders_why_this_name_and_why_this_type` — the
+    `--debug` view contains both "Why this …?" headers, every
+    per-fact line, and never produces `*/` (safe in a C comment).
+  - `empty_function_set_produces_an_explanatory_note` covers the
+    degraded path (no architecture backend).
+  - `signals_list_is_alphabetical` pins the byte-order contract
+    for the `signals` JSON array.
+  - `json_string_escapes_quote_and_control` covers the JSON
+    string escape table.
+  - `evidence_chain_terminates_on_cycle` — the breadth-first walk
+    over the append-only graph deduplicates by node id, so a
+    `Supports` self-loop or `a ↔ b` cycle cannot loop the
+    renderer.
+- Integration tests (4 in `crates/dac-cli/tests/annotations_cli.rs`):
+  - `emit_annotations_writes_a_structured_sidecar` — runs
+    `dac -O1 --target c --emit-annotations --output <tmp>`
+    against the ELF fixture and asserts every top-level section
+    plus the `name` / `return_type` / `confidence` /
+    `explanation` / `signals` keys appear.
+  - `emit_annotations_output_is_byte_stable_across_reruns` —
+    NFR-9 gate: two consecutive runs produce identical
+    `.annot.json` sidecars.
+  - `debug_mode_embeds_evidence_trail_in_c_function_comments` —
+    the PLAN rubric: the `.c` sidecar contains
+    `Why this name?`, `Why this return type?`, `explanation:`,
+    and `evidence:` lines when `--debug` is set.
+  - `debug_mode_emitted_c_still_compiles` — the debug-augmented
+    C unit round-trips through `cc -x c -c -` (matches the
+    skip-when-no-compiler contract from `o1_target_c.rs`).
+
+Closes FR-19 (uncertainty annotation), FR-23 (separate annotation
+channel), FR-25 (structured recovery report covers the
+annotation-doc layer), and the relevant slice of spec §10.4
+(annotation source-class taxonomy) and §12 (trace-mode "why"
+rendering). Spec §10.3's `explanation` + `dependencies` fields
+land as `FactAnnotation::explanation` and the `evidence` chain
+respectively. The pass is `Source::Derived` (no AI input),
+deterministic (NFR-9, I-4), and additive (I-1 — the IR remains
+the source of truth; the doc is a strictly downstream artifact).
+
+Inferred calling-convention parameter lists (B2.5), propagated
+value types (B2.6), recovered struct / array layouts (B3.2), and
+switch-table idioms (B3.3) all sit in `dac-recovery` side tables
+today but do not yet surface in the emitted C, so annotating
+them here would describe facts the reader cannot find in the `.c`
+sidecar. They slot into `FunctionAnnotation` as additional fields
+once the lifter → `RawFunction` bridge drives the structurer.
+Jump-table entry resolution (the deferred follow-up from B3.3)
+similarly waits for `.rodata` reading; the `evidence` chain
+shape it will use is the deliverable here.
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 
