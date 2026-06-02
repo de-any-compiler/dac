@@ -651,6 +651,102 @@ corpus's `.text`. Sets up B1.5 (function discovery) by giving it
 both control-flow classification (from the decoder) and a typed
 operand view (from the lifter) per instruction.
 
+#### B1.5 — Function discovery (2026-06-02)
+
+First recovery pass on top of the Foundation: `dac-recovery::functions`
+discovers function entry points (and best-effort end bounds) from four
+independent signals and records each fact in the evidence graph as a
+`Cfg`-layer node supported by a byte-range node (I-2). Recall on the
+sample corpus's unstripped ELF and PE clears 100%; stripped variants
+recover 5 (ELF) and 50 (PE) functions through entry + call-edge +
+prologue alone — the "tracked but not gated" stripped branch the plan
+calls out.
+
+- `dac-recovery::functions` (new):
+  - `discover_functions(model, bytes, decoder, graph) -> FunctionSet`
+    is the single entry point. It walks `BinaryModel::symbols`
+    (Source::Observed, value 1.0), `BinaryModel::entry`
+    (Source::Observed, value 1.0), every direct-call edge through the
+    decoder's `ControlFlow::Call { target: Some(_) }` projection
+    (Source::Derived, value 0.85), and the
+    `push rbp; mov rbp, rsp` + `endbr64; push rbp` / `endbr64; sub rsp,…`
+    prologue patterns (Source::Derived, value 0.6). When several signals
+    agree on the same address their `Confidence`s combine through
+    `Confidence::join` (componentwise max) and a `SourceMask` bitset
+    records every contributing signal, so a `--debug` consumer can
+    inspect *why* a function was promoted.
+  - `Function { address, end, name, confidence, sources, evidence }`
+    is the discovered record. `evidence` points at an
+    `EvidenceNode::IrNode { layer: Cfg, id }` whose `id` is the
+    function's index in `FunctionSet::functions`. Each function also
+    has a sibling `EvidenceNode::Bytes { start, end }` for its byte
+    span with a `Supports` edge into the IR node — the substrate later
+    batches attach signature, calling-convention, and type facts to.
+  - End-bound recovery: symbol-derived entries arrive with a size,
+    everything else lands with `end = None`. A final pass walks the
+    discovered functions in address order and fills each unknown end
+    with the next function start *inside the same executable section*,
+    falling back to the section end. CFG construction (B2.1) consumes
+    the resulting half-open byte ranges directly.
+  - `DiscoveryStats { from_symbol, from_entry, from_call, from_prologue }`
+    counts each signal's contribution exactly once per function, so
+    the histogram never double-counts when signals merge.
+  - `SourceMask` is a typed bit-flag wrapper (no `bitflags` dep) with
+    associated constants `SYMBOL`, `ENTRY`, `CALL`, `PROLOGUE` and
+    `empty` / `is_empty` / `contains` / `insert` / `bits`.
+  - The discoverer filters to sections with `perms.executable &&
+    file_offset.is_some() && size > 0`, so PLT stubs / `.init` /
+    `.fini` are first-class function hosts alongside `.text` (call
+    edges into the PLT surface as real `Function`s).
+  - 9 unit tests cover: `SourceMask` independence, symbol-derived
+    discovery (name / size / `Source::Observed` / mask), entry-point
+    discovery with end filled from the section bound, symbol + entry
+    merging at the same address (both signals contribute to stats but
+    only one `Function` is emitted), neighbour-derived end filling
+    across two same-section functions, `FunctionSet::contains_address`
+    / `get` / `addresses` ordering, evidence-node wiring
+    (`IrNode { layer: Cfg, id: 0 }` with a `Bytes` `Supports` edge),
+    out-of-section symbols ignored, undefined symbols ignored. The
+    unit tests use a `NullDecoder` so the symbol / entry paths are
+    isolated from the iced sweep.
+- `crates/dac-recovery/tests/function_discovery.rs` — the B1.5 done-when.
+  Five integration tests load the shared ELF and PE fixtures through
+  `dac-binfmt`, decode `.text` (and any other executable section)
+  through the iced-backed `X86_64` lifter, and assert:
+  - `elf_hello_meets_recall_gate`: unstripped ELF recall ≥ 0.98 against
+    the symbol-table ground truth (`Text` symbols with defined
+    addresses in executable sections). Actual: 100% (8 / 8). All four
+    signals contribute (`from_symbol`, `from_entry`, `from_call`,
+    `from_prologue` all > 0).
+  - `pe_hello_meets_recall_gate`: unstripped PE recall ≥ 0.98. Actual:
+    100% (75 / 75) with 48 call-derived merges across symbol-known
+    functions.
+  - `elf_stripped_still_yields_functions` /
+    `pe_stripped_still_yields_functions`: stripped fixtures still emit
+    a non-empty set through entry + call edges (5 ELF / 50 PE
+    functions) — the "tracked but not gated" branch the plan calls
+    out.
+  - `unstripped_functions_intersect_with_call_sources`: at least one
+    function on the unstripped ELF has both `SourceMask::SYMBOL` and
+    `SourceMask::CALL` set, exercising the merge path inside the
+    accumulator. Actual: 4 merges across 9 functions.
+- `crates/dac-recovery/examples/discovery_stats.rs` — convenience
+  example that dumps `discovered / ground / recall / stats / merges`
+  for every fixture. Run with
+  `cargo run -p dac-recovery --example discovery_stats`. Used while
+  writing this CHANGELOG entry; future per-corpus runs reuse it.
+- `crates/dac-recovery/Cargo.toml`: adds `dac-arch`, `dac-binfmt`, and
+  `dac-core` as runtime deps, and `dac-arch-x86` as a dev-dep for the
+  integration / example tests. No new external dependencies.
+
+Closes: FR-9 (function-boundary recovery without symbols — entry,
+call edges, and prologue heuristics carry stripped binaries through),
+I-2 (per-function `Bytes` + `IrNode` evidence with `Supports` edges),
+I-3 (every recovered function carries a `Confidence` value and a
+`Source` class, joined deterministically across signals). Sets up
+B2.1 (CFG construction) with a half-open byte range per function and
+an evidence handle to attach per-block facts onto.
+
 ### Milestone 2 — Core decompilation
 *(not started)*
 

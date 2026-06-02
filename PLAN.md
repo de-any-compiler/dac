@@ -35,13 +35,6 @@ Goal: load an ELF or PE, decode x86-64, lift to Instruction IR, recover
 functions, and emit `-O0` textual output that is a faithful annotated
 disassembly-style listing.
 
-### B1.5 — Function discovery
-- `dac-recovery::functions`: discover functions from symbols, from entry
-  point, from call edges, and from prologue heuristics (FR-9).
-- Function boundary results are facts in the evidence graph with sources.
-- **Done when:** on the sample corpus, function discovery matches symbol
-  tables ≥ 98% (stripped numbers tracked but not gated).
-
 ### B1.6 — `-O0` text backend
 - Not a "real" backend — emits an annotated listing of lifted IR.
 - Output is grouped per function, shows IR with byte-offset annotations.

@@ -178,6 +178,12 @@ version = "0.1.0-pre"
 [[package]]
 name = "dac-recovery"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-arch",
+ "dac-arch-x86",
+ "dac-binfmt",
+ "dac-core",
+]
 
 [[package]]
 name = "dac-verify"
