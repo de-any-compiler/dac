@@ -16,6 +16,7 @@ path = "src/main.rs"
 dac-analysis.workspace = true
 dac-arch.workspace = true
 dac-arch-x86.workspace = true
+dac-backend-c.workspace = true
 dac-binfmt.workspace = true
 dac-core.workspace = true
 dac-ir.workspace = true

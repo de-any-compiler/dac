@@ -130,6 +130,12 @@ version = "0.1.0-pre"
 [[package]]
 name = "dac-backend-c"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-analysis",
+ "dac-core",
+ "dac-ir",
+ "dac-recovery",
+]
 
 [[package]]
 name = "dac-backend-cpp"
@@ -152,6 +158,7 @@ dependencies = [
  "dac-analysis",
  "dac-arch",
  "dac-arch-x86",
+ "dac-backend-c",
  "dac-binfmt",
  "dac-core",
  "dac-ir",

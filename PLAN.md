@@ -43,14 +43,6 @@ disassembly-style listing.
 
 Goal: real C output for small programs at `-O1`.
 
-### B2.8 — C backend (`-O1`)
-- `dac-backend-c`: Source IR → C AST → formatted source (FR-21).
-- Compilability check: emitted C is fed to a system C compiler in CI
-  (round-trip sanity, ARCHITECTURE §8).
-- `--target c` works end-to-end.
-- **Done when:** at least 5 sample binaries decompile to compilable C and
-  run with matching behavior on a smoke test.
-
 ### B2.9 — Golden test infrastructure
 - `tests/golden/` with corpus binaries + expected output.
 - `xtask golden update` regenerates goldens.

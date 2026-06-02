@@ -5,11 +5,17 @@
 //! are discovered through `dac-recovery`, and a deterministic annotated
 //! listing (plus a reproducibility manifest per NFR-10 and an optional
 //! analysis report per FR-25) is emitted on the user-selected output
-//! path. `--target`, `--emit-ir`, `--emit-cfg`, `--emit-annotations`,
-//! `--ai-provider`, `--no-ai`, and `--plugin` are still parsed but
-//! become live milestone by milestone (M2 / M4 / M5). `--deterministic`
-//! is surfaced on the manifest today; manager-level enforcement remains
-//! covered by `dac-core` unit tests.
+//! path. `--emit-ir`, `--emit-annotations`, `--ai-provider`, `--no-ai`,
+//! and `--plugin` are still parsed but become live milestone by
+//! milestone (M2 / M4 / M5). `--deterministic` is surfaced on the
+//! manifest today; manager-level enforcement remains covered by
+//! `dac-core` unit tests.
+//!
+//! B2.8 wires `--target c` at `-O1`+ end-to-end through
+//! `dac-backend-c`: a C translation unit lands at `<output>.c`
+//! alongside the listing. The per-function body is a stub until the
+//! lifter → `RawFunction` bridge (the InstructionIR → SSA wiring) is
+//! a batch in PLAN.md — see [`render_c_unit`].
 
 #![forbid(unsafe_code)]
 
@@ -26,9 +32,13 @@ use std::process::ExitCode;
 use dac_analysis::cfg::{build_cfgs, render_dot_all};
 use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter};
 use dac_arch_x86::X86_64;
+use dac_backend_c::ast::{
+    Block as CBlock, CType, Function as CFunction, Item as CItem, Stmt as CStmt, TranslationUnit,
+};
+use dac_backend_c::{default_includes as c_default_includes, emit as c_emit};
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph};
-use dac_recovery::discover_functions;
+use dac_recovery::{discover_functions, FunctionSet};
 
 use crate::listing::{render_listing, ListingOptions};
 use crate::manifest::{
@@ -139,6 +149,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let listing_text;
     let report_text;
     let cfg_text;
+    let source_text;
     match &backend {
         Some(b) => {
             let mut graph = EvidenceGraph::new();
@@ -170,7 +181,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
-            let _ = functions; // evidence handles already wired
+            source_text = render_source_text(args, &input_label, &model, &functions);
         }
         None => {
             listing_text = unsupported_arch_listing(&input_label, &model);
@@ -184,6 +195,15 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
+            source_text = render_source_text(
+                args,
+                &input_label,
+                &model,
+                &FunctionSet {
+                    functions: Vec::new(),
+                    stats: Default::default(),
+                },
+            );
         }
     }
 
@@ -193,7 +213,117 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         &manifest_json,
         report_text.as_deref(),
         cfg_text.as_deref(),
+        source_text.as_deref(),
     )
+}
+
+/// Decide whether the `--target` / `-O` combination wants a C
+/// translation unit, and if so build it.
+///
+/// B2.8 wires the C backend end-to-end at `-O1` (and above) for
+/// `--target c`. The lifter → `RawFunction` bridge needed to feed the
+/// structurer from real x86-64 bytes is not yet a batch in PLAN.md, so
+/// the per-function body lowers to a stub (a leading comment with the
+/// recovered metadata + `return;`). The top-of-unit comment makes the
+/// degradation explicit so a reader knows why the bodies are empty;
+/// the unit is still valid C so the round-trip compile gate
+/// (`dac_backend_c::try_compile`) holds on the corpus.
+fn render_source_text(
+    args: &Args,
+    input_label: &str,
+    model: &BinaryModel,
+    functions: &FunctionSet,
+) -> Option<String> {
+    if args.opt == OptLevel::O0 {
+        return None;
+    }
+    match args.target {
+        Target::C => Some(render_c_unit(input_label, model, functions)),
+        Target::Cpp => Some(render_cpp_pending_stub(input_label)),
+    }
+}
+
+fn render_c_unit(input_label: &str, model: &BinaryModel, functions: &FunctionSet) -> String {
+    let items: Vec<CItem> = functions
+        .functions
+        .iter()
+        .map(|f| {
+            let name = f
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("fn_{:x}", f.address));
+            let name = sanitize_c_identifier(&name);
+            let leading_comment = Some(format!(
+                "dac-recovered function stub\n\
+                 address: {:#x}\n\
+                 end: {}\n\
+                 confidence: {:.2} ({:?})",
+                f.address,
+                f.end
+                    .map(|e| format!("{e:#x}"))
+                    .unwrap_or_else(|| "?".to_string()),
+                f.confidence.value(),
+                f.confidence.source()
+            ));
+            CItem::Function(CFunction {
+                name,
+                return_type: CType::Void,
+                params: Vec::new(),
+                locals: Vec::new(),
+                body: CBlock {
+                    stmts: vec![CStmt::Comment(
+                        "lifter→SSA bridge pending; body intentionally empty".into(),
+                    )],
+                },
+                leading_comment,
+            })
+        })
+        .collect();
+    let mut includes = c_default_includes();
+    includes.insert(
+        0,
+        format!(
+            "/* dac --target c -O1 reconstruction\n   input: {input_label}\n   arch:  {} */",
+            model.architecture.name()
+        ),
+    );
+    let unit = TranslationUnit { includes, items };
+    c_emit(&unit)
+}
+
+fn render_cpp_pending_stub(input_label: &str) -> String {
+    format!(
+        "/* dac --target cpp\n   input: {input_label}\n   C++ backend lands in B3.5; this is a stub. */\n\
+         int main(void) {{ return 0; }}\n"
+    )
+}
+
+/// Map a recovered symbol name to a C identifier. Replaces any
+/// character that is not `[A-Za-z0-9_]` with `_`, and prefixes a
+/// leading digit with `f_` so the result is always a valid identifier.
+fn sanitize_c_identifier(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut chars = name.chars();
+    if let Some(first) = chars.next() {
+        if first.is_ascii_digit() {
+            out.push_str("f_");
+            out.push(first);
+        } else if first.is_ascii_alphabetic() || first == '_' {
+            out.push(first);
+        } else {
+            out.push('_');
+        }
+    } else {
+        return "anon".to_string();
+    }
+    for c in chars {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+    out
 }
 
 struct Backend {
@@ -284,20 +414,21 @@ fn build_manifest(input_path: &str, model: &BinaryModel, args: &Args) -> Manifes
     }
 }
 
-/// Emit the listing, manifest, and optional report / CFG.
+/// Emit the listing, manifest, optional report / CFG, and (for
+/// `--target c` at `-O1`+) the lowered C translation unit.
 ///
-/// - No `--output`: listing → stdout, manifest → stdout (delimited),
-///   report (if any) → stdout (delimited), CFG (if any) → stdout
-///   (delimited).
+/// - No `--output`: listing → stdout, then delimited blocks for
+///   manifest, report, CFG, and the reconstructed source.
 /// - With `--output <path>`: listing → `<path>`, manifest →
 ///   `<path>.manifest.json`, report → `<path>.report.txt`, CFG →
-///   `<path>.cfg.dot`.
+///   `<path>.cfg.dot`, reconstructed source → `<path>.c`.
 fn emit_outputs(
     output: Option<&Path>,
     listing: &str,
     manifest: &str,
     report: Option<&str>,
     cfg: Option<&str>,
+    source: Option<&str>,
 ) -> dac_core::Result<()> {
     match output {
         None => {
@@ -314,6 +445,10 @@ fn emit_outputs(
                 h.write_all(b"\n;; ---- cfg (FR-28) ----\n")?;
                 h.write_all(c.as_bytes())?;
             }
+            if let Some(s) = source {
+                h.write_all(b"\n;; ---- target source (FR-21) ----\n")?;
+                h.write_all(s.as_bytes())?;
+            }
             Ok(())
         }
         Some(path) => {
@@ -327,6 +462,10 @@ fn emit_outputs(
             if let Some(c) = cfg {
                 let cfg_path = sidecar(path, ".cfg.dot");
                 write_file(&cfg_path, c)?;
+            }
+            if let Some(s) = source {
+                let source_path = sidecar(path, ".c");
+                write_file(&source_path, s)?;
             }
             Ok(())
         }

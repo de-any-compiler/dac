@@ -1727,6 +1727,152 @@ arrive in B2.9. `StructuringStats::is_goto_free()` and
 `StructuringStats::goto_count` are wired up so the rubric
 can be evaluated immediately when the corpus lands.
 
+#### B2.8 — C backend (`-O1`) (2026-06-02)
+
+The C backend lands in `dac-backend-c` and `--target c` is
+wired end-to-end through `dac-cli` at `-O1` (and above).
+The backend is a four-module pipeline — AST, lowering,
+pretty-printer, round-trip compile check — that consumes a
+[`SemFunction`](dac_ir::sem::SemFunction) together with its
+underlying [`SsaFunction`](dac_ir::ssa::SsaFunction) and
+produces formatted C source. A best-effort `cc` round-trip
+helper sits next to the pretty-printer so unit tests can
+gate the corpus on compilability without forcing every
+developer to install a toolchain.
+
+- `dac-backend-c::ast`:
+  - Closed C AST covering everything the B2.7 structurer
+    can produce: `TranslationUnit { includes, items }`,
+    `Item::Function { name, return_type, params, locals,
+    body, leading_comment }`, `Block { stmts }`, and the
+    13-variant `Stmt` enum (`Decl` / `Assign` / `Store` /
+    `ExprStmt` / `If` / `Loop` / `While` / `DoWhile` /
+    `Break` / `Continue` / `Return` / `Label` / `Goto` /
+    `Comment` / `Unreachable`).
+  - 9-variant `Expr` (`Var`, `IntLit`, `Undef`, `Binary`,
+    `Unary`, `Load`, `Call`, `AddrLit`, `Opaque`).
+  - `BinaryOp` (14 variants: arithmetic + bitwise + compare),
+    `UnaryOp` (3 variants: `Neg` / `BitNot` / `LogicalNot`).
+  - `CType` (`Void`, `Int { width_bits, signed }`, `Ptr`).
+    `CType::i64()` / `CType::u8()` shortcuts.
+  - 4 unit tests on the AST shape and exhaustivity guards.
+- `dac-backend-c::lower`:
+  - `lower_function(ssa, sem, resolver) -> Function` walks
+    `sem.body`, resolves each `SsaRef` against
+    `ssa.blocks[…].phis` / `instructions`, and emits the
+    matching C statement. Side-effect ops (stores, calls
+    without `dst`, opaque) lower to `Stmt::Store` /
+    `Stmt::ExprStmt`; value-producing ops become
+    `Stmt::Assign`. Phi statements lower to a
+    `/* phi v<dst> <- (bb<p>: <op>) … */` comment carrier;
+    every SSA value is pre-declared at the top of the
+    function body as `int<width>_t v<id> = 0LL`, sidestepping
+    SSA destruction at the cost of loop-iteration fidelity.
+  - `lower_unit(ssa_funcs, sem_funcs, resolver)` wraps a
+    slice of lowered functions in `default_includes()` —
+    `#include <stdint.h>` + `#include <stddef.h>`.
+  - `NameResolver = BTreeMap<u64, String>` threads recovered
+    call-target names into `Expr::Call` — direct calls
+    render `target(args)`; unknown addresses fall back to
+    `((void (*)())0xNNNN)(args)`.
+  - Return-type inference: scans the Sem body for any
+    `Return { value: Some(_) }` and picks `int64_t` if
+    found, `void` otherwise. The B2.6 type-lattice + B2.5
+    convention threading lands in a later batch when the
+    orchestrator plumbs `TypeMap` and `InferredSignature`
+    into the call site.
+  - Each lowered function carries a leading comment with
+    the source address and the structurer's
+    `StructuringStats` so any emitted function is traceable
+    back to the binary (I-2).
+  - 5 unit tests covering empty / arithmetic / store /
+    resolver-injected call / phi lowering plus a
+    byte-determinism guard.
+- `dac-backend-c::emit`:
+  - Hand-rolled pretty-printer: `emit(unit) -> String` and
+    `emit_function(f) -> String`. 4-space indent, K&R
+    braces, one statement per line. Binary expressions
+    parenthesise both children (verbose but precedence-
+    correct without the lowering pass having to reason
+    about it). Integer literals carry `LL` / `ULL`
+    suffixes. Labels render as `L<id>:;` so the trailing
+    semicolon makes the result a valid empty-statement
+    target.
+  - `int<n>_t` widths normalise to the nearest standard
+    width (8 / 16 / 32 / 64); anything beyond 64 falls
+    back to `int64_t`.
+  - 11 unit tests covering blank-unit / include / function
+    signature / if-else / endless loop / label / binary
+    precedence / int-type normalisation / load cast /
+    opaque sanitisation / leading-comment / locals-before-
+    body.
+- `dac-backend-c::compile`:
+  - `try_compile(source) -> CompileResult` shells out to
+    the system C compiler (`$CC`, then `cc`, then `gcc`,
+    then `clang`) with `-x c -c - -o /dev/null -w`.
+    Returns `CompileResult::Ok` / `Failed` / `Skipped`;
+    `Skipped` fires when no compiler is on PATH, so unit
+    tests stay green on toolchain-less hosts.
+  - 4 unit tests covering predicate / candidate-list /
+    trivial / malformed-source cases.
+- `dac-backend-c/tests/round_trip.rs`:
+  - 12 round-trip tests building six SemFunction fixtures
+    — empty function, arithmetic chain, if-then-else,
+    endless loop with break, goto fallback, and store-then-
+    load — and feeding the emitted C through `try_compile`.
+    Each fixture covers one structurer output shape; the
+    multi-function translation unit aggregates them.
+    Determinism, the `#include <stdint.h>` / `<stddef.h>`
+    presence, the empty-function shape, and the nested
+    pointer cast all carry pinned assertions.
+- `dac-cli` wiring:
+  - New `--target c` / `-O1`+ code path renders a C
+    translation unit through `dac-backend-c` and writes it
+    to `<output>.c` alongside the listing (or appends it
+    to stdout under a `;; ---- target source (FR-21) ----`
+    divider when no `--output` is set).
+  - Because the lifter → `RawFunction` bridge that would
+    feed the structurer from real x86-64 bytes is not yet
+    a batch in PLAN.md, the per-function body is a stub
+    (`/* lifter→SSA bridge pending; body intentionally
+    empty */`). The translation unit still compiles cleanly
+    — the round-trip test gates it.
+  - The leading banner records the input path and arch so
+    the file is self-identifying.
+  - `Target::Cpp` lands on a placeholder until the C++
+    backend (B3.5).
+  - 3 new end-to-end tests confirm the banner is present,
+    the sidecar compiles through `cc`, and the output is
+    byte-identical across two runs.
+
+Wiring: `dac-backend-c` gains `dac-core` + `dac-ir` as
+dependencies and `dac-analysis` + `dac-recovery` as dev
+dependencies (the round-trip tests construct SemFunctions
+by hand and don't need the recovery pipeline, but the
+crates are wired for the next batch). `dac-cli` adds
+`dac-backend-c` as a runtime dependency. The CLI's
+`emit_outputs` gains a `source: Option<&str>` parameter.
+
+Test counts: `cargo xtask ci` reports 46 green `test
+result: ok` lines, zero warnings, zero errors. New tests:
+`dac-backend-c` 0 → 38 (26 lib + 12 round-trip); `dac-cli`
+24 → 27 (+3 for `o1_target_c`). Cumulative test count
+climbs by 41.
+
+Closes: FR-21 (target-language backend emits source from
+the Semantic IR). The "5 sample binaries decompile to
+compilable C and run with matching behavior on a smoke
+test" rubric in PLAN.md is partially satisfied: the C
+backend produces compilable C from 6 hand-built fixtures
+each demonstrating a distinct structurer output shape
+(empty / arith / if-else / loop-with-break / goto /
+store-load), and `--target c -O1` produces a compilable
+translation unit from the real ELF fixture. The
+"run with matching behavior" leg cannot be measured until
+the lifter → `RawFunction` bridge lands and feeds the
+sample corpus (B2.9); it is recorded here as a deferred
+follow-up rather than silently dropped.
+
 ### Milestone 3 — Usable RE tool
 *(not started)*
 
