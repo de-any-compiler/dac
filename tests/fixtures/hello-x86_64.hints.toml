@@ -1,0 +1,14 @@
+# Golden-corpus hint fixture for B3.6.
+#
+# Pins the recovered `main` to the canonical C signature so the
+# emitted source under `hello-elf-o1-c-hints` shows the user-hint
+# overlay end-to-end. The address matches the fixture's symbol
+# table; `name` is given alongside so the matcher exercises both
+# fields of `HintMatcher::Both`.
+
+[[function]]
+address = "0x1040"
+name = "main"
+rename = "user_main"
+return = "int"
+args = ["int", "char**"]

@@ -15,6 +15,8 @@ Input:
       --format <fmt>        Input format: elf, pe, mach-o, or auto
                             (default: auto).
       --plugin <path>       Load a dynamic analysis or backend plugin.
+      --hints <path>        Apply user-supplied function-signature /
+                            struct hints from a TOML file (FR-20).
 
 Output:
       --target <lang>       Target language: c or cpp (default: c).

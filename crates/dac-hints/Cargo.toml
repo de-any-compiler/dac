@@ -1,0 +1,16 @@
+[package]
+name = "dac-hints"
+description = "User-supplied function-signature, struct, and type hints for dac (FR-20)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+dac-core = { workspace = true }
+dac-ir = { workspace = true }
+
+[lints]
+workspace = true

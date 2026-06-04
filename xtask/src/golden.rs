@@ -132,6 +132,24 @@ const CASES: &[Case] = &[
         ],
     },
     Case {
+        name: "hello-elf-o1-c-hints",
+        fixture: "hello-x86_64",
+        args: &[
+            "-O1",
+            "--target",
+            "c",
+            "--emit-report",
+            "--hints",
+            "tests/fixtures/hello-x86_64.hints.toml",
+        ],
+        outputs: &[
+            OutputKind::Listing,
+            OutputKind::Manifest,
+            OutputKind::Source,
+            OutputKind::Report,
+        ],
+    },
+    Case {
         name: "hello-elf-stripped-o0",
         fixture: "hello-x86_64-stripped",
         args: &["-O0"],

@@ -49,13 +49,14 @@ use dac_backend_cpp::{
 };
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph};
+use dac_hints::{HintError, Hints};
 use dac_recovery::{discover_functions, FunctionSet};
 
 use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
     InputStamp, SettingsStamp, ToolStamp,
 };
-use crate::lift::{lift_all, LiftOutcome, LiftStats};
+use crate::lift::{lift_all, register_hints, LiftOutcome, LiftStats};
 use crate::listing::{render_listing, ListingOptions};
 use crate::manifest::{
     render_manifest_json, Manifest, ManifestInput, ManifestSettings, ManifestTool,
@@ -120,6 +121,7 @@ fn main() -> ExitCode {
         emit_callgraph = args.emit_callgraph,
         xrefs = ?args.xrefs_subject,
         plugin = ?args.plugin,
+        hints = ?args.hints,
         "parsed cli arguments"
     );
 
@@ -161,6 +163,11 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let manifest = build_manifest(&input_label, &model, args);
     let manifest_json = render_manifest_json(&manifest);
 
+    let hints = match args.hints.as_deref() {
+        Some(p) => Hints::load_from_path(p).map_err(hints_error_to_core)?,
+        None => Hints::new(),
+    };
+
     // The pipeline picks a backend lazily so that formats without an
     // arch backend (everything but x86-64 today) still produce the
     // manifest + a minimal listing rather than failing.
@@ -176,6 +183,12 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         Some(b) => {
             let mut graph = EvidenceGraph::new();
             let functions = discover_functions(&model, &bytes, b.decoder.as_ref(), &mut graph);
+            // B3.6: register every loaded hint as an
+            // `EvidenceNode::UserHint` in the same graph so the
+            // annotation channel can cite them and the per-binary
+            // user_hint summary in the report matches the graph's
+            // by-kind histogram.
+            let hints = register_hints(hints, &mut graph);
             listing_text = render_listing(
                 &input_label,
                 &model,
@@ -200,6 +213,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                     b.decoder.as_ref(),
                     b.lifter.as_ref(),
                     b.register_file,
+                    &hints,
                 ))
             } else {
                 None
@@ -493,10 +507,19 @@ fn lower_one_c_function(
     resolver: &CNameResolver,
     debug: bool,
 ) -> CFunction {
-    let raw_name = f
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("fn_{:x}", f.address));
+    // B3.6: an applied `rename` hint takes precedence over the
+    // recovered symbol. The sanitiser still runs so a hint that
+    // accidentally contains `@` or `.` cannot break the round-trip
+    // compile gate.
+    let renamed = outcome.and_then(|o| match o {
+        LiftOutcome::Real { facts, .. } => facts.user_hint.as_ref().and_then(|h| h.rename.clone()),
+        LiftOutcome::Stub { .. } => None,
+    });
+    let raw_name = renamed.unwrap_or_else(|| {
+        f.name
+            .clone()
+            .unwrap_or_else(|| format!("fn_{:x}", f.address))
+    });
     let sanitized = sanitize_c_identifier(&raw_name);
     match outcome {
         Some(LiftOutcome::Real { ssa, sem, facts }) => {
@@ -639,6 +662,16 @@ fn real_body_leading_comment(
         facts.structs.stack_structs.len(),
         facts.idioms.switch_tables.len(),
     ));
+    // B3.6: surface the applied user hint so a reader of the .c
+    // sidecar sees that the printed signature was pinned by
+    // `--hints`, not inferred from the bytes.
+    if let Some(h) = facts.user_hint.as_ref() {
+        let rename_desc = h.rename.as_deref().unwrap_or("(none)");
+        s.push_str(&format!(
+            "\nuser_hint: id={} rename={} return_override={} args_override={}",
+            h.id, rename_desc, h.return_overridden, h.args_overridden,
+        ));
+    }
     if debug {
         if let Some(a) = annot {
             s.push_str("\n\n");
@@ -1029,6 +1062,7 @@ struct Args {
     json: bool,
     debug: bool,
     plugin: Option<PathBuf>,
+    hints: Option<PathBuf>,
     show_help: bool,
     show_version: bool,
 }
@@ -1072,6 +1106,7 @@ where
             "--json" => args.json = true,
             "--debug" => args.debug = true,
             "--plugin" => args.plugin = Some(PathBuf::from(take_os_value("--plugin", &mut it)?)),
+            "--hints" => args.hints = Some(PathBuf::from(take_os_value("--hints", &mut it)?)),
             "--version" | "-V" => args.show_version = true,
             "--help" | "-h" => args.show_help = true,
             other if other.starts_with('-') => {
@@ -1108,4 +1143,13 @@ where
 
 fn print_usage_hint() {
     eprintln!("dac: try `dac --help` for usage.");
+}
+
+/// Map a [`HintError`] onto a [`dac_core::Error`] so `run_pipeline`'s
+/// signature stays unchanged. The error message format matches the
+/// rest of the CLI's user-facing diagnostics.
+fn hints_error_to_core(err: HintError) -> dac_core::Error {
+    let msg = err.message();
+    tracing::error!(error = %msg, "failed to load hints file");
+    dac_core::Error::Other(msg)
 }

@@ -49,22 +49,13 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-**Recommended execution order before M4:** B3.6 → B3.7.
+**Recommended execution order before M4:** B3.7.
 Rationale: every M2/M3 recovery pass exists in `dac-recovery` /
-`dac-analysis` today; B3.8 + B3.9 + B3.10 already wired the
+`dac-analysis` today; B3.8 + B3.9 + B3.10 wired the
 `InstructionIr → RawFunction → SsaFunction → SemFunction →
-C AST` bridge into `--target c -O1` and surfaced the recovered
-calling conventions / types / switch tables / struct fields in
-the emitted source. B3.6's hints now have a typed signature
-surface to retype, and B3.7's names a real local-binding to
-rename.
-
-### B3.6 — User hints / signatures
-- TOML or JSON file: per-function signatures, struct definitions, type
-  hints (FR-20).
-- Hints enter the evidence graph as `Source::UserHint`.
-- **Done when:** providing a hint changes the recovered type as expected and
-  is reflected in the confidence report.
+C AST` bridge into `--target c -O1`; B3.6 added the user-hint
+overlay so renames and typed signatures land end-to-end. B3.7
+is the last deterministic-naming batch before M4 opens.
 
 ### B3.7 — Variable naming heuristics
 - Name candidates from API context, string usage, common patterns (spec
@@ -141,6 +132,29 @@ they are listed here so they stay visible.
   the recorded index landed past the end of the block's
   instructions. The underlying inconsistency in the SSA
   constructor / value-source bookkeeping is worth chasing down.
+- **Hint argument synthesis past the inferred prefix** (B3.6
+  follow-up, FR-20). `apply_function_hint` retypes positional
+  arguments the convention pass already inferred, but a hint
+  whose `args` lists more slots than `int_args` cannot mint
+  additional `RegisterArg` entries — the extra slots have no
+  SSA-side value to bind. Synthesising them needs the C
+  backend to learn a "declared but unused" parameter shape so
+  the printed signature can carry the full hinted arity.
+- **Hint provenance in annotations** (B3.6 follow-up, FR-19 /
+  FR-20). `register_hints` minted an `EvidenceNode::UserHint`
+  for every hint and the report counter ticks via the graph,
+  but `annotate_name` / `annotate_return_type` in
+  `dac-cli/src/annotations.rs` still report the deterministic
+  recovery pipeline's classification. Threading the matched
+  hint's `EvidenceId` into the matching `FactAnnotation` would
+  let the `.annot.json` sidecar name the hint that pinned the
+  type.
+- **Struct hint application** (B3.6 follow-up, FR-17 / FR-20).
+  `[[struct]]` hints parse and enter the evidence graph, but
+  the lowering pass still surfaces struct fields as `/* recovered
+  field: … */` comments (the B3.10 deferral). Promoting hinted
+  layouts to `s->field` lands with the struct-typedef-surface
+  follow-up.
 - **Mach-O parser** (FR-3). The format is detected and the model has a
   `BinaryFormat::MachO` variant, but no parser populates it.
 

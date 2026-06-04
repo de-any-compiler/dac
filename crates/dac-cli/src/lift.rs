@@ -43,15 +43,17 @@ use dac_analysis::ssa::construct_ssa;
 use dac_analysis::structuring::structure;
 use dac_arch::{InstructionDecoder, InstructionLifter, RegisterFile};
 use dac_binfmt::{BinaryFormat, BinaryModel};
+use dac_core::{Confidence, EvidenceGraph, EvidenceNode, Source};
+use dac_hints::{HintId, Hints};
 use dac_ir::instr::InstructionIr;
 use dac_ir::sem::{Block as SemBlock, SemFunction, Stmt as SemStmt, SwitchArm};
-use dac_ir::ssa::{Operand, SsaFunction};
+use dac_ir::ssa::{Operand, SsaFunction, SsaTerminator};
 use dac_knowledge::{lookup_api_signature, ApiSignature, X86_64_CONVENTIONS};
 use dac_lift::lift_function;
 use dac_recovery::{
     analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms,
     recover_structs, ApiResolver, ConventionMatch, Function, FunctionSet, RecoveredIdioms,
-    RecoveredStructs, StackConvention, StackFrame, SwitchTableIdiom, TypeMap,
+    RecoveredStructs, StackConvention, StackFrame, SwitchTableIdiom, TypeMap, ValueType,
 };
 
 /// Per-function outcome of the orchestrator.
@@ -74,6 +76,13 @@ pub(crate) enum LiftOutcome {
 
 /// Per-function recovery-side-table bundle threaded into the C
 /// backend at B3.10 (FR-14 / FR-16 / FR-17 / FR-18).
+///
+/// B3.6 adds the optional [`RecoveryFacts::user_hint`] field. When a
+/// `--hints` file entry matched the function, the recovery passes'
+/// outputs were overlaid in place: the [`TypeMap`] now carries
+/// [`Source::UserHint`] confidences for the hinted argument /
+/// return values, and `rename` (when set) supersedes the recovered
+/// symbol on emit.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RecoveryFacts {
     pub stack_frame: StackFrame,
@@ -81,6 +90,18 @@ pub(crate) struct RecoveryFacts {
     pub types: TypeMap,
     pub structs: RecoveredStructs,
     pub idioms: RecoveredIdioms,
+    pub user_hint: Option<AppliedHint>,
+}
+
+/// Summary of the user hint applied to a function. Surfaces in
+/// `--emit-report` and the C lowering's leading comment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AppliedHint {
+    pub id: HintId,
+    pub rename: Option<String>,
+    pub return_overridden: bool,
+    /// Number of argument slots whose type the hint pinned.
+    pub args_overridden: u32,
 }
 
 /// Shared per-binary inputs to the orchestrator: bound up so
@@ -94,11 +115,17 @@ struct LiftCtx<'a> {
     register_file: &'a RegisterFile,
     stack_convention: StackConvention,
     api_resolver: BinaryImportResolver,
+    /// User-supplied hints (B3.6, FR-20). Empty when `--hints` was
+    /// not passed.
+    hints: &'a Hints,
 }
 
 /// Run the per-function orchestrator across the whole recovered
 /// function set. The returned vector is in the same order as
 /// `functions.functions`, so callers can zip the two together.
+///
+/// `hints` carries the user-hint overlay (FR-20); pass an empty
+/// [`Hints`] when `--hints` was not requested.
 #[must_use]
 pub(crate) fn lift_all(
     functions: &FunctionSet,
@@ -107,6 +134,7 @@ pub(crate) fn lift_all(
     decoder: &dyn InstructionDecoder,
     lifter: &dyn InstructionLifter,
     register_file: &RegisterFile,
+    hints: &Hints,
 ) -> Vec<LiftOutcome> {
     let ctx = LiftCtx {
         model,
@@ -116,12 +144,28 @@ pub(crate) fn lift_all(
         register_file,
         stack_convention: stack_convention_for(model),
         api_resolver: BinaryImportResolver::new(model),
+        hints,
     };
     functions
         .functions
         .iter()
         .map(|f| lift_one(f, &ctx))
         .collect()
+}
+
+/// Register every hint in the catalogue as an
+/// [`EvidenceNode::UserHint`] in `graph`. Returns the hint catalogue
+/// with each entry's `evidence` populated, so downstream passes
+/// (and the annotation channel) can cite the exact node.
+pub(crate) fn register_hints(hints: Hints, graph: &mut EvidenceGraph) -> Hints {
+    let mut out = hints;
+    for h in out.functions.iter_mut() {
+        h.evidence = Some(graph.add_node(EvidenceNode::UserHint(h.id)));
+    }
+    for h in out.structs.iter_mut() {
+        h.evidence = Some(graph.add_node(EvidenceNode::UserHint(h.id)));
+    }
+    out
 }
 
 /// Pick the stack convention for the binary's format. ELF and Mach-O
@@ -154,6 +198,9 @@ pub(crate) struct LiftStats {
     /// Functions in which at least one recognised
     /// [`SwitchTableIdiom`] was lowered to `Stmt::Switch` (B3.10).
     pub switch_functions: u64,
+    /// Functions whose recovered facts were overlaid by a
+    /// user-supplied `[[function]]` hint (B3.6, FR-20).
+    pub user_hint_functions: u64,
 }
 
 impl LiftStats {
@@ -171,6 +218,9 @@ impl LiftStats {
                     }
                     if !facts.idioms.switch_tables.is_empty() {
                         s.switch_functions += 1;
+                    }
+                    if facts.user_hint.is_some() {
+                        s.user_hint_functions += 1;
                     }
                 }
                 LiftOutcome::Stub { .. } => s.stub += 1,
@@ -234,16 +284,23 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     // ordering follows the data dependencies — stack frame seeds
     // convention, both seed types, types seeds structs.
     let stack_frame = analyze_stack_frame(&ssa, ctx.stack_convention);
-    let convention = infer_calling_convention(&ssa, &stack_frame, X86_64_CONVENTIONS)
+    let mut convention = infer_calling_convention(&ssa, &stack_frame, X86_64_CONVENTIONS)
         .into_iter()
         .next();
     let signature = convention.as_ref().map(|c| &c.signature);
-    let types = propagate_types(&ssa, signature, Some(&stack_frame), &ctx.api_resolver);
+    let mut types = propagate_types(&ssa, signature, Some(&stack_frame), &ctx.api_resolver);
     let structs = recover_structs(&ssa, Some(&stack_frame), Some(&types));
     let idioms = recover_idioms(&ssa);
 
     let sem = structure(&ssa, &cfg, &doms, &pdoms, &loops);
     let sem = lower_switch_idioms(sem, &idioms);
+
+    // B3.6: overlay the user-hint catalogue. Hints update `types`
+    // with `Source::UserHint` confidences and may promote the
+    // convention's `return_register` so the C backend's
+    // `pick_return_type` path activates. They never mutate the
+    // SSA / Semantic IR — the binary stays ground truth (I-1).
+    let user_hint = apply_function_hint(f, ctx.hints, &ssa, &mut convention, &mut types);
 
     let facts = Box::new(RecoveryFacts {
         stack_frame,
@@ -251,8 +308,96 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
         types,
         structs,
         idioms,
+        user_hint,
     });
     LiftOutcome::Real { ssa, sem, facts }
+}
+
+/// Look the function up in the hint catalogue. When matched, mutate
+/// the recovered convention's signature + the type lattice in place
+/// so the C backend renders the hinted types unchanged, and return
+/// an [`AppliedHint`] summary for the report / leading comment.
+fn apply_function_hint(
+    f: &Function,
+    hints: &Hints,
+    ssa: &SsaFunction,
+    convention: &mut Option<ConventionMatch>,
+    types: &mut TypeMap,
+) -> Option<AppliedHint> {
+    let hint = hints.find_function(f.address, f.name.as_deref())?;
+    let conf = Confidence::new(USER_HINT_CONFIDENCE, Source::UserHint);
+
+    // Argument retyping: stuff hint args into the TypeMap so the
+    // C backend's `parameter_type` / `pick_return_type` paths pick
+    // them up. The lattice join is componentwise max on
+    // `Confidence`; `Source::UserHint` outranks `Source::Derived`,
+    // so the hint wins even when the propagation pass already
+    // seeded a derived type.
+    let mut args_overridden: u32 = 0;
+    if let (Some(hint_args), Some(conv)) = (&hint.args, convention.as_mut()) {
+        for (i, arg) in conv.signature.int_args.iter().enumerate() {
+            let Some(ty) = hint_args.get(i) else { break };
+            types.values.insert(
+                arg.value,
+                ValueType {
+                    ty: ty.to_ir(),
+                    confidence: conf,
+                },
+            );
+            args_overridden += 1;
+        }
+    }
+
+    // Return retyping: seed every `Return { value: Some(v) }`
+    // operand's TypeMap entry. The C backend's `pick_return_type`
+    // only consults the type map when the convention has a return
+    // register; promote `None` to a synthetic `"hinted"` marker so
+    // the path activates.
+    let mut return_overridden = false;
+    if let Some(ret_ty) = &hint.return_ty {
+        if let Some(conv) = convention.as_mut() {
+            if conv.signature.return_register.is_none() {
+                conv.signature.return_register = Some(hinted_return_register(conv));
+            }
+        }
+        for block in &ssa.blocks {
+            if let SsaTerminator::Return {
+                value: Some(Operand::Value(v)),
+            } = &block.terminator
+            {
+                types.values.insert(
+                    *v,
+                    ValueType {
+                        ty: ret_ty.to_ir(),
+                        confidence: conf,
+                    },
+                );
+            }
+        }
+        return_overridden = true;
+    }
+
+    Some(AppliedHint {
+        id: hint.id,
+        rename: hint.rename.clone(),
+        return_overridden,
+        args_overridden,
+    })
+}
+
+/// Confidence value `Source::UserHint` overlay entries carry.
+const USER_HINT_CONFIDENCE: f32 = 0.95;
+
+/// Pick the convention's canonical integer return register so a
+/// hint with a `return` override can activate the C backend's
+/// `pick_return_type` path even when the inference pass left
+/// `signature.return_register == None`. We borrow the convention's
+/// own register table via the `int_args` register family.
+fn hinted_return_register(c: &ConventionMatch) -> &'static str {
+    match c.convention_name {
+        "ms-x64" => "rax",
+        _ => "rax",
+    }
 }
 
 /// Post-pass on the structurer output: rewrite each
@@ -435,6 +580,7 @@ mod tests {
             types: TypeMap::default(),
             structs: RecoveredStructs::default(),
             idioms: RecoveredIdioms::default(),
+            user_hint: None,
         }
     }
 

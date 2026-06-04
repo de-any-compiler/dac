@@ -168,6 +168,7 @@ dependencies = [
  "dac-backend-cpp",
  "dac-binfmt",
  "dac-core",
+ "dac-hints",
  "dac-ir",
  "dac-knowledge",
  "dac-lift",
@@ -186,6 +187,14 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "dac-hints"
+version = "0.1.0-pre"
+dependencies = [
+ "dac-core",
+ "dac-ir",
 ]
 
 [[package]]

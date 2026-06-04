@@ -2983,6 +2983,119 @@ typedef follow-up), FR-18 (switch idiom lowered into
 `Determinism::Pure`; the corpus output is byte-stable across
 runs).
 
+#### B3.6 — User hints / signatures (2026-06-04)
+
+Wires a user-supplied hint catalogue into the recovery side-table
+pipeline so a reverse engineer can override the recovered name /
+return type / argument types of any function (FR-20). Hints are
+loaded from a strict-TOML subset, registered in the evidence graph
+as `EvidenceNode::UserHint` nodes (I-2), and overlay the
+`TypeMap` with `Source::UserHint`-sourced entries (I-3). Because
+`Confidence::join` is componentwise max and `UserHint` outranks
+`Derived`, the existing C lowering's `parameter_type` /
+`pick_return_type` paths render hinted types without further
+changes.
+
+- **`dac-hints` crate.** New no-external-dep workspace member
+  containing:
+  - A constrained TOML reader (`crates/dac-hints/src/parse.rs`)
+    that handles `[[table]]` headers, scalar / array / inline-
+    table values, hash comments, and `\"` / `\\` / `\n` / `\t`
+    string escapes. Anything outside that envelope is rejected
+    with a `HintError::Syntax { line, message }`. The reader is
+    intentionally hand-rolled — the schema is small enough that
+    the dep cost of `toml` + `serde` was not justified.
+  - A type-string grammar (`HintType::parse`) covering
+    `void`, `char`, `int{,8,16,32,64}`, `uint{,8,16,32,64}`,
+    `short` / `long`, plus pointer suffixes (`int**`). Lowers to
+    the IR lattice through `HintType::to_ir`.
+  - `Hints { functions, structs }` with `find_function(addr,
+    name)` lookup. `FunctionHint` carries `rename`, `return_ty`,
+    `args`, an `HintId` assigned in source order, and a slot for
+    the `EvidenceId` the CLI mints during `register_hints`.
+  - `HintError` with `Io` / `NotUtf8` / `Syntax` / `Semantic`
+    variants and a `message()` helper the CLI surfaces verbatim.
+  - 15 unit tests covering the grammar, matcher precedence,
+    semantic rejections (`void` arg, no-effect hint, missing
+    matcher), and determinism of repeated parses.
+- **Overlay in `dac-cli/src/lift.rs`.** `LiftCtx` now carries a
+  `&Hints` borrow; `lift_one` runs `apply_function_hint` after
+  the deterministic recovery passes:
+  - For each hinted argument, stuff a `ValueType { ty:
+    HintType::to_ir(), confidence: UserHint(0.95) }` entry into
+    `facts.types` keyed by the corresponding `RegisterArg.value`.
+  - When `return` is hinted, promote the convention's
+    `return_register` to `Some("rax")` if inference left it
+    `None` so the backend's `pick_return_type` path activates,
+    then seed every `Return { value: Some(v) }` operand's
+    TypeMap entry.
+  - `rename` flows through `RecoveryFacts::user_hint`, which the
+    `lower_one_c_function` site reads before sanitising into a
+    C identifier. The recovered name and the hint rename both
+    pass through the existing sanitiser so a rename containing
+    `@` / `.` cannot break the round-trip compile gate.
+- **CLI plumbing.** `--hints PATH` parses a hint file with
+  `Hints::load_from_path`. On parse failure the CLI surfaces the
+  `HintError::message()` line and exits non-zero. Successfully
+  loaded hints are registered in the evidence graph via
+  `register_hints`, so the annotation summary's
+  `evidence.by_kind.user_hint` counter ticks up to match the
+  source file's hint count.
+- **Report counter.** `;; recovery: …` in `--emit-report` gains a
+  `user_hints={n}` column counting functions whose recovered
+  facts were overlaid by a `[[function]]` hint (B3.6's
+  "reflected in the confidence report" criterion).
+- **C lowering leading comment.** Functions with an applied hint
+  print a `user_hint: id=N rename=… return_override=… args_override=…`
+  line above the body so a reader sees that the signature was
+  pinned by `--hints`, not inferred from the bytes.
+- **Help text.** `--hints <path>` added to the CLI usage
+  snapshot.
+- **Goldens.** New `hello-elf-o1-c-hints` corpus case
+  (`tests/golden/hello-elf-o1-c-hints/`) demonstrates the
+  end-to-end behaviour on `hello-x86_64`:
+  - The fixture's `main` (recovered at `0x1040`) is renamed to
+    `user_main` with return `int` and arg `int`.
+  - The emitted `.c` shows `int32_t user_main(int32_t arg0)`
+    with a cast init `int64_t v8 = ((int64_t)(arg0))` and a
+    return cast `return ((int32_t)(v12))`.
+  - The matching `.report.txt` shows `user_hints=1` on the
+    recovery row.
+  - The `hello-elf-o0-report` golden also gains the new column
+    `user_hints=0` so existing cases stay byte-stable.
+- **`hello-x86_64.hints.toml` fixture.** Workspace-relative TOML
+  the corpus harness feeds to `--hints`. Documents the schema
+  inline so a contributor reading the fixture sees the supported
+  shape.
+
+Limitations (folded into the B3 follow-up shelf):
+
+- **Argument synthesis stops at the inferred prefix.** A hint
+  whose `args` lists more positional types than the convention
+  pass observed (e.g. `args = ["int", "char**"]` on a function
+  that only reads `rdi`) retypes the inferred slots but does not
+  mint additional `RegisterArg` entries — the second slot would
+  have no SSA-side value to bind. Synthesising additional
+  parameters needs the C backend to learn a "declared but
+  unused" parameter shape; tracked as a B3 follow-up.
+- **Struct hints are parsed and counted, not applied.** The
+  lowering pass still surfaces struct fields as `/* recovered
+  field: … */` comments (B3.10 deferral). Promoting hinted
+  layouts to `s->field` lands with the struct-typedef-surface
+  follow-up.
+- **`Source::UserHint` does not yet bubble into the annotation
+  channel's per-fact source.** The summary counter ticks via
+  the evidence graph, but `annotate_name` / `annotate_return_type`
+  in `dac-cli/src/annotations.rs` still report the recovery
+  pipeline's classification. Threading the hint's `EvidenceId`
+  into the matching `FactAnnotation` is a B3 follow-up so the
+  `.annot.json` sidecar can name the hint that pinned the type.
+
+Closes: B3.6, FR-19 (user-hint source surfaces in the report
+counter), FR-20 (user-supplied signatures and type hints land
+end-to-end), I-2 (every hint enters the evidence graph), I-3
+(every hint-driven retyping carries `Source::UserHint`).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 
