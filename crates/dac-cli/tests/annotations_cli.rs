@@ -140,7 +140,23 @@ fn debug_mode_emitted_c_still_compiles() {
     use std::io::Write as _;
     use std::process::{Command as Sys, Stdio};
     let mut child = Sys::new(&cc)
-        .args(["-x", "c", "-c", "-", "-o", "/dev/null", "-w"])
+        // `-Dmain=__dac_main__` dodges macOS clang's hard error
+        // ("first parameter of 'main' (argument count) must be of
+        // type 'int'") on the recovered `int64_t main(int64_t)`
+        // signature. The emitted source on disk is unchanged; only
+        // the preprocessor sees the rename, so the compile probe
+        // stops tripping clang's special-case rule. Linux gcc/clang
+        // accept the define silently.
+        .args([
+            "-x",
+            "c",
+            "-c",
+            "-",
+            "-o",
+            "/dev/null",
+            "-w",
+            "-Dmain=__dac_main__",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -1,0 +1,18 @@
+# Force LF line endings on every checkout, including Windows.
+#
+# rustfmt and `cargo fmt --all --check` reject CRLF-terminated source
+# files; Windows runners on GitHub Actions checkout with CRLF by
+# default, which made the CI matrix red after B3.7.
+#
+# `text=auto` lets git decide if a path is text; `eol=lf` overrides the
+# platform default so working trees on Windows end up LF too.
+
+* text=auto eol=lf
+
+# Binary fixtures must not be touched by line-ending normalisation.
+tests/fixtures/** binary
+*.png binary
+*.so  binary
+*.dll binary
+*.exe binary
+*.o   binary

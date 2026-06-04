@@ -117,6 +117,15 @@ fn run_compiler(cc: &str, source: &str) -> RunOutcome {
         // Suppress non-error noise; we only care about whether the
         // emitted source compiles, not about stylistic warnings.
         OsStr::new("-w"),
+        // `-Dmain=__dac_main__` dodges macOS clang's hard error
+        // ("first parameter of 'main' (argument count) must be of
+        // type 'int'") when the recovered signature is e.g.
+        // `int64_t main(int64_t)`. The on-disk source is unchanged;
+        // only the preprocessor sees the rename so we keep
+        // recovered-view fidelity while the round-trip probe stops
+        // tripping clang's special-case main-signature check. Linux
+        // gcc/clang accept the define silently.
+        OsStr::new("-Dmain=__dac_main__"),
     ];
     let mut child = match Command::new(cc)
         .args(args)

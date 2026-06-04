@@ -91,6 +91,11 @@ fn run_compiler(cxx: &str, source: &str) -> RunOutcome {
         OsStr::new("-o"),
         OsStr::new("/dev/null"),
         OsStr::new("-w"),
+        // Dodge macOS clang's hard error on a recovered `main`
+        // signature that does not match `int(int, char**)`. See the
+        // C sibling probe in `dac-backend-c::compile` for the full
+        // rationale; the on-disk source is unchanged.
+        OsStr::new("-Dmain=__dac_main__"),
     ];
     let mut child = match Command::new(cxx)
         .args(args)

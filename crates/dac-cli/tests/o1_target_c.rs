@@ -83,7 +83,20 @@ fn o1_target_c_round_trips_through_system_compiler() {
     let source = fs::read_to_string(&source_path).expect("source sidecar");
 
     let mut child = Sys::new(&cc)
-        .args(["-x", "c", "-c", "-", "-o", "/dev/null", "-w"])
+        // `-Dmain=__dac_main__` dodges macOS clang's hard error on
+        // the recovered `int64_t main(int64_t)` signature. See the
+        // sibling probe in `annotations_cli.rs` for the full
+        // rationale.
+        .args([
+            "-x",
+            "c",
+            "-c",
+            "-",
+            "-o",
+            "/dev/null",
+            "-w",
+            "-Dmain=__dac_main__",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
