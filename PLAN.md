@@ -49,79 +49,166 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-*All M3 numbered batches complete — see
-[CHANGELOG.md](./CHANGELOG.md). M4 opens next; the B3 follow-up
-shelf below remains the queue of pre-M4 work that can still land
-as numbered batches if we choose to clear them first.*
+The numbered M3 critical-path batches (B3.1 – B3.10) are complete
+— see [CHANGELOG.md](./CHANGELOG.md). The shelf of deferrals
+accumulated across M2 / M3 has been partly promoted to numbered
+follow-up batches B3.11 – B3.22 below. They are pre-M4 work: each
+closes a specific deferral surfaced in a CHANGELOG entry and can
+land independently. Heavier residue items remain in the "B3 residue
+shelf" at the end of this section.
 
-### B3 follow-up shelf
+### B3.11 — Base-class recovery (B3.5 deferral)
+- Typeinfo-relocation walker reads `__si_class_type_info` (single
+  inheritance) and `__vmi_class_type_info` (multiple / virtual)
+  shapes out of `.data.rel.ro` and populates `Class::bases`
+  (FR-N spec §10, I-3).
+- New facts ship as `Confidence::Derived` — relocation-walking is
+  structural inference, not literal observation.
+- **Done when:** the C++ corpus golden surfaces at least one
+  recovered `: public Base` inheritance clause where B3.5 emitted
+  a flat class.
 
-Items recorded across the M2 / M3 CHANGELOG entries as deferred but
-not yet promoted to numbered batches. Each is well-scoped enough to
-become a `B3.<n>` later if we choose to land it before M4 closes;
-they are listed here so they stay visible.
+### B3.12 — Namespace lowering (B3.5 deferral)
+- Emit `namespace foo { namespace bar { … } }` from the already-
+  recovered `Class::scope_chain` instead of flattening it into the
+  leading comment.
+- Touches `dac-backend-cpp::emit` only; class recovery is unchanged.
+- **Done when:** a C++ corpus class with a `scope_chain` of two or
+  more segments emits with the matching nested `namespace` block,
+  and the golden round-trips through the C++ probe.
 
-- **Base-class recovery** (B3.5 deferral). Typeinfo-relocation walker
-  that reads `__si_class_type_info` / `__vmi_class_type_info` shapes
-  out of `.data.rel.ro` and populates `Class::bases`.
-- **Stripped-binary C++ recovery** (B3.5 deferral). Byte-level vtable
-  scanner across `.data.rel.ro` reservation patterns for the
+### B3.13 — Variadic + syscall conventions (B2.5 deferral)
+- Extend `dac-knowledge::convention` with SysV's "rax = vector-arg
+  count" rule for variadic call sites, and the Linux `syscall`
+  argument layout `rdi, rsi, rdx, r10, r8, r9` (FR-13).
+- Update `dac-recovery::convention` scoring so a variadic / syscall
+  signature beats the misclassified non-variadic alternative on
+  matching call sites.
+- **Done when:** unit tests cover both layouts; an ELF corpus
+  fixture that exercises `syscall` decodes with the syscall
+  convention chosen.
+
+### B3.14 — Subreg-aliasing correctness in bridge (B3.8 follow-up)
+- Refine the lossy full-register-write rule in `dac-lift::bridge`
+  into the precise x86_64 model: 32-bit writes zero the upper 32
+  bits, 16-bit and 8-bit writes preserve the unmodified bits
+  (I-2 evidence preserved per sub-write).
+- **Done when:** unit tests cover the three width classes;
+  goldens that exercised the lossy rule (if any) refresh
+  visibly tighter use-chains.
+
+### B3.15 — Typed-local refinement (B3.10 follow-up)
+- Retype SSA locals from `dac-recovery::TypeMap` directly (B3.10
+  retyped only parameters and return types). Surfaces the
+  pointer / int mixes the lifter's sub-register arithmetic
+  produces; pair with per-use casts where the lattice diverges
+  from the variable's `width_bits`.
+- **Done when:** a corpus function with a recovered pointer
+  parameter shows typed locals downstream instead of every
+  local landing as `int64_t`.
+
+### B3.16 — Struct typedef surface (B3.10 follow-up, FR-17)
+- Grow the C AST a translation-unit-level `struct` typedef node
+  (`Item::StructDecl`).
+- Plumb `dac-recovery::RecoveredStructs` into the lowering pass so
+  each pointer-anchored layout emits a real typedef plus
+  `s->field` access in place of the B3.10 `/* recovered field:
+  … */` comment.
+- **Done when:** the PE corpus golden shows at least one
+  `struct {...}` typedef and at least one `s->field_<hex>`
+  access where B3.10 emitted only the marker comment.
+
+### B3.17 — Switch-arm resolution (B3.10 follow-up, FR-18)
+- Resolve per-entry switch-table targets by reading bytes from
+  `.rodata` (and, on PE, walking the relocation table for rebased
+  entries). Mint labels at each target block and populate
+  `Stmt::Switch::arms` accordingly.
+- Anchor labels outside the structurer's recursive walk so the
+  label slots survive arm rewriting.
+- **Done when:** a corpus function with a jump-table dispatch
+  emits a populated `switch` with per-arm `case <const>:` /
+  `goto L<n>;` shapes, replacing the B3.10 empty-arms surface.
+
+### B3.18 — `dac-recovery::structs` SSA-source bounds correctness (B3.10 surfaced)
+- `lookup_def_op` currently bounds-checks
+  `ValueSource::Instruction { block, index }` defensively after
+  the PE corpus surfaced an over-bound index. Chase the
+  underlying inconsistency in the SSA constructor /
+  value-source bookkeeping; remove the defensive guard when the
+  invariant holds again.
+- **Done when:** the bookkeeping is tightened (unit test covers
+  the previously-out-of-bounds case from the PE corpus), and the
+  defensive guard becomes a `debug_assert!`.
+
+### B3.19 — Hint provenance in annotations (B3.6 follow-up, FR-19 / FR-20)
+- Thread the matched `EvidenceNode::UserHint` ID into
+  `annotate_name` / `annotate_return_type` in
+  `dac-cli/src/annotations.rs` so the `.annot.json` sidecar
+  names the hint that pinned the type.
+- **Done when:** running with a `[[function]]` rename hint
+  produces an annotations sidecar whose `name` block cites the
+  hint's evidence ID instead of the deterministic pipeline's
+  classification.
+
+### B3.20 — Loop-induction & counter naming (B3.7 follow-up, spec §11.1)
+- Layer per-function dataflow naming on top of
+  `dac-recovery::names`. Three heuristics:
+    1. Loop-induction counter (`i` / `j` / `k`) — the phi value
+       of a natural loop header whose only back-edge increment is
+       `+= 1`.
+    2. Counter pattern (`count`) — a non-induction value whose
+       only mutating op is `+= 1`.
+    3. Allocator-size (`size`) — an arithmetic adjacent to a
+       `malloc` / `calloc` call where the result feeds the call's
+       size argument.
+- **Done when:** the ELF or PE corpus produces at least one
+  named `i` or `count` value where B3.7 emitted `v<id>`, and
+  the report row's heuristic-coverage % climbs against the prior
+  baseline.
+
+### B3.21 — PLT-stub naming on ELF (B3.7 surfaced, FR-N spec §11.1)
+- Walk the PLT trampoline at `.plt.sec` / `.plt.got` and thread
+  the trampoline VA → import-name map into
+  `BinaryImportResolver::resolve`. Lights up API-context naming
+  (and type-propagation seeds) on unstripped ELF binaries.
+- **Done when:** `tests/golden/hello-elf-o1-c` reaches a non-zero
+  heuristic-name coverage % (it was 0 / 98 at B3.7) and the
+  matching PE coverage baseline holds steady.
+
+### B3.22 — Hint-driven naming (B3.7 follow-up, FR-20)
+- Thread `Hints::find_function`'s `rename` into
+  `NameTable::values` for the matching call sites' arguments so a
+  user hint propagates names downstream the way the user expects
+  from the rename field.
+- **Done when:** a `[[function]]` hint with `rename = "send"`
+  applied to a call site flips the SSA value name and the
+  emitted source's identifier to `send`, citing
+  `NameSource::UserHint` in the recovery report.
+
+### B3 residue shelf
+
+The deferrals below stay on the shelf rather than landing as
+numbered batches before M4 opens. Each is either large enough to
+read as a separate milestone (Mach-O parser, C++ body lowering,
+idiom cluster) or depends on a numbered batch already queued
+above.
+
+- **Stripped-binary C++ recovery** (B3.5 deferral). Byte-level
+  vtable scanner across `.data.rel.ro` reservation patterns for the
   no-`_Z…`-symbols case.
-- **Namespace lowering** (B3.5 deferral). Emit `namespace { … }` from
-  the already-recovered `Class::scope_chain` instead of flattening
-  into the leading comment.
-- **Variadic + syscall conventions** (B2.5 deferral). SysV's
-  "rax = vector-arg count" and Linux `syscall` argument layouts
-  (`rdi, rsi, rdx, r10, r8, r9`).
 - **Error-handling / ref-counting / state-machine idioms** (B3.3
   deferrals). Each needs additional substrate: errno tables in
-  `dac-knowledge`, atomic/lock-prefix modelling at the SSA layer,
+  `dac-knowledge`, atomic / lock-prefix modelling at the SSA layer,
   phi-of-state-constants tracking respectively.
 - **Union recovery, nested-struct chasing** (B3.2 deferrals).
-- **Subreg-aliasing correctness in the bridge** (B3.8 follow-up).
-  Refine the lossy full-register-write rule into the precise x86_64
-  model (32-bit writes zero the upper 32; 16/8-bit writes preserve).
 - **C++ body lowering** (B3.9 follow-up). The C++ AST in
   `dac-backend-cpp::ast` only describes class hierarchies and
   free-function signatures; member and free-function *bodies*
   remain `/* dac C++ stub */` stubs because the AST has no
-  block/stmt node yet. Extending the AST (plus the matching
-  emit/lowering rules) lets the C-side `SsaFunction → SemFunction`
+  block / stmt node yet. Extending the AST (plus the matching
+  emit / lowering rules) lets the C-side `SsaFunction → SemFunction`
   shape feed the C++ printer the same way it now feeds the C
   printer.
-- **Typed-local refinement** (B3.10 follow-up). The C lowering at
-  B3.10 retypes parameters and return types from
-  `dac-recovery::TypeMap`, but every local stays at the SSA
-  variable's `width_bits` (e.g. `int64_t`). Retyping locals
-  directly from the lattice exposes pointer / int mixes that the
-  lifter's sub-register arithmetic produces; pairing it with
-  per-use casts or a memory-SSA fix on the lifter side is the
-  next step.
-- **Struct typedef surface** (B3.10 follow-up, FR-17). B3.10
-  detects pointer-anchored struct layouts via
-  `dac-recovery::RecoveredStructs` and records a `/* recovered
-  field: base=v_<id> offset=0x<hex> field=field_<hex> */` comment
-  above each matching `Load` / `Store`; promoting them to
-  `s->field` requires the C AST to grow translation-unit-level
-  `struct` typedefs so the dereferenced expression has a
-  declared shape in scope.
-- **Switch-arm resolution** (B3.10 follow-up, FR-18). B3.10's
-  switch post-pass rewrites `Stmt::Unreachable` whose source
-  block matches a recognised `SwitchTableIdiom` into
-  `Stmt::Switch { scrutinee, arms: [], default: …unreachable… }`
-  — the scrutinee surfaces but the arms stay empty. Resolving
-  per-entry targets requires reading bytes from the binary's
-  `.rodata` (and, on PE, walking the relocation table for
-  rebased table entries) plus minting labels at each target
-  block; that lands once the structurer learns to anchor labels
-  outside its existing recursive walk.
-- **`dac-recovery::structs` SSA-source bounds correctness**
-  (B3.10 surfaced). `lookup_def_op` in `dac-recovery/src/structs.rs`
-  now bounds-checks the `ValueSource::Instruction { block, index }`
-  reference defensively after the PE corpus surfaced a case where
-  the recorded index landed past the end of the block's
-  instructions. The underlying inconsistency in the SSA
-  constructor / value-source bookkeeping is worth chasing down.
 - **Hint argument synthesis past the inferred prefix** (B3.6
   follow-up, FR-20). `apply_function_hint` retypes positional
   arguments the convention pass already inferred, but a hint
@@ -130,45 +217,13 @@ they are listed here so they stay visible.
   SSA-side value to bind. Synthesising them needs the C
   backend to learn a "declared but unused" parameter shape so
   the printed signature can carry the full hinted arity.
-- **Hint provenance in annotations** (B3.6 follow-up, FR-19 /
-  FR-20). `register_hints` minted an `EvidenceNode::UserHint`
-  for every hint and the report counter ticks via the graph,
-  but `annotate_name` / `annotate_return_type` in
-  `dac-cli/src/annotations.rs` still report the deterministic
-  recovery pipeline's classification. Threading the matched
-  hint's `EvidenceId` into the matching `FactAnnotation` would
-  let the `.annot.json` sidecar name the hint that pinned the
-  type.
 - **Struct hint application** (B3.6 follow-up, FR-17 / FR-20).
   `[[struct]]` hints parse and enter the evidence graph, but
-  the lowering pass still surfaces struct fields as `/* recovered
-  field: … */` comments (the B3.10 deferral). Promoting hinted
-  layouts to `s->field` lands with the struct-typedef-surface
-  follow-up.
-- **Mach-O parser** (FR-3). The format is detected and the model has a
-  `BinaryFormat::MachO` variant, but no parser populates it.
-- **Loop-induction & counter naming** (B3.7 follow-up, spec
-  §11.1). `dac-recovery::names` ships API-context and string-literal
-  heuristics at B3.7; loop-induction (`i` / `j` / `k`),
-  counter-pattern (`count` for `+= 1` lhs), and allocator-size
-  (`size` from arithmetic adjacent to a `malloc` call) need
-  per-function dataflow reasoning that the next batch can layer
-  on top of the existing pass.
-- **PLT-stub naming on ELF** (B3.7 surfaced, FR-N spec §11.1).
-  `BinaryImportResolver::resolve` consults `model.symbols` and
-  `imports_by_va` but does not walk the PLT trampoline at
-  `.plt.sec` / `.plt.got` so direct calls into the trampoline
-  decode as `fn_<va>` unbound. Threading the PLT-target →
-  import-name map into the resolver lights up API-context naming
-  (and the type-propagation seeds it already powers) on
-  unstripped ELF binaries — `tests/golden/hello-elf-o1-c` then
-  reaches the same naming coverage the PE corpus already does.
-- **Hint-driven naming** (B3.7 follow-up, FR-20). The
-  [`Hints::find_function`] path is consumed only by the type
-  overlay today; threading a `function.rename` into
-  `NameTable::values` for the matching call sites' arguments
-  would let a hint propagate names downstream as the user
-  already expects from the rename field.
+  the lowering pass still surfaces struct fields as
+  `/* recovered field: … */` comments. Lands once the struct
+  typedef surface (B3.16) is in place.
+- **Mach-O parser** (FR-3). The format is detected and the model
+  has a `BinaryFormat::MachO` variant, but no parser populates it.
 
 ---
 
