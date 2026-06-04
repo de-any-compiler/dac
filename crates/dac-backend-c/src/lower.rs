@@ -81,7 +81,9 @@ use std::collections::BTreeMap;
 use dac_ir::sem::{Block as SemBlock, SemFunction, SsaRef, Stmt as SemStmt};
 use dac_ir::ssa::{CompareKind, Operand, Phi, SsaFunction, SsaOp, ValueDef, ValueId, ValueSource};
 use dac_ir::ty::{Signedness, Type as IrType};
-use dac_recovery::{InferredSignature, RecoveredStructs, RegisterArg, StructLayout, TypeMap};
+use dac_recovery::{
+    InferredSignature, NameTable, RecoveredStructs, RegisterArg, StructLayout, TypeMap,
+};
 
 use crate::ast::{
     BinaryOp, Block as CBlock, CType, Expr, Function, Item, Local, Param, Stmt as CStmt,
@@ -124,6 +126,11 @@ pub struct Recovered<'a> {
     /// `Load` / `Store` accesses whose address decomposes to
     /// `Add(base, Const(offset))` into `base->field` / `base.field`.
     pub structs: Option<&'a RecoveredStructs>,
+    /// Heuristic name candidates (B3.7). Each SSA value present in
+    /// the table emits with its heuristic identifier (`path`,
+    /// `fmt`, `str_hello`, …) instead of the generic `v<id>`
+    /// fallback. Values absent from the table keep `v<id>`.
+    pub names: Option<&'a NameTable>,
 }
 
 impl<'a> Recovered<'a> {
@@ -133,11 +140,13 @@ impl<'a> Recovered<'a> {
         signature: Option<&'a InferredSignature>,
         types: Option<&'a TypeMap>,
         structs: Option<&'a RecoveredStructs>,
+        names: Option<&'a NameTable>,
     ) -> Self {
         Self {
             signature,
             types,
             structs,
+            names,
         }
     }
 }
@@ -399,7 +408,7 @@ struct LowerCtx<'a> {
 
 fn lower_locals(
     ssa: &SsaFunction,
-    _recovered: &Recovered<'_>,
+    recovered: &Recovered<'_>,
     parameter_inits: &ParameterInits,
 ) -> Vec<Local> {
     let mut locals = Vec::with_capacity(ssa.values.len());
@@ -417,7 +426,7 @@ fn lower_locals(
             }),
         };
         locals.push(Local {
-            name: value_name(def.id),
+            name: value_name(def.id, recovered.names),
             ty,
             init,
         });
@@ -464,7 +473,10 @@ impl<'a> LowerCtx<'a> {
         match stmt {
             SemStmt::Phi { r, .. } => {
                 let phi = phi_at(self.ssa, *r);
-                out.push(CStmt::Comment(format_phi_comment(phi)));
+                out.push(CStmt::Comment(format_phi_comment(
+                    phi,
+                    self.recovered.names,
+                )));
             }
             SemStmt::Instr { r, .. } => {
                 self.lower_instr(*r, out);
@@ -476,21 +488,21 @@ impl<'a> LowerCtx<'a> {
                 ..
             } => {
                 out.push(CStmt::If {
-                    cond: lower_operand(cond),
+                    cond: lower_operand(cond, self.recovered.names),
                     then_body: self.lower_block(then_body),
                     else_body: else_body.as_ref().map(|b| self.lower_block(b)),
                 });
             }
             SemStmt::While { cond, body, .. } => {
                 out.push(CStmt::While {
-                    cond: lower_operand(cond),
+                    cond: lower_operand(cond, self.recovered.names),
                     body: self.lower_block(body),
                 });
             }
             SemStmt::DoWhile { cond, body, .. } => {
                 out.push(CStmt::DoWhile {
                     body: self.lower_block(body),
-                    cond: lower_operand(cond),
+                    cond: lower_operand(cond, self.recovered.names),
                 });
             }
             SemStmt::Loop { body, .. } => {
@@ -517,7 +529,7 @@ impl<'a> LowerCtx<'a> {
                     "recovered switch table at block {source_block} (arm resolution pending)"
                 )));
                 out.push(CStmt::Switch {
-                    scrutinee: lower_operand(scrutinee),
+                    scrutinee: lower_operand(scrutinee, self.recovered.names),
                     arms: arms_c,
                     default: default_c,
                 });
@@ -526,7 +538,7 @@ impl<'a> LowerCtx<'a> {
             SemStmt::Continue { .. } => out.push(CStmt::Continue),
             SemStmt::Return { value, .. } => {
                 let v = value.as_ref().map(|op| {
-                    let raw = lower_operand(op);
+                    let raw = lower_operand(op, self.recovered.names);
                     cast_if_needed(&CType::i64(), &self.return_type, raw)
                 });
                 out.push(CStmt::Return(v));
@@ -566,15 +578,24 @@ impl<'a> LowerCtx<'a> {
                 }
                 out.push(CStmt::Store {
                     ty: int_type_for_width(*width),
-                    address: lower_operand(address),
-                    value: lower_operand(value),
+                    address: lower_operand(address, self.recovered.names),
+                    value: lower_operand(value, self.recovered.names),
                 });
             }
             (None, SsaOp::Call { target, args }) => {
-                out.push(CStmt::ExprStmt(call_expr(*target, args, self.resolver)));
+                out.push(CStmt::ExprStmt(call_expr(
+                    *target,
+                    args,
+                    self.resolver,
+                    self.recovered.names,
+                )));
             }
             (None, SsaOp::Opaque { mnemonic, args }) => {
-                out.push(CStmt::ExprStmt(opaque_expr(mnemonic, args)));
+                out.push(CStmt::ExprStmt(opaque_expr(
+                    mnemonic,
+                    args,
+                    self.recovered.names,
+                )));
             }
             (None, _) => {
                 // Value-producing op with no destination — should not
@@ -588,7 +609,7 @@ impl<'a> LowerCtx<'a> {
             (Some(dst), op) => {
                 let expr = self.lower_value_op(*dst, op);
                 out.push(CStmt::Assign {
-                    name: value_name(*dst),
+                    name: value_name(*dst, self.recovered.names),
                     value: expr,
                 });
             }
@@ -596,35 +617,36 @@ impl<'a> LowerCtx<'a> {
     }
 
     fn lower_value_op(&self, _dst: ValueId, op: &SsaOp) -> Expr {
+        let names = self.recovered.names;
         match op {
-            SsaOp::Move { src } => lower_operand(src),
-            SsaOp::Add { lhs, rhs } => binary(BinaryOp::Add, lhs, rhs),
-            SsaOp::Sub { lhs, rhs } => binary(BinaryOp::Sub, lhs, rhs),
-            SsaOp::Mul { lhs, rhs } => binary(BinaryOp::Mul, lhs, rhs),
-            SsaOp::And { lhs, rhs } => binary(BinaryOp::BitAnd, lhs, rhs),
-            SsaOp::Or { lhs, rhs } => binary(BinaryOp::BitOr, lhs, rhs),
-            SsaOp::Xor { lhs, rhs } => binary(BinaryOp::BitXor, lhs, rhs),
-            SsaOp::Shl { lhs, rhs } => binary(BinaryOp::Shl, lhs, rhs),
-            SsaOp::Shr { lhs, rhs } => binary(BinaryOp::Shr, lhs, rhs),
+            SsaOp::Move { src } => lower_operand(src, names),
+            SsaOp::Add { lhs, rhs } => binary(BinaryOp::Add, lhs, rhs, names),
+            SsaOp::Sub { lhs, rhs } => binary(BinaryOp::Sub, lhs, rhs, names),
+            SsaOp::Mul { lhs, rhs } => binary(BinaryOp::Mul, lhs, rhs, names),
+            SsaOp::And { lhs, rhs } => binary(BinaryOp::BitAnd, lhs, rhs, names),
+            SsaOp::Or { lhs, rhs } => binary(BinaryOp::BitOr, lhs, rhs, names),
+            SsaOp::Xor { lhs, rhs } => binary(BinaryOp::BitXor, lhs, rhs, names),
+            SsaOp::Shl { lhs, rhs } => binary(BinaryOp::Shl, lhs, rhs, names),
+            SsaOp::Shr { lhs, rhs } => binary(BinaryOp::Shr, lhs, rhs, names),
             SsaOp::Neg { src } => Expr::Unary {
                 op: UnaryOp::Neg,
-                expr: Box::new(lower_operand(src)),
+                expr: Box::new(lower_operand(src, names)),
             },
             SsaOp::Not { src } => Expr::Unary {
                 op: UnaryOp::BitNot,
-                expr: Box::new(lower_operand(src)),
+                expr: Box::new(lower_operand(src, names)),
             },
             SsaOp::Compare { kind, lhs, rhs } => Expr::Binary {
                 op: compare_to_binary_op(*kind),
-                lhs: Box::new(lower_operand(lhs)),
-                rhs: Box::new(lower_operand(rhs)),
+                lhs: Box::new(lower_operand(lhs, names)),
+                rhs: Box::new(lower_operand(rhs, names)),
             },
             SsaOp::Load { address, width } => Expr::Load {
                 ty: int_type_for_width(*width),
-                address: Box::new(lower_operand(address)),
+                address: Box::new(lower_operand(address, names)),
             },
-            SsaOp::Call { target, args } => call_expr(*target, args, self.resolver),
-            SsaOp::Opaque { mnemonic, args } => opaque_expr(mnemonic, args),
+            SsaOp::Call { target, args } => call_expr(*target, args, self.resolver, names),
+            SsaOp::Opaque { mnemonic, args } => opaque_expr(mnemonic, args, names),
             SsaOp::Store { .. } => {
                 // Stores have no `dst`, handled in the caller. If we get
                 // here the IR is inconsistent — render an Opaque so the
@@ -650,7 +672,7 @@ impl<'a> LowerCtx<'a> {
         let layout = structs.pointer_structs.get(&base)?;
         let field_name = field_name_at(layout, offset)?;
         Some(MatchedField {
-            base_name: value_name(base),
+            base_name: value_name(base, self.recovered.names),
             offset,
             field_name,
         })
@@ -730,9 +752,9 @@ fn map_ir_type(ty: &IrType) -> Option<CType> {
     }
 }
 
-fn lower_operand(op: &Operand) -> Expr {
+fn lower_operand(op: &Operand, names: Option<&NameTable>) -> Expr {
     match op {
-        Operand::Value(v) => Expr::Var(value_name(*v)),
+        Operand::Value(v) => Expr::Var(value_name(*v, names)),
         Operand::Const(c) => Expr::IntLit {
             value: *c,
             signed: true,
@@ -741,15 +763,20 @@ fn lower_operand(op: &Operand) -> Expr {
     }
 }
 
-fn binary(op: BinaryOp, lhs: &Operand, rhs: &Operand) -> Expr {
+fn binary(op: BinaryOp, lhs: &Operand, rhs: &Operand, names: Option<&NameTable>) -> Expr {
     Expr::Binary {
         op,
-        lhs: Box::new(lower_operand(lhs)),
-        rhs: Box::new(lower_operand(rhs)),
+        lhs: Box::new(lower_operand(lhs, names)),
+        rhs: Box::new(lower_operand(rhs, names)),
     }
 }
 
-fn call_expr(target: Option<u64>, args: &[Operand], resolver: &NameResolver) -> Expr {
+fn call_expr(
+    target: Option<u64>,
+    args: &[Operand],
+    resolver: &NameResolver,
+    names: Option<&NameTable>,
+) -> Expr {
     let target_expr = match target {
         Some(addr) => match resolver.get(&addr) {
             Some(name) => Expr::Var(name.clone()),
@@ -759,22 +786,22 @@ fn call_expr(target: Option<u64>, args: &[Operand], resolver: &NameResolver) -> 
     };
     Expr::Call {
         target: Box::new(target_expr),
-        args: args.iter().map(lower_operand).collect(),
+        args: args.iter().map(|a| lower_operand(a, names)).collect(),
     }
 }
 
-fn opaque_expr(mnemonic: &str, args: &[Operand]) -> Expr {
+fn opaque_expr(mnemonic: &str, args: &[Operand], names: Option<&NameTable>) -> Expr {
     let mut body = String::from(mnemonic);
     for arg in args {
         body.push(' ');
-        body.push_str(&format_operand(arg));
+        body.push_str(&format_operand(arg, names));
     }
     Expr::Opaque(body)
 }
 
-fn format_operand(op: &Operand) -> String {
+fn format_operand(op: &Operand, names: Option<&NameTable>) -> String {
     match op {
-        Operand::Value(v) => value_name(*v),
+        Operand::Value(v) => value_name(*v, names),
         Operand::Const(c) => format!("{c}"),
         Operand::Undef => "undef".into(),
     }
@@ -814,17 +841,28 @@ fn phi_at(ssa: &SsaFunction, r: SsaRef) -> &Phi {
     &ssa.block(r.block).phis[r.index as usize]
 }
 
-fn format_phi_comment(phi: &Phi) -> String {
-    let mut s = format!("phi {} <-", value_name(phi.dst));
+fn format_phi_comment(phi: &Phi, names: Option<&NameTable>) -> String {
+    let mut s = format!("phi {} <-", value_name(phi.dst, names));
     for (pred, op) in &phi.incoming {
-        s.push_str(&format!(" (bb{pred}: {})", format_operand(op)));
+        s.push_str(&format!(" (bb{pred}: {})", format_operand(op, names)));
     }
     s
 }
 
+/// Render the C identifier for an SSA value.
+///
+/// When a heuristic [`NameTable`] entry exists for `id` (B3.7) its
+/// disambiguated name is returned verbatim; otherwise the call
+/// falls back to the `v<id>` shape that B2.8 introduced. The
+/// fallback path keeps the C output well-formed even when the
+/// recovery pipeline produced no naming table at all (orchestrator
+/// stub paths, tests, hand-built fixtures).
 #[must_use]
-pub(crate) fn value_name(id: ValueId) -> String {
-    format!("v{id}")
+pub(crate) fn value_name(id: ValueId, names: Option<&NameTable>) -> String {
+    names
+        .and_then(|t| t.lookup(id))
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("v{id}"))
 }
 
 #[cfg(test)]

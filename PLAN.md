@@ -49,20 +49,10 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-**Recommended execution order before M4:** B3.7.
-Rationale: every M2/M3 recovery pass exists in `dac-recovery` /
-`dac-analysis` today; B3.8 + B3.9 + B3.10 wired the
-`InstructionIr → RawFunction → SsaFunction → SemFunction →
-C AST` bridge into `--target c -O1`; B3.6 added the user-hint
-overlay so renames and typed signatures land end-to-end. B3.7
-is the last deterministic-naming batch before M4 opens.
-
-### B3.7 — Variable naming heuristics
-- Name candidates from API context, string usage, common patterns (spec
-  §11.1).
-- Deterministic only at this milestone — no AI yet.
-- **Done when:** generated names beat `v1, v2, v3` on the corpus per a
-  measurable rubric (heuristic-name coverage %).
+*All M3 numbered batches complete — see
+[CHANGELOG.md](./CHANGELOG.md). M4 opens next; the B3 follow-up
+shelf below remains the queue of pre-M4 work that can still land
+as numbered batches if we choose to clear them first.*
 
 ### B3 follow-up shelf
 
@@ -157,6 +147,28 @@ they are listed here so they stay visible.
   follow-up.
 - **Mach-O parser** (FR-3). The format is detected and the model has a
   `BinaryFormat::MachO` variant, but no parser populates it.
+- **Loop-induction & counter naming** (B3.7 follow-up, spec
+  §11.1). `dac-recovery::names` ships API-context and string-literal
+  heuristics at B3.7; loop-induction (`i` / `j` / `k`),
+  counter-pattern (`count` for `+= 1` lhs), and allocator-size
+  (`size` from arithmetic adjacent to a `malloc` call) need
+  per-function dataflow reasoning that the next batch can layer
+  on top of the existing pass.
+- **PLT-stub naming on ELF** (B3.7 surfaced, FR-N spec §11.1).
+  `BinaryImportResolver::resolve` consults `model.symbols` and
+  `imports_by_va` but does not walk the PLT trampoline at
+  `.plt.sec` / `.plt.got` so direct calls into the trampoline
+  decode as `fn_<va>` unbound. Threading the PLT-target →
+  import-name map into the resolver lights up API-context naming
+  (and the type-propagation seeds it already powers) on
+  unstripped ELF binaries — `tests/golden/hello-elf-o1-c` then
+  reaches the same naming coverage the PE corpus already does.
+- **Hint-driven naming** (B3.7 follow-up, FR-20). The
+  [`Hints::find_function`] path is consumed only by the type
+  overlay today; threading a `function.rename` into
+  `NameTable::values` for the matching call sites' arguments
+  would let a hint propagate names downstream as the user
+  already expects from the rename field.
 
 ---
 

@@ -3096,6 +3096,113 @@ counter), FR-20 (user-supplied signatures and type hints land
 end-to-end), I-2 (every hint enters the evidence graph), I-3
 (every hint-driven retyping carries `Source::UserHint`).
 
+### B3.7 — Variable naming heuristics (FR-N spec §11.1, NFR-9, I-3)
+
+**Closes B3.7 and clears the last numbered M3 batch.** Two
+deterministic naming heuristics now ship in `dac-recovery::names`
+and feed the C backend in place of the `v<id>` fallback.
+
+- **`dac-recovery::names` (new module).** Exposes
+  `recover_names(ssa, signature, &dyn ApiResolver, &dyn StringResolver)
+  -> NameTable`. `NameTable` carries the disambiguated identifier
+  per SSA `ValueId` plus a `provenance` table that records the
+  candidate, the [`NameSource`] (`ApiContext` / `StringRef`), and a
+  `Source::Derived` [`Confidence`] of `NAME_CONFIDENCE = 0.80`
+  (I-3). The pass walks `ssa.blocks` in source order; values
+  belonging to convention-inferred parameters are skipped so the
+  backend's `argN` parameter naming still wins.
+- **API-context heuristic.** For each `SsaOp::Call { target:
+  Some(va), args }` whose `va` resolves through the supplied
+  [`ApiResolver`] to a `dac_knowledge::ApiSignature`, the i-th
+  positional argument that is an `Operand::Value(v)` earns the
+  catalogue parameter name (`open` → `path`, `flags`; `memcpy` →
+  `dst`, `src`; `malloc` → `n`; etc.). Variadic tails are
+  skipped — out-of-arity slots have no catalogue name. Reserved
+  C keywords get a trailing `_` so the round-trip compile gate
+  stays green.
+- **String-literal heuristic.** For each `SsaOp::Move { src:
+  Operand::Const(c) }`, the new `StringResolver` looks `c` up in
+  the binary's `.rodata` strings. When the lookup hits, the text
+  is slugified into `str_<lowercased_alnum>` (camel-case &
+  punctuation collapse to `_`; trailing underscores trimmed;
+  slug truncates at `MAX_STRING_LEN_FOR_NAME = 24` payload
+  chars). Payloads shorter than `MIN_STRING_LEN_FOR_NAME = 2` do
+  not contribute — empty / whitespace strings carry no signal.
+- **Conflict resolution.** When several heuristics agree on a
+  value, `NameSource`'s declaration order wins (`ApiContext >
+  StringRef`). When multiple values share the same base
+  candidate, deterministic disambiguation walks the BTree in
+  ascending `ValueId` and appends `_1`, `_2`, … to subsequent
+  occurrences so the disambiguated map is byte-stable across
+  runs.
+- **C backend plumb-through.** `dac-backend-c::lower::Recovered<'a>`
+  gains an `Option<&'a NameTable>` field. `value_name(id,
+  names)` now reads through the table before falling back to
+  `format!("v{id}")`. Every free helper that printed a value —
+  `lower_operand`, `format_operand`, `binary`, `call_expr`,
+  `opaque_expr`, `format_phi_comment` — takes the optional
+  table and threads it through. `Recovered::new` gained a 4th
+  parameter; the CLI is the only call-site so the breaking
+  change is local.
+- **CLI orchestration.** `LiftCtx` gained a `BinaryStringResolver`
+  that pre-computes a `VA → &str` map over `BinaryModel::strings`
+  filtered to `SectionKind::ReadOnlyData` — write-target VAs
+  matching `.data` bytes are deliberately skipped because the
+  bytes there might just as easily be numbers, padding, or
+  struct payloads (I-6: never invent semantics). `lift_one`
+  runs `recover_names(...)` after the type / convention /
+  struct / idiom passes complete and after the user-hint
+  overlay so heuristic names see the final post-overlay shape
+  of the convention's parameter set. The new
+  `RecoveryFacts::names` field is stored alongside the existing
+  `types` / `structs` / `idioms` / `user_hint` channels.
+- **Confidence-report rubric (the "done when").** `--emit-report`'s
+  recovery row gained a `;; naming:` line counting
+  `named_values={X} / {Y} ({pct}% heuristic coverage)`. `Y` is
+  every defined SSA value minus the convention's inferred parameter
+  slots (which the backend already names `argN`). `X` is the sum
+  of `NameTable::named_count()` across every `LiftOutcome::Real`.
+  The B3.7 corpus rubric is satisfied: the PE `hello-x86_64.exe`
+  golden now emits twelve heuristic identifiers — `dst`, `src`,
+  `size`, `status`, `n`, `n_1`, `n_2`, `n_3`, `n_4`, etc. — where
+  B3.10 would have shown only `v<id>`s.
+- **Golden corpus refresh.** `hello-elf-o0-report` and
+  `hello-elf-o1-c-hints` reports gained the new `;; naming:`
+  line. `hello-pe-o1-c/source.c` regenerated to show the
+  recovered names threaded through the lowering output (98-line
+  diff of `v206 → n`, `v207 → size`, `v208 → dst` shapes).
+- **Testing.** Eleven unit tests in `dac-recovery::names` cover
+  the API-context heuristic on `strlen` / `open` / `puts`,
+  parameter-skip behaviour, repeated-`s` disambiguation, variadic
+  tail handling, the string slugifier (`Hello, world! → str_hello_world`,
+  `ALL_CAPS → str_all_caps`, empty / single-char payloads
+  rejected), keyword sanitisation (`int → int_`), the
+  `ApiContext > StringRef` precedence rule, and a determinism
+  property that confirms two runs on identical SSA produce
+  identical `NameTable`s.
+- **Limitations (B3 follow-up shelf).**
+  1. *Loop-induction and counter naming.* `i` / `j` / `k` for
+     loop scrutinees, `count` for `+= 1` lhs values, and
+     allocator-size naming all need per-function dataflow
+     reasoning that this batch does not introduce.
+  2. *PLT-stub naming on ELF.* `BinaryImportResolver::resolve`
+     does not yet walk the `.plt.sec` trampoline, so direct
+     ELF calls into the PLT lower as `fn_<va>` and earn no
+     API-context names — the same gap the type-propagation pass
+     has at B2.6 surfaces here. The PE corpus does not hit this
+     because PE symbols carry the import VA directly.
+  3. *Hint-driven naming.* A function `[[function]]` hint with
+     `rename = "foo"` overrides the symbol but does not yet
+     propagate that name into the surrounding call sites' arg
+     values; threading `Hints::find_function` into
+     `recover_names` is the obvious next step.
+
+Closes: B3.7, FR-N (spec §11.1 — naming heuristics).
+Touches: I-3 (every name carries a `Source::Derived`
+[`Confidence`]), NFR-9 (`recover_names` is `Determinism::Pure`,
+BTree-iterated, deterministic), FR-25 (`--emit-report` surfaces
+the heuristic-name coverage metric).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

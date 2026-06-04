@@ -268,7 +268,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int8_t v203 = 0LL;
     int64_t v204 = 0LL;
     int64_t v205 = 0LL;
-    int64_t v206 = 0LL;
+    int64_t n = 0LL;
     int64_t v207 = 0LL;
     int64_t v208 = 0LL;
     int64_t v209 = 0LL;
@@ -344,8 +344,8 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int64_t v279 = 0LL;
     int64_t v280 = 0LL;
     int64_t v281 = 0LL;
-    int64_t v282 = 0LL;
-    int64_t v283 = 0LL;
+    int64_t s = 0LL;
+    int64_t src = 0LL;
     int64_t v284 = 0LL;
     int64_t v285 = 0LL;
     int64_t v286 = 0LL;
@@ -355,7 +355,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int64_t v290 = 0LL;
     int64_t v291 = 0LL;
     int64_t v292 = 0LL;
-    int64_t v293 = 0LL;
+    int64_t dst = 0LL;
     int64_t v294 = 0LL;
     int64_t v295 = 0LL;
     int64_t v296 = 0LL;
@@ -367,7 +367,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int64_t v302 = 0LL;
     int64_t v303 = 0LL;
     int64_t v304 = 0LL;
-    int64_t v305 = 0LL;
+    int64_t n_1 = 0LL;
     int64_t v306 = 0LL;
     int64_t v307 = 0LL;
     int64_t v308 = 0LL;
@@ -417,7 +417,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int64_t v352 = 0LL;
     int64_t v353 = 0LL;
     int64_t v354 = 0LL;
-    int64_t v355 = 0LL;
+    int64_t status = 0LL;
     int64_t v356 = 0LL;
     int64_t v357 = 0LL;
     int64_t v358 = 0LL;
@@ -478,7 +478,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     v48 = (v47 == 1LL);
     if (v48) {
 L0:;
-        /* phi v363 <- (bb6: v29) (bb79: v355) */
+        /* phi v363 <- (bb6: v29) (bb79: status) */
         /* phi v364 <- (bb6: v22) (bb79: v356) */
         /* phi v365 <- (bb6: v36) (bb79: v358) */
         /* phi v366 <- (bb6: v37) (bb79: v359) */
@@ -509,7 +509,7 @@ L0:;
             v142 = (v141 != 0LL);
             if (v142) {
                 v347 = ((long long (*)(long long, long long, long long, long long, long long, long long))abort)(v29, v140, v134, v138, v133, v132);
-                /* phi v348 <- (bb48: v206) (bb77: v29) */
+                /* phi v348 <- (bb48: n) (bb77: v29) */
                 /* phi v349 <- (bb48: v207) (bb77: v140) */
                 /* phi v350 <- (bb48: v237) (bb77: v134) */
                 /* phi v351 <- (bb48: v210) (bb77: v133) */
@@ -517,14 +517,14 @@ L0:;
                 v353 = 10LL;
                 v354 = ((long long (*)(long long, long long, long long, long long, long long, long long))_amsg_exit)(v348, v349, v350, v353, v351, v352);
 L1:;
-                /* phi v355 <- (bb14: v54) (bb78: v348) */
+                /* phi status <- (bb14: v54) (bb78: v348) */
                 /* phi v356 <- (bb14: v55) (bb78: v349) */
                 /* phi v357 <- (bb14: v87) (bb78: v354) */
                 /* phi v358 <- (bb14: v86) (bb78: v350) */
                 /* phi v359 <- (bb14: v80) (bb78: v351) */
                 /* phi v360 <- (bb14: v60) (bb78: v352) */
                 v361 = v357;
-                v362 = ((long long (*)(long long, long long, long long, long long, long long, long long))exit)(v355, v356, v358, v361, v359, v360);
+                v362 = ((long long (*)(long long, long long, long long, long long, long long, long long))exit)(status, v356, v358, v361, v359, v360);
                 goto L0;
             } else {
                 v143 = ((long long (*)(long long, long long, long long, long long, long long, long long))_pei386_runtime_relocator)(v29, v140, v134, v138, v133, v132);
@@ -626,27 +626,27 @@ L1:;
                     v204 = 1LL;
                     v205 = ((long long (*)(long long, long long, long long, long long, long long, long long))__set_app_type)(v29, v193, v194, v204, v201, v195);
                 }
-                /* phi v206 <- (bb40: v29) (bb65: v340) */
+                /* phi n <- (bb40: v29) (bb65: v340) */
                 /* phi v207 <- (bb40: v193) (bb65: v341) */
                 /* phi v208 <- (bb40: v204) (bb65: v345) */
                 /* phi v209 <- (bb40: v194) (bb65: v342) */
                 /* phi v210 <- (bb40: v201) (bb65: v343) */
                 /* phi v211 <- (bb40: v195) (bb65: v344) */
-                v212 = ((long long (*)(long long, long long, long long, long long, long long, long long))__p__fmode)(v206, v207, v209, v208, v210, v211);
+                v212 = ((long long (*)(long long, long long, long long, long long, long long, long long))__p__fmode)(n, v207, v209, v208, v210, v211);
                 v213 = (v23 + 5368726832LL);
                 v214 = (*((int64_t *)(v213)));
                 v215 = v214;
                 v216 = (*((int32_t *)(v215)));
                 v217 = v216;
                 *((int32_t *)(v212)) = v217;
-                v218 = ((long long (*)(long long, long long, long long, long long, long long, long long))__p__commode)(v206, v207, v217, v208, v210, v211);
+                v218 = ((long long (*)(long long, long long, long long, long long, long long, long long))__p__commode)(n, v207, v217, v208, v210, v211);
                 v219 = (v23 + 5368726800LL);
                 v220 = (*((int64_t *)(v219)));
                 v221 = v220;
                 v222 = (*((int32_t *)(v221)));
                 v223 = v222;
                 *((int32_t *)(v218)) = v223;
-                v224 = ((long long (*)(long long, long long, long long, long long, long long, long long))_setargv)(v206, v207, v223, v208, v210, v211);
+                v224 = ((long long (*)(long long, long long, long long, long long, long long, long long))_setargv)(n, v207, v223, v208, v210, v211);
                 /* structurally unreachable: block 44 */
                 __builtin_unreachable();
             }
@@ -2151,7 +2151,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v20 = 0LL;
     int64_t v21 = 0LL;
     int32_t v22 = 0LL;
-    int64_t v23 = 0LL;
+    int64_t src = 0LL;
     int64_t v24 = 0LL;
     int8_t v25 = 0LL;
     int64_t v26 = 0LL;
@@ -2198,7 +2198,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v67 = 0LL;
     int64_t v68 = 0LL;
     int64_t v69 = 0LL;
-    int64_t v70 = 0LL;
+    int64_t dst = 0LL;
     int64_t v71 = 0LL;
     int64_t v72 = 0LL;
     int64_t v73 = 0LL;
@@ -2272,7 +2272,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v141 = 0LL;
     int64_t v142 = 0LL;
     int64_t v143 = 0LL;
-    int64_t v144 = 0LL;
+    int64_t n = 0LL;
     int64_t v145 = 0LL;
     int64_t v146 = 0LL;
     int8_t v147 = 0LL;
@@ -2289,7 +2289,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v158 = 0LL;
     int64_t v159 = 0LL;
     int64_t v160 = 0LL;
-    int64_t v161 = 0LL;
+    int64_t n_1 = 0LL;
     int64_t v162 = 0LL;
     int64_t v163 = 0LL;
     int8_t v164 = 0LL;
@@ -2304,7 +2304,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v173 = 0LL;
     int64_t v174 = 0LL;
     int64_t v175 = 0LL;
-    int64_t v176 = 0LL;
+    int64_t n_2 = 0LL;
     int64_t v177 = 0LL;
     int64_t v178 = 0LL;
     int8_t v179 = 0LL;
@@ -2328,7 +2328,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v197 = 0LL;
     int64_t v198 = 0LL;
     int64_t v199 = 0LL;
-    int64_t v200 = 0LL;
+    int64_t n_3 = 0LL;
     int64_t v201 = 0LL;
     int64_t v202 = 0LL;
     int64_t v203 = 0LL;
@@ -2421,7 +2421,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v290 = 0LL;
     int64_t v291 = 0LL;
     int64_t v292 = 0LL;
-    int64_t v293 = 0LL;
+    int64_t n_4 = 0LL;
     int64_t v294 = 0LL;
     int64_t v295 = 0LL;
     int64_t v296 = 0LL;
@@ -2448,14 +2448,14 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     v19 = v18;
     v21 = (v20 + 5368742144LL);
     v22 = (*((int32_t *)(v21)));
-    v23 = v22;
-    v24 = (v23 & v23);
+    src = v22;
+    v24 = (src & src);
     v25 = (v24 == 0LL);
     if (v25) {
         v54 = (v20 + 5368742144LL);
         /* recovered field: base=v20 offset=0x140008100 field=field_140008100 */
         *((int32_t *)(v54)) = 1LL;
-        v59 = ((long long (*)(long long, long long, long long, long long, long long, long long))__mingw_GetSectionCount)(v12, v23, v55, v56, v57, v58);
+        v59 = ((long long (*)(long long, long long, long long, long long, long long, long long))__mingw_GetSectionCount)(v12, src, v55, v56, v57, v58);
         (/* opaque: cdqe */ 0);
         v60 = (v59 * 4LL);
         v61 = (v59 + v60);
@@ -2464,10 +2464,10 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
         v64 = (15LL + v63);
         v65 = v64;
         v66 = (v65 & -16LL);
-        v67 = ((long long (*)(long long, long long, long long, long long, long long, long long))fn_1400027e0)(v12, v23, v55, v56, v57, v58);
+        v67 = ((long long (*)(long long, long long, long long, long long, long long, long long))fn_1400027e0)(v12, src, v55, v56, v57, v58);
         v68 = (v20 + 5368726544LL);
         v69 = (*((int64_t *)(v68)));
-        v70 = v69;
+        dst = v69;
         v71 = (v20 + 5368726560LL);
         v72 = (*((int64_t *)(v71)));
         v73 = v72;
@@ -2480,7 +2480,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
         v78 = (v20 + 5368742152LL);
         /* recovered field: base=v20 offset=0x140008108 field=field_140008108 */
         *((int64_t *)(v78)) = v77;
-        v79 = v70;
+        v79 = dst;
         v80 = (v79 - v73);
         v81 = (v80 <= 7LL);
         if (v81) {
@@ -2527,7 +2527,7 @@ L2:;
                     /* phi v267 <- (bb6: v87) (bb7: v87) (bb38: v55) (bb39: v55) */
                     /* phi v268 <- (bb6: v84) (bb7: v84) (bb38: v57) (bb39: v256) */
                     /* phi v269 <- (bb6: v85) (bb7: v85) (bb38: v251) (bb39: v251) */
-                    v270 = (v265 >= v70);
+                    v270 = (v265 >= dst);
                     if (v270) {
                     } else {
                         v271 = (v20 + 5368726528LL);
@@ -2537,7 +2537,7 @@ L2:;
                         v275 = v274;
                         while (1) {
                             /* phi v276 <- (bb41: v265) (bb44: v284) */
-                            /* phi v277 <- (bb41: v267) (bb44: v293) */
+                            /* phi v277 <- (bb41: v267) (bb44: n_4) */
                             /* phi v278 <- (bb41: v268) (bb44: v292) */
                             v279 = (v276 + 4LL);
                             v280 = (*((int32_t *)(v279)));
@@ -2552,13 +2552,13 @@ L2:;
                             v289 = v288;
                             v290 = (v19 + -8LL);
                             *((int32_t *)(v290)) = v287;
-                            v291 = ((long long (*)(long long, long long, long long, long long, long long, long long))mark_section_writable)(v70, v23, v277, v289, v278, v269);
+                            v291 = ((long long (*)(long long, long long, long long, long long, long long, long long))mark_section_writable)(dst, src, v277, v289, v278, v269);
                             v292 = 4LL;
-                            v293 = v275;
+                            n_4 = v275;
                             v294 = (v281 + v273);
                             v295 = v294;
-                            v296 = ((long long (*)(long long, long long, long long, long long, long long, long long))memcpy)(v70, v23, v293, v295, v292, v269);
-                            v297 = (v284 < v70);
+                            v296 = ((long long (*)(long long, long long, long long, long long, long long, long long))memcpy)(dst, src, n_4, v295, v292, v269);
+                            v297 = (v284 < dst);
                             if (v297) {
                                 continue;
                             } else {
@@ -2580,7 +2580,7 @@ L1:;
                             v224 = v223;
                             v225 = (v216 ^ v216);
                             while (1) {
-                                /* phi v226 <- (bb32: v23) (bb35: v245) */
+                                /* phi v226 <- (bb32: src) (bb35: v245) */
                                 /* phi v227 <- (bb32: v225) (bb35: v246) */
                                 v228 = (v20 + 5368742152LL);
                                 v229 = (*((int64_t *)(v228)));
@@ -2644,7 +2644,7 @@ L3:;
                                 /* phi v211 <- (bb8: v98) (bb67: v122) */
                                 v212 = (v20 + 5368726176LL);
                                 v213 = v212;
-                                v214 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(v70, v23, v209, v213, v210, v211);
+                                v214 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(dst, src, v209, v213, v210, v211);
                                 /* structurally unreachable: block 69 */
                                 __builtin_unreachable();
                             } else {
@@ -2654,7 +2654,7 @@ L3:;
                                 v106 = v105;
                                 v107 = (v19 + -8LL);
                                 v108 = v107;
-                                v109 = (v103 < v70);
+                                v109 = (v103 < dst);
                                 if (v109) {
                                     while (1) {
                                         /* phi v110 <- (bb9: v103) (bb21: v126) (bb29: v172) */
@@ -3367,8 +3367,8 @@ int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
-    int64_t v19 = 0LL;
-    int64_t v20 = 0LL;
+    int64_t n = 0LL;
+    int64_t size = 0LL;
     int64_t v21 = arg2;
     int64_t v22 = 0LL;
     int64_t v23 = 0LL;
@@ -3413,7 +3413,7 @@ int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
         v18 = (v1 + 64LL);
         /* recovered field: base=v1 offset=0x40 field=field_40 */
         *((int32_t *)(v18)) = v7;
-        v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))calloc)(v19, v20, v17, v16, v21, v7);
+        v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))calloc)(n, size, v17, v16, v21, v7);
         v23 = (v22 & v22);
         v24 = (v23 == 0LL);
         if (v24) {
@@ -3434,7 +3434,7 @@ int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
             v34 = (v22 + 8LL);
             /* recovered field: base=v22 offset=0x8 field=field_8 */
             *((int64_t *)(v34)) = v30;
-            v35 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v19, v20, v17, v33, v30, v27);
+            v35 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(n, size, v17, v33, v30, v27);
             v36 = (v2 + 5368742208LL);
             v37 = (*((int64_t *)(v36)));
             v38 = v37;
@@ -3447,7 +3447,7 @@ int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
             *((int64_t *)(v44)) = v38;
             /* recovered field: base=v2 offset=0x140008140 field=field_140008140 */
             *((int64_t *)(v36)) = v41;
-            v46 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v19, v20, v38, v43, v30, v27);
+            v46 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(n, size, v38, v43, v30, v27);
 L0:;
             /* phi v10 <- (bb0: v5) (bb8: v46) */
             v11 = (v10 ^ v10);
@@ -3489,7 +3489,7 @@ int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2
     int64_t v11 = arg0;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
-    int64_t v14 = 0LL;
+    int64_t p = 0LL;
     int64_t v15 = 0LL;
     int64_t v16 = arg1;
     int64_t v17 = arg2;
@@ -3539,7 +3539,7 @@ int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2
         *((int32_t *)(v10)) = v11;
         v12 = (v2 + 5368742240LL);
         v13 = v12;
-        v19 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v14, v15, v16, v13, v17, v18);
+        v19 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(p, v15, v16, v13, v17, v18);
         v20 = (v2 + 5368742208LL);
         v21 = (*((int64_t *)(v20)));
         v22 = v21;
@@ -3567,7 +3567,7 @@ int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2
         /* phi v46 <- (bb4: v17) (bb7: v36) (bb12: v30) */
         v47 = (v2 + 5368742240LL);
         v48 = v47;
-        v49 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v14, v15, v45, v48, v46, v18);
+        v49 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(p, v15, v45, v48, v46, v18);
         v50 = (v49 ^ v49);
         v51 = (v1 + 40LL);
         return v50;
@@ -3890,7 +3890,7 @@ int64_t _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t a
     int64_t v8 = 0LL;
     int64_t v9 = 0LL;
     int64_t v10 = arg3;
-    int64_t v11 = 0LL;
+    int64_t s = 0LL;
     int64_t v12 = arg2;
     int64_t v13 = arg4;
     int64_t v14 = arg5;
@@ -3962,8 +3962,8 @@ int64_t _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t a
     v7 = (v5 - 8LL);
     *((int64_t *)(v7)) = v8;
     v9 = (v7 - 40LL);
-    v11 = v10;
-    v15 = ((long long (*)(long long, long long, long long, long long, long long, long long))strlen)(v11, v6, v12, v10, v13, v14);
+    s = v10;
+    v15 = ((long long (*)(long long, long long, long long, long long, long long, long long))strlen)(s, v6, v12, v10, v13, v14);
     v16 = (v15 > 8LL);
     if (v16) {
 L0:;
@@ -4008,9 +4008,9 @@ L0:;
                             /* phi v42 <- (bb9: v38) (bb12: v53) */
                             /* phi v43 <- (bb9: v41) (bb12: v54) */
                             v44 = 8LL;
-                            v45 = v11;
+                            v45 = s;
                             v46 = v43;
-                            v47 = ((long long (*)(long long, long long, long long, long long, long long, long long))strncmp)(v11, v42, v45, v46, v44, v14);
+                            v47 = ((long long (*)(long long, long long, long long, long long, long long, long long))strncmp)(s, v42, v45, v46, v44, v14);
                             v48 = (v47 & v47);
                             v49 = (v48 == 0LL);
                             if (v49) {

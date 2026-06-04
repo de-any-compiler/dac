@@ -51,9 +51,10 @@ use dac_ir::ssa::{Operand, SsaFunction, SsaTerminator};
 use dac_knowledge::{lookup_api_signature, ApiSignature, X86_64_CONVENTIONS};
 use dac_lift::lift_function;
 use dac_recovery::{
-    analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms,
-    recover_structs, ApiResolver, ConventionMatch, Function, FunctionSet, RecoveredIdioms,
-    RecoveredStructs, StackConvention, StackFrame, SwitchTableIdiom, TypeMap, ValueType,
+    analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms, recover_names,
+    recover_structs, ApiResolver, ConventionMatch, Function, FunctionSet, NameTable,
+    RecoveredIdioms, RecoveredStructs, StackConvention, StackFrame, StringResolver,
+    SwitchTableIdiom, TypeMap, ValueType,
 };
 
 /// Per-function outcome of the orchestrator.
@@ -91,6 +92,10 @@ pub(crate) struct RecoveryFacts {
     pub structs: RecoveredStructs,
     pub idioms: RecoveredIdioms,
     pub user_hint: Option<AppliedHint>,
+    /// Variable-naming heuristic table (B3.7, FR-N spec §11.1).
+    /// Maps SSA `ValueId`s to heuristic identifiers (`path`, `fmt`,
+    /// `str_hello`, …) the C backend renders in place of `v<id>`.
+    pub names: NameTable,
 }
 
 /// Summary of the user hint applied to a function. Surfaces in
@@ -115,6 +120,11 @@ struct LiftCtx<'a> {
     register_file: &'a RegisterFile,
     stack_convention: StackConvention,
     api_resolver: BinaryImportResolver,
+    /// Maps a virtual address that appears as an
+    /// [`dac_ir::ssa::Operand::Const`] to the extracted string
+    /// content at that VA. Backs the B3.7 string-literal naming
+    /// heuristic.
+    string_resolver: BinaryStringResolver,
     /// User-supplied hints (B3.6, FR-20). Empty when `--hints` was
     /// not passed.
     hints: &'a Hints,
@@ -144,6 +154,7 @@ pub(crate) fn lift_all(
         register_file,
         stack_convention: stack_convention_for(model),
         api_resolver: BinaryImportResolver::new(model),
+        string_resolver: BinaryStringResolver::new(model),
         hints,
     };
     functions
@@ -201,6 +212,16 @@ pub(crate) struct LiftStats {
     /// Functions whose recovered facts were overlaid by a
     /// user-supplied `[[function]]` hint (B3.6, FR-20).
     pub user_hint_functions: u64,
+    /// Sum of [`NameTable::named_count`] across every `Real`
+    /// outcome (B3.7). Surfaces in `--emit-report`'s recovery row
+    /// alongside [`Self::nameable_values`] to express the
+    /// "heuristic-name coverage" rubric the B3.7 "done when"
+    /// criterion measures.
+    pub named_values: u64,
+    /// Sum of total non-parameter SSA values across every `Real`
+    /// outcome — the denominator for the heuristic-name coverage
+    /// fraction.
+    pub nameable_values: u64,
 }
 
 impl LiftStats {
@@ -208,7 +229,7 @@ impl LiftStats {
         let mut s = Self::default();
         for o in outcomes {
             match o {
-                LiftOutcome::Real { facts, .. } => {
+                LiftOutcome::Real { ssa, facts, .. } => {
                     s.real += 1;
                     if recovered_convention_is_useful(facts.convention.as_ref()) {
                         s.typed_signatures += 1;
@@ -222,11 +243,25 @@ impl LiftStats {
                     if facts.user_hint.is_some() {
                         s.user_hint_functions += 1;
                     }
+                    s.named_values += facts.names.named_count() as u64;
+                    s.nameable_values += nameable_value_count(ssa, facts.as_ref()) as u64;
                 }
                 LiftOutcome::Stub { .. } => s.stub += 1,
             }
         }
         s
+    }
+
+    /// Heuristic-name coverage fraction (B3.7, FR-N spec §11.1).
+    /// `0.0` when no values are nameable (every function lifted to
+    /// a stub or had no SSA values), saturating to `1.0` in the
+    /// degenerate case the denominator is somehow exceeded.
+    pub(crate) fn named_value_ratio(self) -> f32 {
+        if self.nameable_values == 0 {
+            0.0
+        } else {
+            (self.named_values as f32 / self.nameable_values as f32).clamp(0.0, 1.0)
+        }
     }
 
     pub(crate) fn total(self) -> u64 {
@@ -248,6 +283,24 @@ fn recovered_convention_is_useful(c: Option<&ConventionMatch>) -> bool {
         Some(c) => !c.signature.int_args.is_empty() || c.signature.return_register.is_some(),
         None => false,
     }
+}
+
+/// Count SSA values that are eligible for heuristic naming —
+/// i.e. every defined value the C backend emits as a local, minus
+/// the convention's inferred parameter slots (which the backend
+/// names `argN` from the signature, not via [`NameTable`]).
+fn nameable_value_count(ssa: &SsaFunction, facts: &RecoveryFacts) -> usize {
+    let mut params: std::collections::BTreeSet<dac_ir::ssa::ValueId> =
+        std::collections::BTreeSet::new();
+    if let Some(c) = facts.convention.as_ref() {
+        for a in &c.signature.int_args {
+            params.insert(a.value);
+        }
+    }
+    ssa.values
+        .iter()
+        .filter(|v| !params.contains(&v.id))
+        .count()
 }
 
 fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
@@ -302,6 +355,18 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     // SSA / Semantic IR — the binary stays ground truth (I-1).
     let user_hint = apply_function_hint(f, ctx.hints, &ssa, &mut convention, &mut types);
 
+    // B3.7: deterministic variable-naming heuristics. Consumes the
+    // recovered convention + API resolver + extracted strings; the
+    // result threads into the C backend's `Recovered` view in
+    // place of the `v<id>` fallback. Pure / deterministic
+    // (NFR-9) — same SSA + same resolvers → same names.
+    let names = recover_names(
+        &ssa,
+        convention.as_ref().map(|c| &c.signature),
+        &ctx.api_resolver,
+        &ctx.string_resolver,
+    );
+
     let facts = Box::new(RecoveryFacts {
         stack_frame,
         convention,
@@ -309,6 +374,7 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
         structs,
         idioms,
         user_hint,
+        names,
     });
     LiftOutcome::Real { ssa, sem, facts }
 }
@@ -534,6 +600,43 @@ impl ApiResolver for BinaryImportResolver {
     }
 }
 
+/// [`StringResolver`] backed by the binary model's extracted
+/// strings. Pre-computes a `VA → &str` map so per-function
+/// lookups stay `O(log n)` and the [`recover_names`] pass does not
+/// re-scan the entire string table for each value.
+///
+/// Only strings located in read-only data sections contribute
+/// candidates: a write-target VA matching a `.data` byte sequence
+/// would just as easily be a number, an embedded struct, or
+/// padding — naming after it would invent a fact the binary does
+/// not support (I-6).
+struct BinaryStringResolver {
+    by_va: BTreeMap<u64, String>,
+}
+
+impl BinaryStringResolver {
+    fn new(model: &BinaryModel) -> Self {
+        let mut by_va: BTreeMap<u64, String> = BTreeMap::new();
+        for s in &model.strings {
+            let Some(section) = model.sections.get(s.section) else {
+                continue;
+            };
+            if section.kind != dac_binfmt::SectionKind::ReadOnlyData {
+                continue;
+            }
+            let va = section.address.saturating_add(s.offset);
+            by_va.entry(va).or_insert_with(|| s.value.clone());
+        }
+        Self { by_va }
+    }
+}
+
+impl StringResolver for BinaryStringResolver {
+    fn resolve(&self, va: u64) -> Option<&str> {
+        self.by_va.get(&va).map(String::as_str)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -581,6 +684,7 @@ mod tests {
             structs: RecoveredStructs::default(),
             idioms: RecoveredIdioms::default(),
             user_hint: None,
+            names: NameTable::default(),
         }
     }
 

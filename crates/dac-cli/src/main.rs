@@ -527,6 +527,7 @@ fn lower_one_c_function(
                 facts.convention.as_ref().map(|c| &c.signature),
                 Some(&facts.types),
                 Some(&facts.structs),
+                Some(&facts.names),
             );
             let mut lowered = c_lower_function(ssa, sem, resolver, &recovered);
             // `lower_function` derives the name from `sem.function_name`

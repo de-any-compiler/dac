@@ -4,6 +4,7 @@
 ;; lift cover.: 81 / 82 (98.78% lifted, 1 opaque)
 ;; body cover.: 9 / 9 (100.00% real bodies, 0 stubs)
 ;; recovery:    typed_sigs=7 struct_fields=1 switch_tables=0 user_hints=0
+;; naming:      named_values=0 / 98 (0.00% heuristic coverage)
 
 functions:
   0x0000000000001000..0x000000000000101b  _init                     observed/1.000  symbol,prologue

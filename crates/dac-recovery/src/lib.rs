@@ -24,21 +24,30 @@
 //!   parameter list; iterates [`dac_ir::ty::Type::join`] through
 //!   Move / arithmetic / phi to a fixed point.
 //! - **B3.2.** struct / array recovery.
-//! - **B3.3 (this batch).** [`idioms`] — proposal-style idiom
-//!   recognition (FR-18, spec §11.4). Side-table only: scans the SSA
-//!   function for compiler-emitted jump tables on x86-64 (terminator
-//!   [`dac_ir::ssa::SsaTerminator::Indirect`] anchoring a `Load` from
-//!   `Add(base, Mul(idx, c))` / `Add(base, Shl(idx, k))`) and surfaces
-//!   them as [`idioms::SwitchTableIdiom`] records, optionally pinned
-//!   by a bounding [`dac_ir::ssa::CompareKind::Ult`] /
+//! - **B3.3.** [`idioms`] — proposal-style idiom recognition
+//!   (FR-18, spec §11.4). Side-table only: scans the SSA function
+//!   for compiler-emitted jump tables on x86-64 (terminator
+//!   [`dac_ir::ssa::SsaTerminator::Indirect`] anchoring a `Load`
+//!   from `Add(base, Mul(idx, c))` / `Add(base, Shl(idx, k))`) and
+//!   surfaces them as [`idioms::SwitchTableIdiom`] records,
+//!   optionally pinned by a bounding
+//!   [`dac_ir::ssa::CompareKind::Ult`] /
 //!   [`dac_ir::ssa::CompareKind::Ule`] in the predecessor.
-//! - **B3.7.** variable-naming heuristics.
+//! - **B3.7 (this batch).** [`names`] — variable-naming heuristics
+//!   (FR-N spec §11.1). Two deterministic heuristics ship at this
+//!   milestone: API-context names from
+//!   [`dac_knowledge::ApiSignature`] catalogues and string-literal
+//!   slugs read out of the binary's `.rodata`. The [`names::NameTable`]
+//!   is consumed by the C backend in place of the `v<id>`
+//!   fallback. Loop-induction and counter-pattern naming wait on the
+//!   B3 follow-up shelf.
 
 #![forbid(unsafe_code)]
 
 pub mod convention;
 pub mod functions;
 pub mod idioms;
+pub mod names;
 pub mod stack;
 pub mod structs;
 pub mod types;
@@ -51,6 +60,10 @@ pub use functions::{
     ENTRY_CONFIDENCE, PROLOGUE_CONFIDENCE, SYMBOL_CONFIDENCE,
 };
 pub use idioms::{recover_idioms, RecoveredIdioms, SwitchTableIdiom, SWITCH_TABLE_CONFIDENCE};
+pub use names::{
+    recover_names, NameCandidate, NameSource, NameTable, NullStringResolver, StringResolver,
+    NAME_CONFIDENCE,
+};
 pub use stack::{
     analyze_stack_frame, FramePointer, StackConvention, StackFrame, StackLocal, StackLocalKind,
 };
