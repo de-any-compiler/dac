@@ -65,18 +65,21 @@ fn o1_target_cpp_emits_cpp_sidecar_with_recovered_classes() {
         source.contains("dac --target cpp -O1 reconstruction"),
         "missing banner in:\n{source}"
     );
-    // The fixture's three user-defined classes.
+    // The fixture's three user-defined classes. Animal has no
+    // base; Dog and Cat each carry `: public Animal` because
+    // B3.11's typeinfo walker recovered the inheritance from
+    // `__si_class_type_info` shapes in `.data.rel.ro`.
     assert!(
         source.contains("class Animal {"),
         "missing Animal class in:\n{source}"
     );
     assert!(
-        source.contains("class Dog {"),
-        "missing Dog class in:\n{source}"
+        source.contains("class Dog : public Animal {"),
+        "missing Dog : public Animal inheritance clause in:\n{source}"
     );
     assert!(
-        source.contains("class Cat {"),
-        "missing Cat class in:\n{source}"
+        source.contains("class Cat : public Animal {"),
+        "missing Cat : public Animal inheritance clause in:\n{source}"
     );
     // Polymorphism: Dog and Cat carry a virtual dtor.
     assert!(

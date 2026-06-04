@@ -9,6 +9,7 @@
 // qualified: Animal
 // vtable: false
 // typeinfo: true
+// bases: (none)
 // confidence: 1.00 (Observed)
 class Animal {
 public:
@@ -18,8 +19,9 @@ public:
 // qualified: Cat
 // vtable: true
 // typeinfo: true
+// bases: Public Animal
 // confidence: 1.00 (Observed)
-class Cat {
+class Cat : public Animal {
 public:
     // dtor variants:
     //   0x11f2  _ZN3CatD0Ev
@@ -44,8 +46,9 @@ public:
 // qualified: Dog
 // vtable: true
 // typeinfo: true
+// bases: Public Animal
 // confidence: 1.00 (Observed)
-class Dog {
+class Dog : public Animal {
 public:
     // dtor variants:
     //   0x11e8  _ZN3DogD0Ev
@@ -70,6 +73,7 @@ public:
 // qualified: __cxxabiv1::__class_type_info
 // vtable: true
 // typeinfo: false
+// bases: (none)
 // confidence: 1.00 (Observed)
 class __class_type_info {
 public:
@@ -83,6 +87,7 @@ public:
 // qualified: __cxxabiv1::__si_class_type_info
 // vtable: true
 // typeinfo: false
+// bases: (none)
 // confidence: 1.00 (Observed)
 class __si_class_type_info {
 public:

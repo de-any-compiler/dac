@@ -50,7 +50,9 @@ use crate::ast::{
     AccessSpec, BaseSpec, Class, CppType, FreeFunction, Item, MemberFunction, MemberFunctionKind,
     Param, TranslationUnit,
 };
-use crate::class_recovery::{MemberCategory, RecoveredClass, RecoveredClasses, RecoveredMember};
+use crate::class_recovery::{
+    MemberCategory, RecoveredBase, RecoveredClass, RecoveredClasses, RecoveredMember,
+};
 
 /// `#include` directives every emitted C++ translation unit needs.
 #[must_use]
@@ -104,15 +106,26 @@ fn lower_class(c: &RecoveredClass) -> Class {
         }
     }
 
+    let bases_comment = if c.bases.is_empty() {
+        "(none)".to_string()
+    } else {
+        c.bases
+            .iter()
+            .map(|b| format!("{:?} {}", b.access, b.qualified_name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let class_leading_comment = Some(format!(
         "dac-recovered class\n\
          qualified: {}\n\
          vtable: {}\n\
          typeinfo: {}\n\
+         bases: {}\n\
          confidence: {:.2} ({:?})",
         c.qualified_name(),
         c.has_vtable,
         c.has_typeinfo,
+        bases_comment,
         c.confidence.value(),
         c.confidence.source(),
     ));
@@ -207,10 +220,17 @@ fn lower_class(c: &RecoveredClass) -> Class {
     Class {
         name: c.name.clone(),
         scope_chain: c.scope_chain.clone(),
-        bases: Vec::new(), // Base recovery is a B3.5 deferral; see class_recovery.rs.
+        bases: c.bases.iter().map(lower_base).collect(),
         has_vtable: c.has_vtable,
         members,
         leading_comment: class_leading_comment,
+    }
+}
+
+fn lower_base(b: &RecoveredBase) -> BaseSpec {
+    BaseSpec {
+        access: b.access,
+        qualified_name: b.qualified_name.clone(),
     }
 }
 
@@ -288,6 +308,7 @@ mod tests {
             scope_chain: Vec::new(),
             has_vtable: true,
             has_typeinfo: true,
+            bases: Vec::new(),
             members: vec![RecoveredMember {
                 name: "speak".into(),
                 mangled: "_ZNK6Animal5speakEv".into(),
@@ -308,6 +329,10 @@ mod tests {
             scope_chain: Vec::new(),
             has_vtable: true,
             has_typeinfo: true,
+            bases: vec![RecoveredBase {
+                qualified_name: "Animal".into(),
+                access: AccessSpec::Public,
+            }],
             members: vec![
                 RecoveredMember {
                     name: "Dog_ctor_v1".into(),

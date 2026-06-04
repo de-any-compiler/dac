@@ -51,10 +51,11 @@
 
 use std::collections::BTreeMap;
 
-use dac_binfmt::{BinaryModel, SymbolKind};
+use dac_binfmt::{BinaryModel, RelocationKind, SymbolKind};
 use dac_core::{Confidence, EdgeKind, EvidenceGraph, EvidenceId, EvidenceNode, IrLayer, Source};
 use dac_recovery::FunctionSet;
 
+use crate::ast::AccessSpec;
 use crate::mangle::{self, ItaniumSymbol, MemberKind};
 
 /// Default confidence value for a class observed via its mangled
@@ -95,12 +96,35 @@ pub struct RecoveredClass {
     /// Member functions discovered for the class, sorted by
     /// `(MemberSortKey, address, mangled)`.
     pub members: Vec<RecoveredMember>,
+    /// Base classes recovered from Itanium typeinfo relocations
+    /// (`__si_class_type_info` and `__vmi_class_type_info` shapes
+    /// in `.data.rel.ro`). Empty when the class has no typeinfo
+    /// symbol, when the typeinfo is `__class_type_info` (no
+    /// bases), or when the relocation table did not carry parent
+    /// pointers for it. Sorted in the order the typeinfo records
+    /// them so a binary's declared inheritance order is preserved.
+    pub bases: Vec<RecoveredBase>,
     /// Joined confidence across the contributing signals — member-
     /// function mangling, vtable symbol, typeinfo symbol.
     pub confidence: Confidence,
     /// Handle to the class's `IrNode { layer: Source }` node in the
     /// evidence graph.
     pub evidence: EvidenceId,
+}
+
+/// One recovered base class.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoveredBase {
+    /// Fully qualified parent class name (e.g. `Animal` or
+    /// `Foo::Bar`), demangled from the parent `_ZTI<chain>` symbol.
+    pub qualified_name: String,
+    /// Access specifier. B3.11 always emits [`AccessSpec::Public`]:
+    /// the lower 8 bits of `__base_class_type_info::offset_flags`
+    /// would carry public / private / virtual flags, but reading
+    /// those bytes requires plumbing the input buffer through the
+    /// recovery pass; the field is here so a future batch can
+    /// refine the access spelling without a schema change.
+    pub access: AccessSpec,
 }
 
 impl RecoveredClass {
@@ -247,6 +271,8 @@ pub fn recover_classes(
                     has_vtable: false,
                     has_typeinfo: false,
                     members: Vec::new(),
+                    typeinfo_address: None,
+                    bases: Vec::new(),
                 });
                 let (member_label, category) = match &kind {
                     MemberKind::Method { name } => (name.clone(), MemberCategory::Method),
@@ -321,6 +347,8 @@ pub fn recover_classes(
                         has_vtable: true,
                         has_typeinfo: false,
                         members: Vec::new(),
+                        typeinfo_address: None,
+                        bases: Vec::new(),
                     })
                     .has_vtable = true;
             }
@@ -330,22 +358,60 @@ pub fn recover_classes(
                     scope: scope.clone(),
                     name: name.clone(),
                 };
-                working
-                    .entry(key)
-                    .or_insert_with(|| ClassBuilder {
-                        name,
-                        scope_chain: scope,
-                        has_vtable: false,
-                        has_typeinfo: true,
-                        members: Vec::new(),
-                    })
-                    .has_typeinfo = true;
+                let builder = working.entry(key).or_insert_with(|| ClassBuilder {
+                    name,
+                    scope_chain: scope,
+                    has_vtable: false,
+                    has_typeinfo: true,
+                    members: Vec::new(),
+                    typeinfo_address: None,
+                    bases: Vec::new(),
+                });
+                builder.has_typeinfo = true;
+                // Record the typeinfo VA so the third pass can walk
+                // `__si` / `__vmi` relocations into base parents.
+                // Skip undefined / weak-undefined entries; only
+                // defined typeinfo carries usable relocations.
+                if !sym.undefined {
+                    builder.typeinfo_address = Some(sym.address);
+                }
             }
             // Other data symbols (`_ZTS*`, `_ZTT*`, free / member) are
             // not needed to identify the class — `_ZTV*` and `_ZTI*`
             // are sufficient and orthogonal.
             _ => {}
         }
+    }
+
+    // Third pass: walk typeinfo relocations into base-class
+    // parents. Itanium ABI layout in `.data.rel.ro`:
+    //
+    //   __class_type_info     { vptr, name }                     // 16 B
+    //   __si_class_type_info  { vptr, name, base }               // 24 B
+    //   __vmi_class_type_info { vptr, name, flags, count, bases[]} // 24 + 16*count B
+    //
+    // The vptr (offset 0) is a relocation against the libstdc++ /
+    // libc++abi typeinfo vtable; its target symbol name tells us
+    // which shape applies. Parent pointers live at offset 16 (SI)
+    // or 24 + 16*i (VMI).
+    let typeinfo_index = typeinfo_index_by_va(&working);
+    // Index typeinfo symbols by VA so the walker can look up the
+    // `Symbol::size` field — the primary kind discriminator.
+    let typeinfo_size_by_va: BTreeMap<u64, u64> = model
+        .symbols
+        .iter()
+        .filter(|s| !s.undefined && matches!(s.kind, SymbolKind::Data))
+        .filter(|s| {
+            mangle::parse(&s.name).is_some_and(|p| matches!(p, ItaniumSymbol::TypeInfo { .. }))
+        })
+        .map(|s| (s.address, s.size))
+        .collect();
+    for builder in working.values_mut() {
+        let Some(ti_va) = builder.typeinfo_address else {
+            continue;
+        };
+        let size = typeinfo_size_by_va.get(&ti_va).copied().unwrap_or(0);
+        builder.bases = walk_typeinfo(model, ti_va, size, &typeinfo_index);
     }
 
     // Finalise: sort, mint evidence nodes, count stats.
@@ -394,6 +460,7 @@ pub fn recover_classes(
                 has_vtable: b.has_vtable,
                 has_typeinfo: b.has_typeinfo,
                 members: b.members,
+                bases: b.bases,
                 confidence,
                 evidence: class_node,
             }
@@ -451,12 +518,167 @@ struct ClassBuilder {
     has_vtable: bool,
     has_typeinfo: bool,
     members: Vec<RecoveredMember>,
+    /// Virtual address of the `_ZTI<class>` typeinfo symbol when
+    /// one was seen. Drives the base-class walker in the third
+    /// pass.
+    typeinfo_address: Option<u64>,
+    /// Bases populated by the typeinfo walker; remains empty when
+    /// no `_ZTI<class>` symbol existed or when its kind is
+    /// `__class_type_info` (no bases).
+    bases: Vec<RecoveredBase>,
 }
 
 fn split_chain(chain: &[String]) -> (Vec<String>, String) {
     let last = chain.last().cloned().unwrap_or_default();
     let scope = chain[..chain.len().saturating_sub(1)].to_vec();
     (scope, last)
+}
+
+/// Itanium typeinfo shape inferred from the vptr relocation's
+/// target symbol name. See the third pass in [`recover_classes`]
+/// for layout details.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeInfoShape {
+    /// `__class_type_info`: no bases.
+    None,
+    /// `__si_class_type_info`: single public base at offset 16.
+    SingleInheritance,
+    /// `__vmi_class_type_info`: multiple / virtual bases starting
+    /// at offset 24, 16 bytes per entry.
+    Multiple,
+}
+
+/// Build a `VA → qualified parent name` index over the typeinfo
+/// symbols already recorded in the working bag. Used by
+/// [`walk_typeinfo`] to map a base relocation's target VA back to
+/// its parent class spelling.
+fn typeinfo_index_by_va(working: &BTreeMap<ChainKey, ClassBuilder>) -> BTreeMap<u64, String> {
+    let mut out: BTreeMap<u64, String> = BTreeMap::new();
+    for (key, b) in working {
+        if let Some(va) = b.typeinfo_address {
+            out.insert(va, qualify(&key.scope, &key.name));
+        }
+    }
+    out
+}
+
+/// Walk the typeinfo at `ti_va` and resolve its base parents.
+fn walk_typeinfo(
+    model: &BinaryModel,
+    ti_va: u64,
+    size: u64,
+    typeinfo_index: &BTreeMap<u64, String>,
+) -> Vec<RecoveredBase> {
+    let shape = classify_typeinfo_shape(model, ti_va, size);
+    match shape {
+        TypeInfoShape::None => Vec::new(),
+        TypeInfoShape::SingleInheritance => {
+            // Exactly one base pointer at offset 16.
+            let Some(parent_va) = resolve_relocation_target(model, ti_va.wrapping_add(16)) else {
+                return Vec::new();
+            };
+            let Some(qualified_name) = typeinfo_index.get(&parent_va).cloned() else {
+                return Vec::new();
+            };
+            vec![RecoveredBase {
+                qualified_name,
+                access: AccessSpec::Public,
+            }]
+        }
+        TypeInfoShape::Multiple => {
+            // Base pointers start at offset 24, every 16 bytes.
+            // Walk until we run out of relocations the index
+            // recognises. A hard cap guards against runaway in
+            // malformed binaries.
+            let mut out = Vec::new();
+            const MAX_BASES: usize = 64;
+            for i in 0..MAX_BASES {
+                let off = ti_va.wrapping_add(24 + 16 * i as u64);
+                let Some(parent_va) = resolve_relocation_target(model, off) else {
+                    break;
+                };
+                let Some(qualified_name) = typeinfo_index.get(&parent_va).cloned() else {
+                    break;
+                };
+                out.push(RecoveredBase {
+                    qualified_name,
+                    access: AccessSpec::Public,
+                });
+            }
+            out
+        }
+    }
+}
+
+/// Classify the typeinfo shape.
+///
+/// Itanium layout pins the byte size: 16 bytes for
+/// `__class_type_info` (vptr + name), 24 bytes for
+/// `__si_class_type_info` (one base pointer appended), and
+/// `24 + 16 * base_count` bytes for `__vmi_class_type_info`. So
+/// `Symbol::size` discriminates the three shapes reliably without
+/// reading the actual bytes — important because the input buffer
+/// is not plumbed through this pass.
+///
+/// When `size` is zero (stripped / weak symbol with no recorded
+/// size) we fall back to the vptr relocation's target name. The
+/// fallback is best-effort: the ELF parser is currently known to
+/// mis-map the symbol index on dynamic relocations into
+/// `.data.rel.ro` (see the `B3.18` shelf entry), so the fallback
+/// frequently returns `None`. The recovery pass degrades to
+/// `bases: Vec::new()` in that case, which the leading comment
+/// renders as `(none)`.
+fn classify_typeinfo_shape(model: &BinaryModel, ti_va: u64, size: u64) -> TypeInfoShape {
+    match size {
+        16 => return TypeInfoShape::None,
+        24 => return TypeInfoShape::SingleInheritance,
+        s if s > 24 => return TypeInfoShape::Multiple,
+        _ => {}
+    }
+    // Size is zero or other; fall back to the vptr relocation's
+    // target name. Defensive against stripped binaries.
+    let Some(rel) = find_relocation_at(model, ti_va) else {
+        return TypeInfoShape::None;
+    };
+    let Some(sym_idx) = rel.symbol else {
+        return TypeInfoShape::None;
+    };
+    let Some(sym) = model.symbols.get(sym_idx) else {
+        return TypeInfoShape::None;
+    };
+    if sym.name.contains("__vmi_class_type_info") {
+        TypeInfoShape::Multiple
+    } else if sym.name.contains("__si_class_type_info") {
+        TypeInfoShape::SingleInheritance
+    } else {
+        TypeInfoShape::None
+    }
+}
+
+/// Resolve the virtual address a relocation at `va` points at.
+/// Returns `None` if no relocation patches `va` or if the
+/// relocation kind / fields don't give us a target VA we can name.
+fn resolve_relocation_target(model: &BinaryModel, va: u64) -> Option<u64> {
+    let rel = find_relocation_at(model, va)?;
+    match (rel.symbol, rel.kind) {
+        // Absolute / Glob with a symbol index: symbol.address + addend.
+        (Some(idx), _) => {
+            let sym = model.symbols.get(idx)?;
+            Some(sym.address.wrapping_add(rel.addend as u64))
+        }
+        // R_X86_64_RELATIVE and friends: addend carries the VA.
+        (None, RelocationKind::Relative) => Some(rel.addend as u64),
+        _ => None,
+    }
+}
+
+/// Linear scan for the relocation whose `offset` matches `va`.
+/// The relocation table is small (single-digit thousands at most
+/// even for large binaries) so a linear scan is fine; switching to
+/// a sorted index would only be worth it if base recovery
+/// dominates the recovery profile, which it does not.
+fn find_relocation_at(model: &BinaryModel, va: u64) -> Option<&dac_binfmt::Relocation> {
+    model.relocations.iter().find(|r| r.offset == va)
 }
 
 fn qualify(scope: &[String], name: &str) -> String {
@@ -746,5 +968,217 @@ mod tests {
                 .collect::<Vec<_>>(),
         );
         assert_eq!(a.stats, b.stats);
+    }
+
+    // -- B3.11: typeinfo walker tests ----------------------------
+
+    fn data_symbol_with_size(name: &str, address: u64, size: u64) -> Symbol {
+        Symbol {
+            name: name.to_string(),
+            address,
+            size,
+            kind: SymbolKind::Data,
+            binding: SymbolBinding::Global,
+            section: None,
+            source: SymbolSource::Symtab,
+            undefined: false,
+        }
+    }
+
+    fn relative_relocation(offset: u64, target_va: u64) -> dac_binfmt::Relocation {
+        dac_binfmt::Relocation {
+            section: None,
+            offset,
+            kind: RelocationKind::Relative,
+            symbol: None,
+            addend: target_va as i64,
+        }
+    }
+
+    #[test]
+    fn class_type_info_size_16_recovers_no_bases() {
+        // Animal: `_ZTI6Animal` at 0x3d70 with size 16 → no bases.
+        let mut g = EvidenceGraph::new();
+        let mut model = empty_model();
+        model
+            .symbols
+            .push(text_symbol("_ZN6Animal5speakEv", 0x1000));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI6Animal", 0x3d70, 16));
+        let fs = function_set_with(&[0x1000], &mut g);
+        let r = recover_classes(&model, &fs, &mut g);
+        let animal = r.classes.iter().find(|c| c.name == "Animal").unwrap();
+        assert!(animal.bases.is_empty(), "size-16 typeinfo has no bases");
+    }
+
+    #[test]
+    fn si_class_type_info_size_24_recovers_single_base() {
+        // Dog: typeinfo at 0x3d80, size 24, base pointer relocation
+        // at 0x3d80+16=0x3d90 points to Animal's typeinfo @ 0x3d70.
+        let mut g = EvidenceGraph::new();
+        let mut model = empty_model();
+        model.symbols.push(text_symbol("_ZN3Dog5speakEv", 0x1000));
+        model
+            .symbols
+            .push(text_symbol("_ZN6Animal5speakEv", 0x2000));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI6Animal", 0x3d70, 16));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI3Dog", 0x3d80, 24));
+        model.relocations.push(relative_relocation(0x3d90, 0x3d70));
+        let fs = function_set_with(&[0x1000, 0x2000], &mut g);
+        let r = recover_classes(&model, &fs, &mut g);
+        let dog = r.classes.iter().find(|c| c.name == "Dog").unwrap();
+        assert_eq!(dog.bases.len(), 1);
+        assert_eq!(dog.bases[0].qualified_name, "Animal");
+        assert_eq!(dog.bases[0].access, AccessSpec::Public);
+    }
+
+    #[test]
+    fn vmi_class_type_info_walks_multiple_bases_until_relocations_end() {
+        // Hybrid: typeinfo at 0x4000 size 56 (24 header + 16*2),
+        // two base pointer relocations at 0x4018 and 0x4028 pointing
+        // at Foo and Bar typeinfos.
+        let mut g = EvidenceGraph::new();
+        let mut model = empty_model();
+        model
+            .symbols
+            .push(text_symbol("_ZN6Hybrid5speakEv", 0x1000));
+        model.symbols.push(text_symbol("_ZN3Foo5speakEv", 0x2000));
+        model.symbols.push(text_symbol("_ZN3Bar5speakEv", 0x3000));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI3Foo", 0x3d00, 16));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI3Bar", 0x3d20, 16));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI6Hybrid", 0x4000, 56));
+        // Hybrid's two base pointer relocations.
+        model.relocations.push(relative_relocation(0x4018, 0x3d00));
+        model.relocations.push(relative_relocation(0x4028, 0x3d20));
+        let fs = function_set_with(&[0x1000, 0x2000, 0x3000], &mut g);
+        let r = recover_classes(&model, &fs, &mut g);
+        let hybrid = r.classes.iter().find(|c| c.name == "Hybrid").unwrap();
+        assert_eq!(hybrid.bases.len(), 2, "two bases at offsets 24 and 40");
+        let parent_names: Vec<&str> = hybrid
+            .bases
+            .iter()
+            .map(|b| b.qualified_name.as_str())
+            .collect();
+        // Walk order preserves the declared inheritance order.
+        assert_eq!(parent_names, vec!["Foo", "Bar"]);
+    }
+
+    #[test]
+    fn vmi_walk_stops_at_first_missing_relocation() {
+        // Hybrid declares size for three bases but only the first
+        // two relocations are present. The walker stops at the gap
+        // rather than running off the end.
+        let mut g = EvidenceGraph::new();
+        let mut model = empty_model();
+        model
+            .symbols
+            .push(text_symbol("_ZN6Hybrid5speakEv", 0x1000));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI3Foo", 0x3d00, 16));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI3Bar", 0x3d20, 16));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI6Hybrid", 0x4000, 72));
+        model.relocations.push(relative_relocation(0x4018, 0x3d00));
+        model.relocations.push(relative_relocation(0x4028, 0x3d20));
+        // No relocation at 0x4038.
+        let fs = function_set_with(&[0x1000], &mut g);
+        let r = recover_classes(&model, &fs, &mut g);
+        let hybrid = r.classes.iter().find(|c| c.name == "Hybrid").unwrap();
+        assert_eq!(hybrid.bases.len(), 2);
+    }
+
+    #[test]
+    fn si_walker_drops_base_when_parent_typeinfo_unknown() {
+        // Dog's base pointer relocation targets an address that no
+        // recovered typeinfo lives at. The walker drops the base
+        // rather than minting a synthetic name — we'd rather emit a
+        // missing `: public Base` than a wrong one (I-3, I-6).
+        let mut g = EvidenceGraph::new();
+        let mut model = empty_model();
+        model.symbols.push(text_symbol("_ZN3Dog5speakEv", 0x1000));
+        model
+            .symbols
+            .push(data_symbol_with_size("_ZTI3Dog", 0x3d80, 24));
+        // Points at 0xdead — no _ZTI<class> lives there.
+        model.relocations.push(relative_relocation(0x3d90, 0xdead));
+        let fs = function_set_with(&[0x1000], &mut g);
+        let r = recover_classes(&model, &fs, &mut g);
+        let dog = r.classes.iter().find(|c| c.name == "Dog").unwrap();
+        assert!(dog.bases.is_empty());
+    }
+
+    #[test]
+    fn typeinfo_with_undefined_symbol_address_is_skipped() {
+        // `__cxxabiv1::__class_type_info` lands in the symbol table
+        // as an undefined import at address 0. The walker must skip
+        // it: an undefined typeinfo has no relocations of its own,
+        // and the address 0 would otherwise collide with the
+        // `addend == 0` form of a null relocation.
+        let mut g = EvidenceGraph::new();
+        let mut model = empty_model();
+        let mut sym = data_symbol("_ZTIN10__cxxabiv117__class_type_infoE", 0);
+        sym.undefined = true;
+        model.symbols.push(sym);
+        let fs = empty_function_set();
+        let r = recover_classes(&model, &fs, &mut g);
+        // No class minted: the typeinfo is undefined, has no
+        // typeinfo_address, so the walker never runs.
+        for c in &r.classes {
+            assert!(c.bases.is_empty());
+        }
+    }
+
+    #[test]
+    fn base_recovery_is_deterministic_across_reruns() {
+        // Same model, two runs, identical base lists in identical
+        // order. The walker iterates via `BTreeMap` so the order is
+        // byte-stable (NFR-9).
+        let build = || {
+            let mut g = EvidenceGraph::new();
+            let mut model = empty_model();
+            model.symbols.push(text_symbol("_ZN3Dog5speakEv", 0x1000));
+            model.symbols.push(text_symbol("_ZN3Cat5speakEv", 0x1100));
+            model
+                .symbols
+                .push(data_symbol_with_size("_ZTI6Animal", 0x3d70, 16));
+            model
+                .symbols
+                .push(data_symbol_with_size("_ZTI3Dog", 0x3d80, 24));
+            model
+                .symbols
+                .push(data_symbol_with_size("_ZTI3Cat", 0x3d98, 24));
+            model.relocations.push(relative_relocation(0x3d90, 0x3d70));
+            model.relocations.push(relative_relocation(0x3da8, 0x3d70));
+            let fs = function_set_with(&[0x1000, 0x1100], &mut g);
+            recover_classes(&model, &fs, &mut g)
+                .classes
+                .into_iter()
+                .map(|c| {
+                    (
+                        c.name,
+                        c.bases
+                            .into_iter()
+                            .map(|b| b.qualified_name)
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(build(), build());
     }
 }

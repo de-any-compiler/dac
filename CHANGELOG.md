@@ -3203,6 +3203,90 @@ Touches: I-3 (every name carries a `Source::Derived`
 BTree-iterated, deterministic), FR-25 (`--emit-report` surfaces
 the heuristic-name coverage metric).
 
+### B3.11 — Base-class recovery (FR-N spec §10, I-3, NFR-9)
+
+**First of the M3 shelf follow-ups promoted to a numbered
+batch.** `dac-backend-cpp::class_recovery` now walks Itanium
+typeinfo objects in `.data.rel.ro` and resolves single- and
+multiple-inheritance parent links straight out of the relocation
+table — no more "base recovery is a B3.5 deferral" comment.
+
+- **`RecoveredClass::bases` (new field).** Each base carries a
+  `qualified_name` (demangled from the parent `_ZTI<chain>`
+  symbol) and an `AccessSpec`. B3.11 emits `AccessSpec::Public`
+  for every base; the `offset_flags` lower-byte holding the
+  private / virtual flags lands in a follow-up that needs the
+  input buffer plumbed through the recovery pass.
+- **`RecoveredBase` (new type).** Public schema so downstream
+  consumers (lower / annotate / future C++ body lowering) can
+  read the inheritance graph without re-running the walker.
+- **Typeinfo walker (third pass in `recover_classes`).** Itanium
+  layout pins the byte size: 16 B = `__class_type_info` (no
+  bases), 24 B = `__si_class_type_info` (one base pointer at
+  offset 16), `24 + 16 * count` B = `__vmi_class_type_info`
+  (count base pointers starting at offset 24, every 16 bytes).
+  The walker reads `Symbol::size` to discriminate the shape and
+  follows the relocations at the matching offsets to map each
+  parent pointer back to its `_ZTI<chain>` symbol. The fallback
+  for size-zero / stripped weak symbols is the vptr relocation's
+  target-name substring match (`__si_class_type_info` /
+  `__vmi_class_type_info`); it is best-effort because dynamic
+  relocations into `.data.rel.ro` carry a mis-mapped symbol
+  index in the ELF parser today (B3.18 surfaced the underlying
+  bookkeeping gap).
+- **`AccessSpec` re-used from `crate::ast`** so the lower pass
+  hands the base spec to the C++ AST without translation. The
+  printer's existing `render_base` rule emits the inheritance
+  clause; no emit changes were required.
+- **Lower plumbing.** `lower_class` walks `c.bases.iter()` into
+  `Class::bases` (replacing the hardcoded `Vec::new()`), and the
+  per-class leading comment carries a new `bases: …` line so
+  `--debug` runs surface the recovered chain (`bases: Public
+  Animal` for Dog; `bases: (none)` for Animal).
+- **Confidence stays `Observed`.** The typeinfo bytes are in the
+  binary itself: a class with a `_ZTI<chain>` typeinfo whose
+  parent relocation targets another recovered `_ZTI<parent>` is
+  not a guess. Bases drop silently when the parent typeinfo is
+  not in the recovery set so we'd rather emit no inheritance
+  than invent one (I-3, I-6).
+- **`cpp-hierarchy-o1-cpp` golden refresh.** Dog and Cat now
+  emit `class Dog : public Animal {` and `class Cat : public
+  Animal {`, replacing the flat `class Dog {` shape; their
+  leading comments include `bases: Public Animal`. Animal and
+  the two `__cxxabiv1::__…_type_info` synthetic classes still
+  show `bases: (none)` because they have no `_ZTI` of their own
+  (the latter are recovered from the vtable imports rather than
+  a user-defined typeinfo).
+- **Tests.** Seven new unit tests cover: size-16 `__class_type_info`
+  → no bases; size-24 `__si_class_type_info` → one parent;
+  multi-inheritance walk that stops at the first missing
+  relocation; SI walker dropping its base when the parent
+  typeinfo is unknown; undefined-symbol skip; and a determinism
+  cross-run check.
+
+#### Limitations carried forward as the new "B3 residue shelf"
+
+The original B3.5 deferral becomes a smaller cluster:
+
+- **Virtual / private / non-public bases** still emit as
+  `public`. Decoding the `offset_flags` lower byte needs the
+  `.data.rel.ro` bytes; the typeinfo walker only reads
+  relocations, not source bytes. The field is on
+  `RecoveredBase` already.
+- **Stripped C++ binaries** still recover no bases — the
+  byte-level vtable / typeinfo scanner is its own shelf entry
+  ("Stripped-binary C++ recovery").
+- **`offset` field of `__base_class_type_info`** is also unread;
+  emitted bases land in declared (typeinfo) order, which matches
+  the source order for non-virtual inheritance.
+
+Closes: B3.11, FR-N (spec §10 — C++ inheritance surface).
+Touches: I-3 (every base carries `Source::Observed`), NFR-9
+(`recover_classes` stays `Determinism::Pure`, BTree-iterated),
+I-6 (bases drop visibly rather than synthesise an unrecovered
+parent), FR-25 (per-class leading comment surfaces the
+recovered chain).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

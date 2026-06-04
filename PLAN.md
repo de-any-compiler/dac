@@ -49,24 +49,12 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-The numbered M3 critical-path batches (B3.1 – B3.10) are complete
-— see [CHANGELOG.md](./CHANGELOG.md). The shelf of deferrals
-accumulated across M2 / M3 has been partly promoted to numbered
-follow-up batches B3.11 – B3.22 below. They are pre-M4 work: each
-closes a specific deferral surfaced in a CHANGELOG entry and can
-land independently. Heavier residue items remain in the "B3 residue
-shelf" at the end of this section.
-
-### B3.11 — Base-class recovery (B3.5 deferral)
-- Typeinfo-relocation walker reads `__si_class_type_info` (single
-  inheritance) and `__vmi_class_type_info` (multiple / virtual)
-  shapes out of `.data.rel.ro` and populates `Class::bases`
-  (FR-N spec §10, I-3).
-- New facts ship as `Confidence::Derived` — relocation-walking is
-  structural inference, not literal observation.
-- **Done when:** the C++ corpus golden surfaces at least one
-  recovered `: public Base` inheritance clause where B3.5 emitted
-  a flat class.
+The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
+plus B3.11 — see [CHANGELOG.md](./CHANGELOG.md). The remaining 11
+numbered follow-up batches (B3.12 – B3.22) below are pre-M4 work:
+each closes a specific deferral surfaced in a CHANGELOG entry and
+can land independently. Heavier residue items remain in the "B3
+residue shelf" at the end of this section.
 
 ### B3.12 — Namespace lowering (B3.5 deferral)
 - Emit `namespace foo { namespace bar { … } }` from the already-
