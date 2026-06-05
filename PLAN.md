@@ -50,20 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11, B3.12, and B3.13 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 9 numbered follow-up batches (B3.14 – B3.22) below
+plus B3.11 – B3.14 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 8 numbered follow-up batches (B3.15 – B3.22) below
 are pre-M4 work: each closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.14 — Subreg-aliasing correctness in bridge (B3.8 follow-up)
-- Refine the lossy full-register-write rule in `dac-lift::bridge`
-  into the precise x86_64 model: 32-bit writes zero the upper 32
-  bits, 16-bit and 8-bit writes preserve the unmodified bits
-  (I-2 evidence preserved per sub-write).
-- **Done when:** unit tests cover the three width classes;
-  goldens that exercised the lossy rule (if any) refresh
-  visibly tighter use-chains.
 
 ### B3.15 — Typed-local refinement (B3.10 follow-up)
 - Retype SSA locals from `dac-recovery::TypeMap` directly (B3.10

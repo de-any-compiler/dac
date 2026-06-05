@@ -3427,6 +3427,95 @@ opaque-op count and variadic-call-site count are pure SSA
 iterations), I-6 (syscall convention drops to last when no
 `syscall` opcode is present rather than synthesise the layout).
 
+#### B3.14 — Subreg-aliasing correctness in bridge (2026-06-05)
+
+Refines `dac-lift::bridge`'s register-write rules so the x86-64
+sub-register model is encoded faithfully rather than collapsed
+onto a single "parent := value" Move. The bridge already
+canonicalises every sub-register read and write to the 64-bit
+parent's `VariableId`; B3.14 keeps that identity choice but
+varies the *operation shape* by destination width so the
+unmodified upper bits stay live in the SSA use-chain (I-2
+evidence preserved per sub-write).
+
+- **64-bit destination** (`rax`, `r8`, …) and **32-bit
+  destination** (`eax`, `r8d`, …): unchanged — plain `Move` /
+  `<binop>` straight into the parent. x86-64's implicit
+  zero-extension on 32-bit writes is already encoded by the
+  canonical parent identity (the value-side already represents
+  a 32-bit-shaped result), so no prior-parent read is needed.
+- **16-bit destination** (`ax`, `r8w`, …) and **8-bit
+  destination** (`al`, `r8b`, …): three-op blend
+  `(parent_old & ~mask) | (value & mask)` with `mask = 0xFFFF`
+  for 16-bit and `mask = 0xFF` for 8-bit. The blend's high-half
+  `And` reads the parent's prior SSA name, keeping every
+  earlier definition that touched those bits live in the
+  use-chain.
+- **Read-modify-write** (`add al, 1`, `neg ax`, …): the binop /
+  unop materialises into a synthetic temp, then the blend
+  copies its low bits into the parent. Four ops total for an
+  8/16-bit r-m-w (binop / unop into temp + three blend ops).
+- **Helpers.** New `write_value_to_register` (plain Move path),
+  `write_kind_to_register` (r-m-w path), and
+  `blend_subreg_into_parent` (mask + And + Or sequence)
+  centralise the dispatch. The free function
+  `needs_subreg_blend(op_width, parent_width)` gates the blend
+  to widths 8 and 16 under a strictly wider parent — 32-into-64
+  takes the implicit-zero-extension path.
+- **High-byte registers.** `ah` / `bh` / `ch` / `dh` aren't
+  exposed by the x86-64 `RegisterFile` (only `al`–`r15b` are),
+  so any stray operand referencing one degrades to a plain
+  Move. They're still encodable on i386, but the bridge is
+  x86-64-only (return register / call-arg registers are
+  hardcoded SysV AMD64), so the correct shifted-mask handling
+  is a follow-up alongside the architecture parameterisation.
+- **Tests.** Six new bridge unit tests cover the predicate plus
+  the three width classes (32-bit Move stays single-op; 16-bit
+  / 8-bit Move blend; 8-bit binop and 8-bit unop materialise
+  then blend) plus a use-chain test asserting that a prior
+  `mov rax, 7` reaches the high-half mask of a following
+  `mov al, 0` blend — the SSA edge that proves the lossy rule
+  is gone. `cargo xtask ci` reports 565 tests passing (was 558
+  at B3.13; +7 from the new tests including the predicate
+  smoke test).
+
+#### Limitations carried forward
+
+- **Read-side imprecision.** A read of `eax` / `ax` / `al`
+  still surfaces as a full read of the canonical `rax`
+  variable; no truncation op is emitted on the read side.
+  Operations whose semantics depend on the masked sub-register
+  value (`cmp al, 0` against a `rax` whose upper 56 bits are
+  non-zero) will read stale upper bits. Fixing this needs the
+  same blend treatment in `translate_read` — deferred until a
+  corpus binary actually exercises a wrong-result case.
+- **No goldens drifted.** The existing ELF / PE corpus
+  exercises 32-bit register writes (`mov eax, X` /
+  `xor ebp, ebp`) heavily, plus byte memory stores
+  (`mov byte ptr [...], 1` — handled by the Store path), but
+  no 8/16-bit *register* destinations. So `xtask golden`
+  reports 32/32 unchanged across all 12 cases. The "visibly
+  tighter use-chains" claim from the PLAN entry is therefore
+  forward-looking — it will fire the next time a fixture lands
+  with byte-register r-m-w in it (`memchr`-shaped scanners,
+  `strcasecmp`-shaped comparisons, etc.).
+- **Stack-pointer width on `pop ax`.** `Pop` still hardcodes a
+  64-bit `Load { width: 8 }` and an 8-byte `rsp` adjustment.
+  The bridge now blends a 16-bit slice of that load into the
+  parent, which masks the value-side error, but the
+  stack-pointer increment remains too large. That's a B3.8
+  scope item not in B3.14's PLAN entry; left for follow-up.
+
+Closes: B3.14.
+Touches: I-2 (every sub-register write now produces a `RawOp`
+sequence whose use-chain preserves the unmodified bits, instead
+of the previous "parent := value" overwrite that bled
+provenance), NFR-9 (the dispatch is data-driven on operand
+width — same input still produces the same `RawFunction`),
+I-6 (unknown widths and AT&T high-byte registers degrade to a
+plain Move rather than panicking or emitting a mis-aligned
+mask).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

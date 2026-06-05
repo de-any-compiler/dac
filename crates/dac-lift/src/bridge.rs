@@ -38,14 +38,38 @@
 //!   in [`RawOpKind::Opaque`] so the SSA constructor still sees a
 //!   side-effect node (I-6).
 //!
+//! ## Sub-register write semantics (B3.14)
+//!
+//! Sub-register destinations canonicalise to the 64-bit parent's
+//! `VariableId`, but the *operation* shape depends on the destination
+//! width so the unmodified bits stay live in the SSA use-chain:
+//!
+//! - **64-bit destination** (`rax`, `r8`, …): plain `Move` /
+//!   `<binop>` straight into the parent.
+//! - **32-bit destination** (`eax`, `r8d`, …): `Move` /
+//!   `<binop>` into the parent. x86-64 implicitly zero-extends 32-bit
+//!   writes into the 64-bit parent and the canonical parent identity
+//!   already encodes that — no read of the prior parent is needed.
+//! - **16-bit / 8-bit destination** (`ax`, `al`, `r8w`, `r8b`, …):
+//!   blend the produced low bits with the parent's prior value via a
+//!   three-op `(parent_old & ~mask) | (value & mask)` sequence so the
+//!   upper bits remain visible to downstream passes (I-2 evidence
+//!   preserved per sub-write).
+//!
+//! The legacy AT&T-style high-byte names (`ah` / `bh` / `ch` / `dh`)
+//! aren't surfaced by the x86-64 register file so they degrade to a
+//! plain `Move` here. They're still encodable on i386 but the bridge
+//! is currently x86-64-only, so the correct shifted-mask handling is
+//! a follow-up alongside the architecture parameterisation.
+//!
+//! Read-side precision (masking sub-register *reads* down to the
+//! operand width) is still imprecise: a read of `eax` lands as a full
+//! read of the canonical `rax` variable. That refinement is a
+//! follow-up — the present batch fixes the *write* side, which is
+//! where the lossy `parent := value` rule was bleeding the most.
+//!
 //! ## What this batch deliberately doesn't cover
 //!
-//! - **Subreg-aliasing precision.** A 32-bit write under x86-64 zeroes
-//!   the upper 32 of the 64-bit parent; a 16/8-bit write preserves
-//!   them. We treat every sub-register write as a full 64-bit write
-//!   under the canonical variable id. The known-loss is documented at
-//!   the call site and is the first follow-up listed in the PLAN.md
-//!   "B3 follow-up shelf".
 //! - **Stack-slot lowering.** Memory accesses through `rsp` / `rbp`
 //!   land as ordinary `Load` / `Store` ops with synthetic
 //!   address-compute temporaries. The B2.4 stack-frame pass runs
@@ -187,6 +211,116 @@ impl<'rf> Builder<'rf> {
             },
             None => (name.to_string(), 0),
         }
+    }
+
+    /// Lift a register-destined Move to a `RawOp` sequence respecting
+    /// the x86-64 sub-register model (B3.14). Sub-byte / sub-word
+    /// writes blend with the parent's prior value; 32-bit and full
+    /// writes land as a plain `Move` since the canonical parent
+    /// identity already encodes the zero-extension semantics.
+    fn write_value_to_register(
+        &mut self,
+        name: &str,
+        op_width_bits: u16,
+        value: RawOperand,
+        ops: &mut Vec<RawOp>,
+    ) {
+        let dst_var = self.var_for_register(name);
+        let parent_width = self.variables[dst_var as usize].width_bits;
+        if needs_subreg_blend(op_width_bits, parent_width) {
+            self.blend_subreg_into_parent(dst_var, op_width_bits, value, ops);
+        } else {
+            ops.push(RawOp {
+                dst: Some(dst_var),
+                kind: RawOpKind::Move { src: value },
+            });
+        }
+    }
+
+    /// Lift a register-destined read-modify-write (`Add`, `Xor`, …)
+    /// honouring the same model. Full-width destinations write
+    /// `result_kind` straight into the parent; sub-byte / sub-word
+    /// destinations materialise the result in a synthetic temp and
+    /// blend it in.
+    fn write_kind_to_register(
+        &mut self,
+        name: &str,
+        op_width_bits: u16,
+        result_kind: RawOpKind,
+        ops: &mut Vec<RawOp>,
+    ) {
+        let dst_var = self.var_for_register(name);
+        let parent_width = self.variables[dst_var as usize].width_bits;
+        if needs_subreg_blend(op_width_bits, parent_width) {
+            let result_tmp = self.synth_temp(parent_width);
+            ops.push(RawOp {
+                dst: Some(result_tmp),
+                kind: result_kind,
+            });
+            self.blend_subreg_into_parent(
+                dst_var,
+                op_width_bits,
+                RawOperand::Variable(result_tmp),
+                ops,
+            );
+        } else {
+            ops.push(RawOp {
+                dst: Some(dst_var),
+                kind: result_kind,
+            });
+        }
+    }
+
+    /// Emit `parent := (parent_old & ~mask) | (value & mask)` for a
+    /// 16- or 8-bit sub-register write. Three ops: low mask, high
+    /// mask, OR. `dst_var` is the parent variable's id; reading it
+    /// at the second `And` keeps the unmodified bits live in the
+    /// SSA use-chain.
+    fn blend_subreg_into_parent(
+        &mut self,
+        dst_var: VariableId,
+        op_width_bits: u16,
+        value: RawOperand,
+        ops: &mut Vec<RawOp>,
+    ) {
+        let mask: i64 = match op_width_bits {
+            8 => 0xFF,
+            16 => 0xFFFF,
+            // Defensive: caller is meant to gate on `needs_subreg_blend`,
+            // which only returns true for 8 / 16. Degrade to a plain
+            // Move so the bridge stays total (I-6).
+            _ => {
+                ops.push(RawOp {
+                    dst: Some(dst_var),
+                    kind: RawOpKind::Move { src: value },
+                });
+                return;
+            }
+        };
+        let parent_width = self.variables[dst_var as usize].width_bits;
+        let low_tmp = self.synth_temp(parent_width);
+        ops.push(RawOp {
+            dst: Some(low_tmp),
+            kind: RawOpKind::And {
+                lhs: value,
+                rhs: RawOperand::Const(mask),
+            },
+        });
+        let high_tmp = self.synth_temp(parent_width);
+        ops.push(RawOp {
+            dst: Some(high_tmp),
+            kind: RawOpKind::And {
+                lhs: RawOperand::Variable(dst_var),
+                rhs: RawOperand::Const(!mask),
+            },
+        });
+        ops.push(RawOp {
+            dst: Some(dst_var),
+            kind: RawOpKind::Or {
+                lhs: RawOperand::Variable(high_tmp),
+                rhs: RawOperand::Variable(low_tmp),
+            },
+        });
     }
 
     /// Mint a fresh synthetic variable (address temps, compare
@@ -515,16 +649,13 @@ impl<'rf> Builder<'rf> {
     }
 
     /// Write the produced value into a destination operand. Register
-    /// destinations land as `Move`; memory destinations land as
-    /// `Store` preceded by address-compute ops.
+    /// destinations land as `Move` (or a sub-register blend, per
+    /// B3.14); memory destinations land as `Store` preceded by
+    /// address-compute ops.
     fn write_register_or_store(&mut self, dst: &Operand, value: RawOperand, ops: &mut Vec<RawOp>) {
         match dst {
-            Operand::Register { name, .. } => {
-                let dst_var = self.var_for_register(name);
-                ops.push(RawOp {
-                    dst: Some(dst_var),
-                    kind: RawOpKind::Move { src: value },
-                });
+            Operand::Register { name, size_bits } => {
+                self.write_value_to_register(name, *size_bits, value, ops);
             }
             Operand::Memory { .. } => {
                 let (addr_op, width) = self.translate_memory_address(dst, ops);
@@ -566,12 +697,8 @@ impl<'rf> Builder<'rf> {
             BinaryKind::Shr => RawOpKind::Shr { lhs, rhs },
         };
         match dst {
-            Operand::Register { name, .. } => {
-                let dst_var = self.var_for_register(name);
-                ops.push(RawOp {
-                    dst: Some(dst_var),
-                    kind: result_kind,
-                });
+            Operand::Register { name, size_bits } => {
+                self.write_kind_to_register(name, *size_bits, result_kind, ops);
             }
             Operand::Memory { .. } => {
                 let result = self.synth_temp(64);
@@ -602,12 +729,8 @@ impl<'rf> Builder<'rf> {
             UnaryKind::Not => RawOpKind::Not { src },
         };
         match dst {
-            Operand::Register { name, .. } => {
-                let dst_var = self.var_for_register(name);
-                ops.push(RawOp {
-                    dst: Some(dst_var),
-                    kind: result_kind,
-                });
+            Operand::Register { name, size_bits } => {
+                self.write_kind_to_register(name, *size_bits, result_kind, ops);
             }
             Operand::Memory { .. } => {
                 let result = self.synth_temp(64);
@@ -753,6 +876,18 @@ fn condition_to_compare_kind(condition: Condition) -> Option<CompareKind> {
     }
 }
 
+/// Sub-register write predicate (B3.14). Returns true when a write
+/// of `op_width_bits` into a register whose canonical parent is
+/// `parent_width` bits wide must preserve the unmodified bits via a
+/// blend rather than overwriting the parent wholesale. Currently
+/// limited to 8- and 16-bit destinations under a strictly wider
+/// parent; 32-bit-into-64 takes the implicit-zero-extension path
+/// (no parent read needed).
+#[must_use]
+fn needs_subreg_blend(op_width_bits: u16, parent_width: u16) -> bool {
+    op_width_bits != 0 && op_width_bits < parent_width && matches!(op_width_bits, 8 | 16)
+}
+
 fn mem_width_bytes(size_bits: u16) -> u8 {
     if size_bits == 0 {
         1
@@ -879,6 +1014,53 @@ mod tests {
                 src: Operand::Register {
                     name: src.to_string(),
                     size_bits: 32,
+                },
+            },
+        }
+    }
+
+    fn lifted_move_sized(dst: &str, dst_bits: u16, src_value: i64, src_bits: u16) -> InstructionIr {
+        InstructionIr {
+            address: 0,
+            length: 1,
+            op: Operation::Move {
+                dst: Operand::Register {
+                    name: dst.to_string(),
+                    size_bits: dst_bits,
+                },
+                src: Operand::Immediate {
+                    value: src_value,
+                    size_bits: src_bits,
+                },
+            },
+        }
+    }
+
+    fn lifted_add_imm_sized(dst: &str, dst_bits: u16, src_value: i64) -> InstructionIr {
+        InstructionIr {
+            address: 0,
+            length: 1,
+            op: Operation::Add {
+                dst: Operand::Register {
+                    name: dst.to_string(),
+                    size_bits: dst_bits,
+                },
+                src: Operand::Immediate {
+                    value: src_value,
+                    size_bits: dst_bits,
+                },
+            },
+        }
+    }
+
+    fn lifted_neg(dst: &str, dst_bits: u16) -> InstructionIr {
+        InstructionIr {
+            address: 0,
+            length: 1,
+            op: Operation::Neg {
+                dst: Operand::Register {
+                    name: dst.to_string(),
+                    size_bits: dst_bits,
                 },
             },
         }
@@ -1249,5 +1431,172 @@ mod tests {
             has_if,
             "expected Stmt::If in structured body, got {stmts:?}"
         );
+    }
+
+    // ---- B3.14: sub-register write semantics ----
+
+    #[test]
+    fn needs_subreg_blend_only_fires_for_byte_and_word_under_wider_parent() {
+        assert!(needs_subreg_blend(8, 64));
+        assert!(needs_subreg_blend(16, 64));
+        // 32-into-64 takes the implicit-zero-extension path, no blend.
+        assert!(!needs_subreg_blend(32, 64));
+        // Width matches the parent — full write, no blend.
+        assert!(!needs_subreg_blend(64, 64));
+        // Unknown / zero width degrades to a plain Move.
+        assert!(!needs_subreg_blend(0, 64));
+        // 8-into-16 (i386 al under ax) still needs blending.
+        assert!(needs_subreg_blend(8, 16));
+    }
+
+    #[test]
+    fn dword_write_to_low_register_skips_blend() {
+        // mov eax, 5 — 32-bit dst under rax. x86-64's implicit
+        // zero-extension is already encoded by the canonical parent
+        // identity, so the bridge keeps the plain single-op Move.
+        let cfg = empty_cfg(vec![block(0, 0x0, 0x6, Terminator::Return, 2)], vec![]);
+        let instrs = vec![vec![lifted_move_sized("eax", 32, 5, 32), lifted_ret()]];
+        let raw = lift_function(&cfg, &instrs, rf_x86_64());
+
+        let rax = raw.variables.iter().find(|v| v.name == "rax").unwrap();
+        let body = &raw.blocks[0].ops;
+        assert_eq!(body.len(), 1, "32-bit Move should stay a single op");
+        assert_eq!(body[0].dst, Some(rax.id));
+        assert!(matches!(body[0].kind, RawOpKind::Move { .. }));
+    }
+
+    #[test]
+    fn word_write_to_low_register_blends_into_parent() {
+        // mov ax, 5 — 16-bit dst under rax. The unmodified upper 48
+        // bits must remain live, so the bridge emits the three-op
+        // (value & 0xFFFF) | (rax_old & ~0xFFFF) sequence.
+        let cfg = empty_cfg(vec![block(0, 0x0, 0x6, Terminator::Return, 2)], vec![]);
+        let instrs = vec![vec![lifted_move_sized("ax", 16, 5, 16), lifted_ret()]];
+        let raw = lift_function(&cfg, &instrs, rf_x86_64());
+
+        let rax = raw.variables.iter().find(|v| v.name == "rax").unwrap();
+        let body = &raw.blocks[0].ops;
+        assert_eq!(body.len(), 3, "word write blends in three ops");
+
+        // 1) low_tmp = value & 0xFFFF
+        match body[0].kind {
+            RawOpKind::And {
+                lhs: RawOperand::Const(5),
+                rhs: RawOperand::Const(0xFFFF),
+            } => {}
+            ref other => panic!("expected low-mask And, got {other:?}"),
+        }
+        // 2) high_tmp = rax & !0xFFFF — reads the parent's prior SSA
+        //    value, keeping it live in the use-chain.
+        let RawOpKind::And { lhs, rhs } = body[1].kind else {
+            panic!("expected high-mask And, got {:?}", body[1].kind);
+        };
+        assert_eq!(lhs, RawOperand::Variable(rax.id));
+        assert_eq!(rhs, RawOperand::Const(!0xFFFF_i64));
+        // 3) rax = high_tmp | low_tmp
+        assert_eq!(body[2].dst, Some(rax.id));
+        assert!(matches!(body[2].kind, RawOpKind::Or { .. }));
+    }
+
+    #[test]
+    fn byte_write_to_low_register_blends_into_parent() {
+        // mov al, 5 — 8-bit dst under rax. Same three-op shape with
+        // an 0xFF mask.
+        let cfg = empty_cfg(vec![block(0, 0x0, 0x6, Terminator::Return, 2)], vec![]);
+        let instrs = vec![vec![lifted_move_sized("al", 8, 5, 8), lifted_ret()]];
+        let raw = lift_function(&cfg, &instrs, rf_x86_64());
+
+        let rax = raw.variables.iter().find(|v| v.name == "rax").unwrap();
+        let body = &raw.blocks[0].ops;
+        assert_eq!(body.len(), 3, "byte write blends in three ops");
+        assert!(matches!(
+            body[0].kind,
+            RawOpKind::And {
+                lhs: RawOperand::Const(5),
+                rhs: RawOperand::Const(0xFF),
+            }
+        ));
+        let RawOpKind::And { lhs, rhs } = body[1].kind else {
+            panic!("expected high-mask And, got {:?}", body[1].kind);
+        };
+        assert_eq!(lhs, RawOperand::Variable(rax.id));
+        assert_eq!(rhs, RawOperand::Const(!0xFF_i64));
+        assert_eq!(body[2].dst, Some(rax.id));
+        assert!(matches!(body[2].kind, RawOpKind::Or { .. }));
+    }
+
+    #[test]
+    fn byte_binop_to_low_register_synths_result_then_blends() {
+        // add al, 1 — read-modify-write of an 8-bit destination. The
+        // bridge materialises the 64-bit-shaped Add into a synthetic
+        // temp and then blends its low byte into rax. Four ops total:
+        // the Add plus the three-op blend.
+        let cfg = empty_cfg(vec![block(0, 0x0, 0x6, Terminator::Return, 2)], vec![]);
+        let instrs = vec![vec![lifted_add_imm_sized("al", 8, 1), lifted_ret()]];
+        let raw = lift_function(&cfg, &instrs, rf_x86_64());
+
+        let rax = raw.variables.iter().find(|v| v.name == "rax").unwrap();
+        let body = &raw.blocks[0].ops;
+        assert_eq!(body.len(), 4, "8-bit binop = Add + 3-op blend");
+        assert!(matches!(body[0].kind, RawOpKind::Add { .. }));
+        let add_temp = body[0].dst.expect("Add dst");
+        assert_ne!(add_temp, rax.id, "Add must land in a synth temp");
+        // The low-mask And reads the synth temp, not rax directly.
+        match body[1].kind {
+            RawOpKind::And {
+                lhs: RawOperand::Variable(src),
+                rhs: RawOperand::Const(0xFF),
+            } => {
+                assert_eq!(src, add_temp);
+            }
+            ref other => panic!("expected low-mask And reading Add temp, got {other:?}"),
+        }
+        assert_eq!(body[3].dst, Some(rax.id));
+        assert!(matches!(body[3].kind, RawOpKind::Or { .. }));
+    }
+
+    #[test]
+    fn byte_unop_to_low_register_synths_result_then_blends() {
+        // neg al — same shape as the binop case but with a unary op
+        // landing in the synth temp.
+        let cfg = empty_cfg(vec![block(0, 0x0, 0x6, Terminator::Return, 2)], vec![]);
+        let instrs = vec![vec![lifted_neg("al", 8), lifted_ret()]];
+        let raw = lift_function(&cfg, &instrs, rf_x86_64());
+
+        let body = &raw.blocks[0].ops;
+        assert_eq!(body.len(), 4);
+        assert!(matches!(body[0].kind, RawOpKind::Neg { .. }));
+        let neg_temp = body[0].dst.expect("Neg dst");
+        let rax = raw.variables.iter().find(|v| v.name == "rax").unwrap();
+        assert_ne!(neg_temp, rax.id);
+        assert!(matches!(body[3].kind, RawOpKind::Or { .. }));
+    }
+
+    #[test]
+    fn subreg_blend_preserves_prior_parent_value_in_use_chain() {
+        // mov rax, 7
+        // mov al, 0
+        // ret
+        // After B3.14 the second op no longer wipes rax — it blends
+        // the byte in, so the prior `mov rax, 7` remains a live def
+        // that flows into the high-half `And` of the blend.
+        let cfg = empty_cfg(vec![block(0, 0x0, 0x8, Terminator::Return, 3)], vec![]);
+        let instrs = vec![vec![
+            lifted_move_sized("rax", 64, 7, 64),
+            lifted_move_sized("al", 8, 0, 8),
+            lifted_ret(),
+        ]];
+        let raw = lift_function(&cfg, &instrs, rf_x86_64());
+        let rax = raw.variables.iter().find(|v| v.name == "rax").unwrap();
+        let body = &raw.blocks[0].ops;
+        // 1 op for the rax := 7 Move + 3 blend ops = 4 total.
+        assert_eq!(body.len(), 4);
+        // The high-mask And of the blend reads rax — that's the
+        // use-chain edge that proves the prior `mov rax, 7` stays
+        // live across the byte write.
+        let RawOpKind::And { lhs, .. } = body[2].kind else {
+            panic!("expected high-mask And at body[2], got {:?}", body[2].kind);
+        };
+        assert_eq!(lhs, RawOperand::Variable(rax.id));
     }
 }
