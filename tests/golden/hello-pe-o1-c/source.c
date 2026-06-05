@@ -2242,7 +2242,7 @@ int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
     S_140001890_v21_t * v21 = ((S_140001890_v21_t *)(0LL));
-    int64_t v22 = 0LL;
+    int64_t i = 0LL;
     int64_t v23 = 0LL;
     int64_t v24 = 0LL;
     int64_t v25 = 0LL;
@@ -2462,7 +2462,7 @@ L0:;
         v20 = (v18 + 24LL);
         while (1) {
             /* phi v21 <- (bb1: v20) (bb4: v38) */
-            /* phi v22 <- (bb1: v19) (bb4: v37) */
+            /* phi i <- (bb1: v19) (bb4: v37) */
             /* phi v23 <- (bb1: v16) (bb4: v36) */
             v24 = (*((int64_t *)(((int64_t)(v21)))));
             v25 = v24;
@@ -2471,7 +2471,7 @@ L0:;
 L1:;
                 /* phi v35 <- (bb2: v25) (bb3: v33) */
                 /* phi v36 <- (bb2: v23) (bb3: v32) */
-                v37 = (v22 + 1LL);
+                v37 = (i + 1LL);
                 v38 = (((int64_t)(v21)) + 40LL);
                 v39 = (v37 != v9);
                 if (v39) {
@@ -2738,7 +2738,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v210 = 0LL;
     int64_t v211 = 0LL;
     int64_t v212 = 0LL;
-    int64_t v213 = 0LL;
+    int64_t i = 0LL;
     int64_t v214 = 0LL;
     int64_t v215 = 0LL;
     int64_t v216 = 0LL;
@@ -2949,7 +2949,7 @@ L1:;
                             v211 = v210;
                             v212 = (v205 ^ v205);
                             while (1) {
-                                /* phi v213 <- (bb32: src) (bb35: v231) */
+                                /* phi i <- (bb32: src) (bb35: v231) */
                                 /* phi v214 <- (bb32: v212) (bb35: v232) */
                                 v215 = (*((int64_t *)(5368742152LL)));
                                 v216 = v215;
@@ -2967,10 +2967,10 @@ L1:;
                                     v226 = v217->field_8;
                                     v227 = v226;
                                     v228 = ((void *)(((int64_t)(v204))));
-                                    v229 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v211, v213, v224, v227, v219, ((int64_t)(v228)));
+                                    v229 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v211, i, v224, v227, v219, ((int64_t)(v228)));
                                 }
                                 /* phi v230 <- (bb33: v217) (bb34: v229) */
-                                v231 = (v213 + 1LL);
+                                v231 = (i + 1LL);
                                 v232 = (v214 + 40LL);
                                 v233 = (*((int32_t *)(5368742148LL)));
                                 v234 = (v231 < v233);
@@ -4239,7 +4239,7 @@ int64_t _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t a
     void * v37 = ((void *)(0LL));
     int64_t v38 = 0LL;
     int64_t v39 = 0LL;
-    int64_t v40 = 0LL;
+    int64_t i = 0LL;
     int64_t v41 = 0LL;
     int64_t v42 = 0LL;
     int64_t v43 = 0LL;
@@ -4322,12 +4322,12 @@ L0:;
                         v38 = (((int64_t)(v37)) + v35);
                         v39 = v38;
                         while (1) {
-                            /* phi v40 <- (bb9: v36) (bb12: v51) */
+                            /* phi i <- (bb9: v36) (bb12: v51) */
                             /* phi v41 <- (bb9: v39) (bb12: v52) */
                             v42 = 8LL;
                             v43 = s;
                             v44 = v41;
-                            v45 = ((long long (*)(long long, long long, long long, long long, long long, long long))strncmp)(s, v40, v43, v44, v42, v14);
+                            v45 = ((long long (*)(long long, long long, long long, long long, long long, long long))strncmp)(s, i, v43, v44, v42, v14);
                             v46 = (v45 & v45);
                             v47 = (v46 == 0LL);
                             if (v47) {
@@ -4335,7 +4335,7 @@ L0:;
                                 v48 = ((void *)((((int64_t)(v24)) + 6LL)));
                                 v49 = v24->field_6;
                                 v50 = v49;
-                                v51 = (v40 + 1LL);
+                                v51 = (i + 1LL);
                                 v52 = (v41 + 40LL);
                                 v53 = (v51 < v50);
                                 if (v53) {

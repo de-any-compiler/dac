@@ -33,14 +33,22 @@
 //!   optionally pinned by a bounding
 //!   [`dac_ir::ssa::CompareKind::Ult`] /
 //!   [`dac_ir::ssa::CompareKind::Ule`] in the predecessor.
-//! - **B3.7 (this batch).** [`names`] — variable-naming heuristics
-//!   (FR-N spec §11.1). Two deterministic heuristics ship at this
-//!   milestone: API-context names from
-//!   [`dac_knowledge::ApiSignature`] catalogues and string-literal
-//!   slugs read out of the binary's `.rodata`. The [`names::NameTable`]
-//!   is consumed by the C backend in place of the `v<id>`
-//!   fallback. Loop-induction and counter-pattern naming wait on the
-//!   B3 follow-up shelf.
+//! - **B3.7.** [`names`] — variable-naming heuristics
+//!   (FR-N spec §11.1). Two deterministic heuristics shipped at
+//!   B3.7: API-context names from [`dac_knowledge::ApiSignature`]
+//!   catalogues and string-literal slugs read out of the binary's
+//!   `.rodata`.
+//! - **B3.20 (this batch).** [`names`] — three additional dataflow
+//!   heuristics: loop-induction (`i` / `j` / `k` by nesting depth),
+//!   counter (`count` for non-induction `+= 1` phis), and
+//!   allocator-size (`size` for arithmetic feeding a `malloc` /
+//!   `calloc` / `realloc` size argument). The CLI passes a
+//!   [`names::LoopInfo`] summary derived from
+//!   `dac_analysis::loops::LoopForest`; the summary is lifted out
+//!   into a small POD so `dac-recovery` does not need to depend on
+//!   `dac-analysis` (which already depends on us). The
+//!   [`names::NameTable`] is consumed by the C backend in place of
+//!   the `v<id>` fallback.
 
 #![forbid(unsafe_code)]
 
@@ -64,8 +72,8 @@ pub use idioms::{
     SwitchTableIdiom, MAX_SWITCH_ENTRIES, SWITCH_TABLE_CONFIDENCE,
 };
 pub use names::{
-    recover_names, NameCandidate, NameSource, NameTable, NullStringResolver, StringResolver,
-    NAME_CONFIDENCE,
+    recover_names, LoopInfo, LoopShape, NameCandidate, NameSource, NameTable, NullStringResolver,
+    StringResolver, NAME_CONFIDENCE,
 };
 pub use stack::{
     analyze_stack_frame, FramePointer, StackConvention, StackFrame, StackLocal, StackLocalKind,

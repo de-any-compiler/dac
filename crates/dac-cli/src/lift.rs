@@ -53,8 +53,8 @@ use dac_lift::lift_function;
 use dac_recovery::{
     analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms, recover_names,
     recover_structs, resolve_switch_entries, ApiResolver, ConventionMatch, Function, FunctionSet,
-    NameTable, RecoveredIdioms, RecoveredStructs, StackConvention, StackFrame, StringResolver,
-    SwitchTableIdiom, TypeMap, ValueType,
+    LoopInfo, LoopShape, NameTable, RecoveredIdioms, RecoveredStructs, StackConvention, StackFrame,
+    StringResolver, SwitchTableIdiom, TypeMap, ValueType,
 };
 
 /// Per-function outcome of the orchestrator.
@@ -285,6 +285,25 @@ fn recovered_convention_is_useful(c: Option<&ConventionMatch>) -> bool {
     }
 }
 
+/// Project a [`LoopForest`] into the smaller [`LoopInfo`] summary
+/// the name-recovery pass consumes (B3.20). Keeps `dac-recovery`
+/// off the `dac-analysis` dependency graph — `dac-analysis` already
+/// pulls in `dac-recovery` for [`Function`] / [`FunctionSet`], so a
+/// direct dependency the other way would close the cycle.
+fn loop_info_from_forest(forest: &LoopForest) -> LoopInfo {
+    let mut headers: BTreeMap<u32, LoopShape> = BTreeMap::new();
+    for l in &forest.loops {
+        headers.insert(
+            l.header,
+            LoopShape {
+                depth: l.depth,
+                back_edges: l.back_edges.iter().copied().collect(),
+            },
+        );
+    }
+    LoopInfo { headers }
+}
+
 /// Count SSA values that are eligible for heuristic naming —
 /// i.e. every defined value the C backend emits as a local, minus
 /// the convention's inferred parameter slots (which the backend
@@ -355,16 +374,23 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     // SSA / Semantic IR — the binary stays ground truth (I-1).
     let user_hint = apply_function_hint(f, ctx.hints, &ssa, &mut convention, &mut types);
 
-    // B3.7: deterministic variable-naming heuristics. Consumes the
-    // recovered convention + API resolver + extracted strings; the
-    // result threads into the C backend's `Recovered` view in
-    // place of the `v<id>` fallback. Pure / deterministic
-    // (NFR-9) — same SSA + same resolvers → same names.
+    // B3.7 + B3.20: deterministic variable-naming heuristics.
+    // Consumes the recovered convention + API resolver + extracted
+    // strings, plus a per-function loop summary derived from the
+    // natural-loop forest (the `LoopInfo` indirection keeps
+    // dac-recovery from depending on dac-analysis, which already
+    // depends on us). The result threads into the C backend's
+    // `Recovered` view in place of the `v<id>` fallback. Pure /
+    // deterministic (NFR-9) — same SSA + same resolvers + same
+    // summary → same names.
+    let loop_info = loop_info_from_forest(&loops);
     let names = recover_names(
         &ssa,
         convention.as_ref().map(|c| &c.signature),
         &ctx.api_resolver,
         &ctx.string_resolver,
+        &loop_info,
+        &types,
     );
 
     let facts = Box::new(RecoveryFacts {

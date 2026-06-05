@@ -4373,6 +4373,226 @@ the annotation channel and the recovered-fact lattice
 agree on which facts came from a user hint), FR-19,
 FR-20.
 
+#### B3.20 — Loop-induction and counter naming (2026-06-05)
+
+B3.7 shipped the variable-naming pass with two
+heuristics: API-context (`s` from `strlen`, `path` from
+`open`) and string-literal slugs (`str_hello_world`).
+The `;; naming:` report row carried those two channels
+only. Loop-induction (`i` / `j` / `k`), counter
+(`count`), and allocator-size (`size`) all sat on the
+B3 follow-up shelf with the docstring noting "each
+requires extra dataflow reasoning". B3.20 lands the
+three deferrals.
+
+The new heuristics walk natural-loop data from
+`dac_analysis::loops::LoopForest`. `dac-analysis`
+already depends on `dac-recovery` (for `Function` /
+`FunctionSet` / `SourceMask`), so a direct dependency
+the other way would close the cycle. B3.20 adds a
+small POD — [`names::LoopInfo`] — that the CLI builds
+from the forest before calling `recover_names`. The
+recovery crate sees only the per-header `(depth,
+back_edges)` tuple it needs, not the forest itself.
+`LoopInfo::default()` disables the heuristic; the
+B3.7-era tests use the default and stay green
+unchanged.
+
+- **Loop-induction (`InductionCounter`).** For every
+  natural loop in the function's [`LoopInfo`], walk
+  the header's phi list. A phi whose every back-edge
+  incoming is `Add(phi.dst, 1)` (or `Add(1, phi.dst)`)
+  is an induction variable. The first qualifying phi
+  per loop earns `i` / `j` / `k` / `l` / `m` / `n` by
+  nesting depth (depth 0 → `i`, depth 1 → `j`,
+  …); anything past the table folds back to `i` and
+  lets the disambiguator append `_1` / `_2` / `_3`.
+  The pass classifies "first qualifying" by SSA-phi
+  order — the lifter sorts phis by variable id, so
+  the choice is deterministic across runs (NFR-9).
+- **Counter (`Counter`).** A phi at *any* block (loop
+  header or not) where at least one incoming is
+  `Add(phi.dst, 1)` earns `count` — except when the
+  induction pass already claimed the phi. The
+  separate increment check is a loose "is any
+  incoming the +=1" rather than the strict
+  "every back-edge is +=1" the induction pass uses,
+  so this catches sibling phis at a loop header
+  (`for (int i=0, j=0; ; i++, j++)`) and counters in
+  irreducible CFGs the natural-loop pass could not
+  name (I-6 — degrade visibly but keep extracting
+  facts).
+- **Allocator-size (`AllocatorSize`).** A
+  [`SsaOp::Call`] whose target resolves to `malloc` /
+  `calloc` / `realloc` in the API catalogue gets its
+  size-argument slots scanned: index 0 for `malloc`,
+  index 1 for `realloc`, both 0 and 1 for `calloc`
+  (the catalogue lists `(n, size)`). Each size-arg
+  value whose defining op is an arithmetic op
+  (`Add` / `Sub` / `Mul` / `Shl` / `Shr`) earns
+  `size`. Bare register / constant / parameter loads
+  carry no signal and stay on the API-context (`n`
+  from the catalogue) path — the test
+  `allocator_size_skips_non_arithmetic_arg` pins this
+  contract.
+
+Precedence (encoded by `NameSource`'s `Ord` derive):
+`StringRef < ApiContext < AllocatorSize < Counter <
+InductionCounter`. The induction pass outranks the
+counter pass so a loop's primary induction variable
+always wins `i` over a sibling phi's `count`. Both
+counter and induction outrank `AllocatorSize` and
+`ApiContext` — a value that flows into multiple
+sites picks the *most specific* role-name; the
+disambiguator's `_1` / `_2` suffix preserves
+identifier uniqueness inside the function.
+
+### Pointer-typed phis are excluded
+
+A naive shape match (`phi(initial, phi + 1)`) fires
+on `void *p; p++` walker patterns: in SSA, advancing a
+pointer by 1 byte produces the same Add-and-phi
+signature as advancing an integer counter. Naming a
+`void *` value `i` is a regression — the API-context
+heuristic already gives it the role-specific name
+(e.g. `src` from `memcpy`'s 2nd parameter). To prevent
+this, B3.20 threads `&TypeMap` into `recover_names`
+and skips phis whose recovered type is `Type::Ptr(_)`
+in *both* the induction and counter passes. Values
+without a recovered type (still `Type::Unknown`)
+remain eligible — the heuristic is conservative on
+absence, not aggressive. The test
+`loop_induction_skips_pointer_typed_phi` pins this:
+the same induction-loop SSA function that earns `i`
+under an empty TypeMap earns no name when the phi is
+tagged `Ptr(Unknown)`.
+
+### CLI plumbing
+
+`dac_cli::lift::lift_one` builds the loops forest
+right after `DominatorTree::build` already (`B3.9`
+established the order). B3.20 adds:
+
+```rust
+let loop_info = loop_info_from_forest(&loops);
+let names = recover_names(
+    &ssa,
+    convention.as_ref().map(|c| &c.signature),
+    &ctx.api_resolver,
+    &ctx.string_resolver,
+    &loop_info,
+    &types,
+);
+```
+
+The `types` argument is the [`TypeMap`] the
+propagation pass produced one step earlier. No new
+SSA pass; the heuristic is a pure derived view.
+
+### Corpus drift
+
+Coverage on the PE corpus climbed from
+`named_values=25 / 1889 (1.32%)` to
+`named_values=28 / 1889 (1.48%)` — three new
+`i`/`size`-class names in `hello-x86_64.exe`'s
+runtime-init code (a `for(;;i++)` loop and two
+`malloc`-feeding arithmetic sites). The golden
+`hello-pe-o1-c/source.c` refreshed by `cargo xtask
+golden update`; the matching diff is bounded to the
+three values' declarations and uses inside the
+function — no other code lines moved. The smaller
+ELF binaries in the corpus (`hello-x86_64`,
+`cpp-hierarchy-x86_64`) have no loops in the
+function bodies the pipeline currently surfaces, so
+coverage stays at `0 / 79` and `0 / 128`. PLT-stub
+naming (B3.21) is the lever that lights up
+heuristic coverage on those.
+
+### Tests added
+
+- `loop_induction_names_outer_counter_i` —
+  canonical `for (i=0; i<n; i++)` synthesised CFG;
+  asserts the header phi earns `i` with
+  `NameSource::InductionCounter`.
+- `nested_loops_name_inner_counter_j` — two
+  natural loops nested; asserts outer phi earns
+  `i`, inner phi earns `j`.
+- `allocator_size_names_arithmetic_arg_size` —
+  `malloc(n * 4)` synthesised call; asserts the
+  `Mul` result earns `size` with
+  `NameSource::AllocatorSize`.
+- `allocator_size_skips_non_arithmetic_arg` —
+  `malloc(16)` constant; asserts the value earns
+  `n` (from the catalogue) via `ApiContext`, not
+  `size`.
+- `induction_outranks_allocator_size` — a loop
+  whose induction phi feeds a `malloc(i + 8)` site;
+  asserts the phi earns `i` while the Add result
+  earns `size`.
+- `counter_falls_back_when_induction_already_claimed`
+  — two phis at the same header, both `+= 1`;
+  asserts the first earns `i`, the second `count`.
+- `loop_induction_skips_unrecognised_phi_shape` —
+  a phi whose back-edge increment is `+= 2`, not
+  `+= 1`; asserts no induction name fires.
+- `calloc_size_argument_is_named_size_when_arithmetic`
+  — `calloc(arithmetic_n, arithmetic_size)`;
+  asserts both slots earn `size` / `size_1` via
+  AllocatorSize.
+- `loop_induction_skips_pointer_typed_phi` —
+  same SSA shape as the canonical induction loop
+  but the phi value is tagged `Ptr(Unknown)`; the
+  heuristic must abstain.
+
+### Limitations
+
+- **`+= n` for `n != 1`.** A real strided loop
+  (`for (i = 0; i < n; i += 2)`) does not trigger
+  the induction heuristic. The PLAN names `+= 1` as
+  the qualifying shape explicitly, so the
+  abstention is by design; adding strided support
+  would need an `Add(phi, Const(k))` walker with
+  `k > 0` and matching uses of `k` in the loop
+  exit. That is a separate, larger heuristic.
+- **No naming inheritance.** When a loop's
+  induction value flows into a function argument
+  via a call site, the induction name does not
+  propagate to the call site argument's local. The
+  C backend renders the argument by ValueId; the
+  induction name surfaces only at the phi's
+  declaration. Threading the induction name through
+  the call site arguments would touch the C
+  backend's local-rename pass and is deferred.
+- **Loop depth past `n`.** Loops nested deeper than
+  six levels reuse `i` and rely on the
+  disambiguator's `_1` / `_2` suffix. A real-world
+  deeper nest is vanishingly rare on the corpus, so
+  the table covers the depths we'd actually see.
+- **Counter pass ignores write order.** A phi with
+  two `+= 1` updates from sibling back-edges is
+  still named `count` — the heuristic does not
+  count *how many* increments fire per loop
+  iteration, only that the phi has one. A doubly-
+  incremented counter is rare enough that the
+  `count` name is still defensible.
+
+Closes: B3.20.
+Touches: FR-N spec §11.1 (the §11.1 list of
+naming heuristics now has three of the deferred
+items lit up), I-2 (every new
+[`NameCandidate`] carries a [`NameSource`] that
+records *which* heuristic fired, so the
+`--debug` "why this name?" trail can attribute
+each rename), I-3 (every candidate's
+`Confidence` stays at `Source::Derived` —
+heuristic-name surface is never an `Observed`
+claim about a recovered fact), NFR-9 (the pass
+walks `LoopInfo.headers` (BTreeMap-sorted),
+phis in declaration order, and operand vectors
+in index order — no clock, no environment, no
+filesystem iteration; the determinism gate is
+preserved).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

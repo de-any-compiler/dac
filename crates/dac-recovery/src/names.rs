@@ -6,44 +6,51 @@
 //! that match a heuristic surface as `path`, `fmt`, `len`, … instead
 //! of the generic `v<id>` fallback (B2.8).
 //!
-//! ## Heuristics shipping at B3.7
+//! ## Heuristics shipping at B3.7 and B3.20
 //!
-//! 1. **API-context naming.** When a value `v` is the i-th `Operand`
-//!    of a [`SsaOp::Call`] whose target VA resolves to a known
-//!    [`dac_knowledge::ApiSignature`], the i-th parameter's catalogue
-//!    name becomes a candidate. `strlen(v3)` therefore proposes `s`
-//!    for `v3`; `open(path=v5, flags=v6)` proposes `path` / `flags`.
-//!    Variadic API tails are ignored — values past the fixed arity
-//!    have no catalogue name to inherit.
-//! 2. **String-literal naming.** When a value's defining op is
-//!    [`SsaOp::Move`] of an [`Operand::Const`] whose immediate equals
-//!    the virtual address of an extracted [`dac_binfmt::StringRef`]
-//!    in a read-only section, the string content is slugified into
-//!    a candidate (e.g. `"Hello, world!\n"` → `str_hello_world`).
-//!    Strings shorter than [`MIN_STRING_LEN_FOR_NAME`] characters or
-//!    longer than [`MAX_STRING_LEN_FOR_NAME`] do not contribute a
-//!    candidate — the first because the slug carries no signal, the
-//!    second because the resulting identifier would dominate the
-//!    line.
-//!
-//! ## What does not ship
-//!
-//! Loop-induction naming (`i` / `j` / `k`), allocator-size naming
-//! (`size` from arithmetic adjacent to a `malloc` call), and
-//! counter-pattern naming (`count` for `+= 1` lhs values) are all
-//! deferred — each requires extra dataflow reasoning that the spec
-//! §11.1 list anticipates landing on the B3 follow-up shelf
-//! (recorded in `PLAN.md`).
+//! 1. **API-context naming** (B3.7). When a value `v` is the i-th
+//!    `Operand` of a [`SsaOp::Call`] whose target VA resolves to a
+//!    known [`dac_knowledge::ApiSignature`], the i-th parameter's
+//!    catalogue name becomes a candidate. `strlen(v3)` therefore
+//!    proposes `s` for `v3`; `open(path=v5, flags=v6)` proposes
+//!    `path` / `flags`. Variadic API tails are ignored — values past
+//!    the fixed arity have no catalogue name to inherit.
+//! 2. **String-literal naming** (B3.7). When a value's defining op
+//!    is [`SsaOp::Move`] of an [`Operand::Const`] whose immediate
+//!    equals the virtual address of an extracted
+//!    [`dac_binfmt::StringRef`] in a read-only section, the string
+//!    content is slugified into a candidate (e.g.
+//!    `"Hello, world!\n"` → `str_hello_world`). Strings shorter than
+//!    [`MIN_STRING_LEN_FOR_NAME`] characters or longer than
+//!    [`MAX_STRING_LEN_FOR_NAME`] do not contribute a candidate —
+//!    the first because the slug carries no signal, the second
+//!    because the resulting identifier would dominate the line.
+//! 3. **Loop-induction naming** (B3.20). For every natural loop
+//!    discovered in the function's [`LoopForest`], a header `phi`
+//!    whose back-edge incoming is an `Add(phi, 1)` produces an
+//!    induction-variable candidate named `i` / `j` / `k` / … by
+//!    nesting depth.
+//! 4. **Counter naming** (B3.20). A phi whose `(initial, phi + 1)`
+//!    shape matches the induction pattern but does *not* live at a
+//!    loop header — or sits at a header alongside another phi that
+//!    already earned `i`/`j`/`k` — earns `count`.
+//! 5. **Allocator-size naming** (B3.20). A value passed as the
+//!    `size` argument of `malloc` / `calloc` / `realloc` whose
+//!    defining op is an arithmetic op (`Add` / `Sub` / `Mul` /
+//!    `Shl` / `Shr`) earns `size`. A bare register or constant
+//!    feeding the call carries no signal and stays on the
+//!    API-context (`n` from the catalogue) path.
 //!
 //! ## Conflict resolution and disambiguation
 //!
 //! When several heuristics agree on a value, the highest-precedence
 //! source wins; precedence follows [`NameSource`]'s declaration
-//! order (`ApiContext > StringRef`). When multiple values share the
-//! same base candidate (`strlen` called three times → three
-//! candidate-`s` values), the table mints unique identifiers by
-//! appending `_1`, `_2`, … in ascending `ValueId` order so iteration
-//! is deterministic across runs.
+//! order (`InductionCounter > Counter > AllocatorSize > ApiContext >
+//! StringRef`). When multiple values share the same base candidate
+//! (`strlen` called three times → three candidate-`s` values), the
+//! table mints unique identifiers by appending `_1`, `_2`, … in
+//! ascending `ValueId` order so iteration is deterministic across
+//! runs.
 //!
 //! ## Confidence + invariants
 //!
@@ -63,10 +70,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dac_core::{Confidence, Source};
-use dac_ir::ssa::{Operand, SsaFunction, SsaOp, ValueId};
+use dac_ir::ssa::{Operand, Phi, SsaFunction, SsaOp, ValueId, ValueSource};
+use dac_ir::ty::Type;
 
 use crate::convention::InferredSignature;
-use crate::types::ApiResolver;
+use crate::types::{ApiResolver, TypeMap};
 
 /// Minimum slugified-string length that earns a string-literal name.
 /// One-character strings (`""`, `"\n"`) carry no signal so we keep
@@ -114,14 +122,52 @@ impl StringResolver for NullStringResolver {
     }
 }
 
+/// Per-function natural-loop summary consumed by the loop-induction
+/// heuristic (B3.20). Lifted into a small POD so `dac-recovery` does
+/// not depend on `dac-analysis` (which already depends on us).
+///
+/// The CLI builds [`LoopInfo`] from a
+/// `dac_analysis::loops::LoopForest`; a [`LoopInfo::default`] value
+/// is equivalent to "no loops" and disables the heuristic.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LoopInfo {
+    /// Block id of every natural-loop header → its loop shape.
+    /// Iteration order is deterministic (ascending header id).
+    pub headers: BTreeMap<u32, LoopShape>,
+}
+
+/// Shape of a natural loop as far as the name-recovery pass is
+/// concerned: nesting depth (drives `i` / `j` / `k`) and the set of
+/// back-edge predecessor block ids (drives the phi-shape match for
+/// the loop-carry).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopShape {
+    /// Nesting depth — 0 for outermost loops.
+    pub depth: u32,
+    /// Block ids of back-edge predecessors, ascending.
+    pub back_edges: BTreeSet<u32>,
+}
+
 /// Why a particular name was proposed. Higher variants outrank lower
-/// ones when multiple heuristics fire on the same value.
+/// ones when multiple heuristics fire on the same value — the order
+/// here is `StringRef < ApiContext < AllocatorSize < Counter <
+/// InductionCounter`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NameSource {
     /// String-literal slug (e.g. `str_hello`).
     StringRef,
     /// API parameter name from [`dac_knowledge`] (e.g. `path`, `fmt`).
     ApiContext,
+    /// Arithmetic value feeding a `malloc` / `calloc` / `realloc`
+    /// size argument (e.g. `size`).
+    AllocatorSize,
+    /// Non-induction `+= 1` counter — phi `(initial, phi + 1)` that
+    /// is not a loop-induction variable.
+    Counter,
+    /// Loop-induction variable at a natural-loop header — phi whose
+    /// only back-edge incoming is an `Add(phi, 1)`. Named `i` / `j`
+    /// / `k` / … by nesting depth.
+    InductionCounter,
 }
 
 impl NameSource {
@@ -130,6 +176,9 @@ impl NameSource {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            NameSource::InductionCounter => "induction-counter",
+            NameSource::Counter => "counter",
+            NameSource::AllocatorSize => "allocator-size",
             NameSource::ApiContext => "api-context",
             NameSource::StringRef => "string-ref",
         }
@@ -187,14 +236,22 @@ impl NameTable {
 /// Run the variable-naming pass.
 ///
 /// `signature` is consulted so parameter values (already named
-/// `argN` by the C backend) are not named again. Both resolvers
-/// are optional via their `Null*` defaults.
+/// `argN` by the C backend) are not named again. `loops`
+/// summarises the natural-loop forest — pass [`LoopInfo::default`]
+/// to skip the induction / counter heuristic on a loop-free
+/// function. `types` lets the induction / counter pass filter out
+/// pointer-typed phis (e.g. a `void *p; p++` walker is not an
+/// integer counter); pass an empty [`TypeMap`] to disable the
+/// filter. Both name resolvers are optional via their `Null*`
+/// defaults.
 #[must_use]
 pub fn recover_names(
     ssa: &SsaFunction,
     signature: Option<&InferredSignature>,
     api_resolver: &dyn ApiResolver,
     strings: &dyn StringResolver,
+    loops: &LoopInfo,
+    types: &TypeMap,
 ) -> NameTable {
     let parameters = parameter_value_set(signature);
     let mut candidates: BTreeMap<ValueId, NameCandidate> = BTreeMap::new();
@@ -203,8 +260,30 @@ pub fn recover_names(
         for instr in &block.instructions {
             collect_api_candidates(&instr.op, &parameters, api_resolver, &mut candidates);
             collect_string_candidate(instr.dst, &instr.op, &parameters, strings, &mut candidates);
+            collect_allocator_size_candidate(
+                &instr.op,
+                ssa,
+                &parameters,
+                api_resolver,
+                &mut candidates,
+            );
         }
     }
+
+    // Loop-induction + counter live behind a single walk so the
+    // induction heuristic claims one phi per loop header before the
+    // counter heuristic falls back to `count` on the rest. The
+    // claimed phi set propagates between the two passes.
+    let mut induction_phis: BTreeSet<ValueId> = BTreeSet::new();
+    collect_loop_induction_candidates(
+        ssa,
+        loops,
+        types,
+        &parameters,
+        &mut induction_phis,
+        &mut candidates,
+    );
+    collect_counter_candidates(ssa, types, &parameters, &induction_phis, &mut candidates);
 
     finalise_names(candidates)
 }
@@ -300,6 +379,258 @@ fn collect_string_candidate(
             confidence: Confidence::new(NAME_CONFIDENCE, Source::Derived),
         },
     );
+}
+
+/// Allocator-size heuristic: when a [`SsaOp::Call`]'s target resolves
+/// to a known allocator (`malloc` / `calloc` / `realloc`), any size
+/// argument whose defining op is arithmetic (`Add` / `Sub` / `Mul` /
+/// `Shl` / `Shr`) earns `size`. Bare register / constant / parameter
+/// loads carry no signal and stay on the API-context path (where
+/// they pick up `n` from the catalogue).
+fn collect_allocator_size_candidate(
+    op: &SsaOp,
+    ssa: &SsaFunction,
+    parameters: &BTreeSet<ValueId>,
+    api_resolver: &dyn ApiResolver,
+    candidates: &mut BTreeMap<ValueId, NameCandidate>,
+) {
+    let SsaOp::Call {
+        target: Some(target_va),
+        args,
+    } = op
+    else {
+        return;
+    };
+    let Some(sig) = api_resolver.resolve(*target_va) else {
+        return;
+    };
+    let size_indices: &[usize] = match sig.name {
+        "malloc" => &[0],
+        "calloc" => &[0, 1],
+        "realloc" => &[1],
+        _ => return,
+    };
+    for &idx in size_indices {
+        let Some(Operand::Value(v)) = args.get(idx) else {
+            continue;
+        };
+        if parameters.contains(v) {
+            continue;
+        }
+        if !defining_op_is_arithmetic(ssa, *v) {
+            continue;
+        }
+        propose(
+            candidates,
+            *v,
+            NameCandidate {
+                base: "size".to_string(),
+                source: NameSource::AllocatorSize,
+                confidence: Confidence::new(NAME_CONFIDENCE, Source::Derived),
+            },
+        );
+    }
+}
+
+/// Loop-induction heuristic: for each natural loop, find header phis
+/// whose only back-edge incoming is `Add(phi, 1)`. The first such
+/// phi (lowest `ValueId`) earns `i`/`j`/`k`/… by loop depth;
+/// subsequent header phis claimed by this routine become candidates
+/// for the counter heuristic.
+fn collect_loop_induction_candidates(
+    ssa: &SsaFunction,
+    loops: &LoopInfo,
+    types: &TypeMap,
+    parameters: &BTreeSet<ValueId>,
+    induction_phis: &mut BTreeSet<ValueId>,
+    candidates: &mut BTreeMap<ValueId, NameCandidate>,
+) {
+    for (header_block_id, shape) in &loops.headers {
+        let header_block = match ssa.blocks.get(*header_block_id as usize) {
+            Some(b) => b,
+            None => continue,
+        };
+        let mut header_inductions: Vec<ValueId> = Vec::new();
+        for phi in &header_block.phis {
+            if parameters.contains(&phi.dst) {
+                continue;
+            }
+            if value_type_is_pointer(types, phi.dst) {
+                continue;
+            }
+            if !phi_is_increment_by_one(ssa, phi, &shape.back_edges) {
+                continue;
+            }
+            header_inductions.push(phi.dst);
+        }
+        if header_inductions.is_empty() {
+            continue;
+        }
+        // First induction phi per loop (lowest ValueId — phi order
+        // already follows variable id) wins the depth-indexed name.
+        let primary = header_inductions[0];
+        induction_phis.insert(primary);
+        propose(
+            candidates,
+            primary,
+            NameCandidate {
+                base: induction_name_for_depth(shape.depth).to_string(),
+                source: NameSource::InductionCounter,
+                confidence: Confidence::new(NAME_CONFIDENCE, Source::Derived),
+            },
+        );
+    }
+}
+
+/// Counter heuristic: any phi with the `(initial, phi + 1)` shape
+/// that the induction pass did not claim earns `count`. The shape
+/// is recognised whether or not the phi sits at a loop header — the
+/// pattern is the SSA signature of a `+= 1` counter, and it shows
+/// up at sibling phis of the chosen induction variable and at
+/// irreducible-CFG headers the natural-loop pass could not name (I-6
+/// — we degrade visibly but keep extracting facts).
+fn collect_counter_candidates(
+    ssa: &SsaFunction,
+    types: &TypeMap,
+    parameters: &BTreeSet<ValueId>,
+    induction_phis: &BTreeSet<ValueId>,
+    candidates: &mut BTreeMap<ValueId, NameCandidate>,
+) {
+    for block in &ssa.blocks {
+        for phi in &block.phis {
+            if parameters.contains(&phi.dst) {
+                continue;
+            }
+            if induction_phis.contains(&phi.dst) {
+                continue;
+            }
+            if value_type_is_pointer(types, phi.dst) {
+                continue;
+            }
+            if !phi_has_increment_incoming(ssa, phi) {
+                continue;
+            }
+            propose(
+                candidates,
+                phi.dst,
+                NameCandidate {
+                    base: "count".to_string(),
+                    source: NameSource::Counter,
+                    confidence: Confidence::new(NAME_CONFIDENCE, Source::Derived),
+                },
+            );
+        }
+    }
+}
+
+/// Returns true when **every** back-edge incoming is `Add(phi.dst,
+/// 1)` and at least one back-edge predecessor is present in
+/// `back_edges`. Used by [`collect_loop_induction_candidates`] where
+/// the natural-loop analysis already separates loop-carry incomings
+/// from loop-entry incomings.
+fn phi_is_increment_by_one(ssa: &SsaFunction, phi: &Phi, back_edges: &BTreeSet<u32>) -> bool {
+    let mut found_increment = false;
+    for (pred, operand) in &phi.incoming {
+        if back_edges.contains(pred) {
+            match operand {
+                Operand::Value(v) if defining_op_is_increment_of(ssa, *v, phi.dst) => {
+                    found_increment = true;
+                }
+                _ => return false,
+            }
+        }
+    }
+    found_increment
+}
+
+/// Returns true when **at least one** incoming of `phi` is
+/// `Add(phi.dst, 1)`. Used by [`collect_counter_candidates`] where
+/// we do not separate entry-from-back-edge predecessors — the
+/// loose check is sufficient to identify the `+= 1` shape.
+fn phi_has_increment_incoming(ssa: &SsaFunction, phi: &Phi) -> bool {
+    phi.incoming.iter().any(|(_, operand)| match operand {
+        Operand::Value(v) => defining_op_is_increment_of(ssa, *v, phi.dst),
+        _ => false,
+    })
+}
+
+/// True when value `v`'s defining op is `Add(target, 1)` or
+/// `Add(1, target)`. Used by [`phi_is_increment_by_one`] to confirm
+/// the loop-carry update; `target` is the phi's destination.
+fn defining_op_is_increment_of(ssa: &SsaFunction, v: ValueId, target: ValueId) -> bool {
+    let def = match ssa.values.get(v as usize) {
+        Some(d) => d,
+        None => return false,
+    };
+    let ValueSource::Instruction { block, index } = def.source else {
+        return false;
+    };
+    let block_idx = block as usize;
+    let instr_idx = index as usize;
+    let instr = match ssa
+        .blocks
+        .get(block_idx)
+        .and_then(|b| b.instructions.get(instr_idx))
+    {
+        Some(i) => i,
+        None => return false,
+    };
+    let SsaOp::Add { lhs, rhs } = &instr.op else {
+        return false;
+    };
+    let target_op = Operand::Value(target);
+    let one = Operand::Const(1);
+    (*lhs == target_op && *rhs == one) || (*lhs == one && *rhs == target_op)
+}
+
+/// True when `v` is defined by an arithmetic SSA op (`Add` / `Sub`
+/// / `Mul` / `Shl` / `Shr`). `Move(Const)` / `Move(Value)` /
+/// parameter loads are *not* arithmetic — they carry no
+/// `size`-computation signal.
+fn defining_op_is_arithmetic(ssa: &SsaFunction, v: ValueId) -> bool {
+    let def = match ssa.values.get(v as usize) {
+        Some(d) => d,
+        None => return false,
+    };
+    let ValueSource::Instruction { block, index } = def.source else {
+        return false;
+    };
+    let instr = match ssa
+        .blocks
+        .get(block as usize)
+        .and_then(|b| b.instructions.get(index as usize))
+    {
+        Some(i) => i,
+        None => return false,
+    };
+    matches!(
+        instr.op,
+        SsaOp::Add { .. }
+            | SsaOp::Sub { .. }
+            | SsaOp::Mul { .. }
+            | SsaOp::Shl { .. }
+            | SsaOp::Shr { .. }
+    )
+}
+
+/// Pick `i` / `j` / `k` / … for a loop at the given nesting depth.
+/// Depth 0 (outermost) → `i`; deeper loops walk a small alphabet.
+/// Anything past the table re-enters at `i` and lets
+/// [`finalise_names`] disambiguate with a numeric suffix.
+fn induction_name_for_depth(depth: u32) -> &'static str {
+    const TABLE: &[&str] = &["i", "j", "k", "l", "m", "n"];
+    TABLE.get(depth as usize).copied().unwrap_or("i")
+}
+
+/// True when the type system recovered a pointer type for `value`.
+/// Used by the induction / counter heuristics to skip the `void *p;
+/// p++` walker pattern (a pointer that gets `+= 1` on every
+/// iteration is not an integer counter — naming it `i` would be a
+/// regression vs the API-context name the caller already gave it).
+/// Returns false for absent / `Unknown` types so values the type
+/// pass did not constrain stay eligible.
+fn value_type_is_pointer(types: &TypeMap, value: ValueId) -> bool {
+    matches!(types.value_type(value), Type::Ptr(_))
 }
 
 /// Insert / replace the candidate for `value` if the new candidate
@@ -447,22 +778,37 @@ fn slugify_string(text: &str) -> Option<String> {
 mod tests {
     use std::collections::{BTreeSet, VecDeque};
 
-    use dac_analysis::cfg::{BasicBlock, Cfg, Edge, Terminator};
+    use dac_analysis::cfg::{BasicBlock, Cfg, Edge, EdgeKind, Terminator};
     use dac_analysis::dom::DominatorTree;
+    use dac_analysis::loops::LoopForest;
     use dac_analysis::ssa::{
         construct_ssa, RawBlock, RawFunction, RawOp, RawOpKind, RawOperand, RawTerminator,
     };
+
+    fn loop_info(forest: &LoopForest) -> LoopInfo {
+        let mut headers: BTreeMap<u32, LoopShape> = BTreeMap::new();
+        for l in &forest.loops {
+            headers.insert(
+                l.header,
+                LoopShape {
+                    depth: l.depth,
+                    back_edges: l.back_edges.iter().copied().collect(),
+                },
+            );
+        }
+        LoopInfo { headers }
+    }
     use dac_core::{EvidenceGraph, EvidenceNode, IrLayer};
     use dac_ir::ssa::{Variable, VariableId};
     use dac_knowledge::{lookup_api_signature, ApiSignature};
 
     use super::*;
     use crate::convention::{InferredSignature, RegisterArg};
-    use crate::types::NullApiResolver;
+    use crate::types::{NullApiResolver, ValueType};
 
     // --- helpers (mirror the convention/types test scaffold) -----
 
-    fn synthetic_cfg(n: usize) -> Cfg {
+    fn synthetic_cfg(n: usize, raw_edges: &[(u32, u32, EdgeKind)]) -> Cfg {
         let blocks: Vec<BasicBlock> = (0..n)
             .map(|i| BasicBlock {
                 id: i as u32,
@@ -472,7 +818,10 @@ mod tests {
                 terminator: Terminator::Fall,
             })
             .collect();
-        let edges: Vec<Edge> = Vec::new();
+        let edges: Vec<Edge> = raw_edges
+            .iter()
+            .map(|&(from, to, kind)| Edge { from, to, kind })
+            .collect();
         let exits: Vec<u32> = (0..n as u32).collect();
         let mut reachable: BTreeSet<u32> = BTreeSet::new();
         reachable.insert(0);
@@ -501,6 +850,12 @@ mod tests {
             unreachable,
             evidence: ev,
         }
+    }
+
+    /// Empty loop summary matching the `synthetic_cfg(n, &[])` shape
+    /// — every B3.7-era test runs against this.
+    fn empty_loops(_n: usize) -> LoopInfo {
+        LoopInfo::default()
     }
 
     fn var(id: VariableId, name: &str) -> Variable {
@@ -540,9 +895,24 @@ mod tests {
     }
 
     fn build(raw: RawFunction) -> dac_ir::ssa::SsaFunction {
-        let cfg = synthetic_cfg(raw.blocks.len());
+        let cfg = synthetic_cfg(raw.blocks.len(), &[]);
         let doms = DominatorTree::build(&cfg);
         construct_ssa(&cfg, &doms, &raw)
+    }
+
+    /// Build an SSA function + loop summary for a CFG with real
+    /// edges — needed by the induction / counter tests so the
+    /// natural-loop pass actually fires.
+    fn build_with_edges(
+        raw: RawFunction,
+        raw_edges: &[(u32, u32, EdgeKind)],
+    ) -> (dac_ir::ssa::SsaFunction, LoopInfo, LoopForest) {
+        let cfg = synthetic_cfg(raw.blocks.len(), raw_edges);
+        let doms = DominatorTree::build(&cfg);
+        let ssa = construct_ssa(&cfg, &doms, &raw);
+        let forest = LoopForest::build(&cfg, &doms);
+        let info = loop_info(&forest);
+        (ssa, info, forest)
     }
 
     fn ins_value(ssa: &dac_ir::ssa::SsaFunction, block: usize, ins: usize) -> ValueId {
@@ -582,7 +952,15 @@ mod tests {
         };
         let ssa = build(raw);
         let arg_value = ins_value(&ssa, 0, 0); // the rdi load defines `s`
-        let table = recover_names(&ssa, None, &libc_resolver, &null_strings());
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
         assert_eq!(table.lookup(arg_value), Some("s"));
     }
 
@@ -603,7 +981,15 @@ mod tests {
         let ssa = build(raw);
         let path_v = ins_value(&ssa, 0, 0);
         let flags_v = ins_value(&ssa, 0, 1);
-        let table = recover_names(&ssa, None, &libc_resolver, &null_strings());
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
         assert_eq!(table.lookup(path_v), Some("path"));
         assert_eq!(table.lookup(flags_v), Some("flags"));
     }
@@ -640,7 +1026,15 @@ mod tests {
             return_register: None,
             variadic_call_sites: 0,
         };
-        let table = recover_names(&ssa, Some(&sig), &libc_resolver, &null_strings());
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            Some(&sig),
+            &libc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
         assert!(table.lookup(rdi_param).is_none());
     }
 
@@ -662,7 +1056,15 @@ mod tests {
             }],
         };
         let ssa = build(raw);
-        let table = recover_names(&ssa, None, &libc_resolver, &null_strings());
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
         let s_count = table
             .values
             .values()
@@ -692,7 +1094,15 @@ mod tests {
         let ssa = build(raw);
         let a = ins_value(&ssa, 0, 0);
         let b = ins_value(&ssa, 0, 1);
-        let table = recover_names(&ssa, None, &libc_resolver, &null_strings());
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
         assert_eq!(table.lookup(a), Some("s"));
         assert!(table.lookup(b).is_none());
     }
@@ -715,7 +1125,15 @@ mod tests {
                 None
             }
         };
-        let table = recover_names(&ssa, None, &NullApiResolver, &resolver);
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &resolver,
+            &loops,
+            &TypeMap::default(),
+        );
         let name = table.lookup(v).expect("string slug");
         assert!(name.starts_with("str_"), "got {name}");
         assert!(name.contains("hello"));
@@ -739,7 +1157,15 @@ mod tests {
                 None
             }
         };
-        let table = recover_names(&ssa, None, &libc_resolver, &resolver);
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &resolver,
+            &loops,
+            &TypeMap::default(),
+        );
         assert_eq!(table.lookup(v), Some("s"));
         assert_eq!(table.provenance[&v].source, NameSource::ApiContext);
     }
@@ -783,8 +1209,23 @@ mod tests {
                 None
             }
         };
-        let a = recover_names(&ssa, None, &libc_resolver, &resolver);
-        let b = recover_names(&ssa, None, &libc_resolver, &resolver);
+        let loops = empty_loops(ssa.blocks.len());
+        let a = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &resolver,
+            &loops,
+            &TypeMap::default(),
+        );
+        let b = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &resolver,
+            &loops,
+            &TypeMap::default(),
+        );
         assert_eq!(a, b);
     }
 
@@ -798,8 +1239,483 @@ mod tests {
             }],
         };
         let ssa = build(raw);
-        let table = recover_names(&ssa, None, &NullApiResolver, &null_strings());
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
         assert_eq!(table.named_count(), 0);
         assert!(table.is_empty());
+    }
+
+    // --- B3.20 helpers + tests ----------------------------------
+
+    fn add_op(dst: VariableId, lhs: VariableId, rhs: i64) -> RawOp {
+        RawOp {
+            dst: Some(dst),
+            kind: RawOpKind::Add {
+                lhs: RawOperand::Variable(lhs),
+                rhs: RawOperand::Const(rhs),
+            },
+        }
+    }
+
+    fn mul_op(dst: VariableId, lhs: VariableId, rhs: i64) -> RawOp {
+        RawOp {
+            dst: Some(dst),
+            kind: RawOpKind::Mul {
+                lhs: RawOperand::Variable(lhs),
+                rhs: RawOperand::Const(rhs),
+            },
+        }
+    }
+
+    fn malloc_resolver(va: u64) -> Option<&'static ApiSignature> {
+        if va == 0x3000 {
+            lookup_api_signature("malloc")
+        } else if va == 0x3100 {
+            lookup_api_signature("calloc")
+        } else if va == 0x3200 {
+            lookup_api_signature("realloc")
+        } else {
+            None
+        }
+    }
+
+    /// `for (i = 0; i < n; i++) { ... }`-style CFG. Block 0 seeds
+    /// `i = 0`, block 1 is the loop header (phi over i, branch on
+    /// `i`), block 2 increments `i += 1` and falls back to the
+    /// header, block 3 is the exit.
+    fn induction_loop_function() -> RawFunction {
+        RawFunction {
+            variables: vec![var(0, "i")],
+            blocks: vec![
+                RawBlock {
+                    ops: vec![mov_c(0, 0)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Branch {
+                        cond: RawOperand::Variable(0),
+                        taken: 2,
+                        not_taken: 3,
+                    },
+                },
+                RawBlock {
+                    ops: vec![add_op(0, 0, 1)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Return {
+                        value: Some(RawOperand::Variable(0)),
+                    },
+                },
+            ],
+        }
+    }
+
+    fn induction_loop_edges() -> Vec<(u32, u32, EdgeKind)> {
+        vec![
+            (0, 1, EdgeKind::Fall),
+            (1, 2, EdgeKind::Taken),
+            (1, 3, EdgeKind::NotTaken),
+            (2, 1, EdgeKind::Branch),
+        ]
+    }
+
+    fn header_phi_dst(ssa: &dac_ir::ssa::SsaFunction, block: usize) -> ValueId {
+        ssa.blocks[block]
+            .phis
+            .first()
+            .expect("loop header should have a phi for the carried variable")
+            .dst
+    }
+
+    #[test]
+    fn loop_induction_names_outer_counter_i() {
+        let (ssa, info, forest) =
+            build_with_edges(induction_loop_function(), &induction_loop_edges());
+        assert_eq!(forest.loops.len(), 1, "expected one natural loop");
+        let phi_v = header_phi_dst(&ssa, 1);
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &info,
+            &TypeMap::default(),
+        );
+        assert_eq!(table.lookup(phi_v), Some("i"));
+        assert_eq!(
+            table.provenance[&phi_v].source,
+            NameSource::InductionCounter
+        );
+    }
+
+    #[test]
+    fn nested_loops_name_inner_counter_j() {
+        // b0: i = 0
+        // b1: phi i; outer header; branch
+        // b2: j = 0
+        // b3: phi j; inner header; branch
+        // b4: j = j + 1; back to b3
+        // b5: i = i + 1; back to b1
+        // b6: exit
+        let raw = RawFunction {
+            variables: vec![var(0, "i"), var(1, "j")],
+            blocks: vec![
+                RawBlock {
+                    ops: vec![mov_c(0, 0)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Branch {
+                        cond: RawOperand::Variable(0),
+                        taken: 2,
+                        not_taken: 6,
+                    },
+                },
+                RawBlock {
+                    ops: vec![mov_c(1, 0)],
+                    terminator: RawTerminator::Jump { target: 3 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Branch {
+                        cond: RawOperand::Variable(1),
+                        taken: 4,
+                        not_taken: 5,
+                    },
+                },
+                RawBlock {
+                    ops: vec![add_op(1, 1, 1)],
+                    terminator: RawTerminator::Jump { target: 3 },
+                },
+                RawBlock {
+                    ops: vec![add_op(0, 0, 1)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Return { value: None },
+                },
+            ],
+        };
+        let edges = [
+            (0, 1, EdgeKind::Fall),
+            (1, 2, EdgeKind::Taken),
+            (1, 6, EdgeKind::NotTaken),
+            (2, 3, EdgeKind::Fall),
+            (3, 4, EdgeKind::Taken),
+            (3, 5, EdgeKind::NotTaken),
+            (4, 3, EdgeKind::Branch),
+            (5, 1, EdgeKind::Branch),
+        ];
+        let (ssa, info, forest) = build_with_edges(raw, &edges);
+        assert_eq!(forest.loops.len(), 2, "expected outer + inner loop");
+        let i_v = header_phi_dst(&ssa, 1);
+        let j_v = header_phi_dst(&ssa, 3);
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &info,
+            &TypeMap::default(),
+        );
+        assert_eq!(table.lookup(i_v), Some("i"));
+        assert_eq!(table.lookup(j_v), Some("j"));
+        assert_eq!(table.provenance[&i_v].source, NameSource::InductionCounter);
+        assert_eq!(table.provenance[&j_v].source, NameSource::InductionCounter);
+    }
+
+    #[test]
+    fn allocator_size_names_arithmetic_arg_size() {
+        // b0: n = 8; size = n * 4; rax = malloc(size)
+        let raw = RawFunction {
+            variables: vec![var(0, "rdi"), var(1, "rsi"), var(2, "rax")],
+            blocks: vec![RawBlock {
+                ops: vec![mov_c(0, 8), mul_op(1, 0, 4), call(Some(2), 0x3000, vec![1])],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        let size_v = ins_value(&ssa, 0, 1); // the Mul value flowing into malloc
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &malloc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
+        assert_eq!(table.lookup(size_v), Some("size"));
+        assert_eq!(table.provenance[&size_v].source, NameSource::AllocatorSize);
+    }
+
+    #[test]
+    fn allocator_size_skips_non_arithmetic_arg() {
+        // malloc(constant n) — the size operand is a plain Move, not
+        // a computed arithmetic. AllocatorSize must abstain so the
+        // ApiContext heuristic gets to name it `n` from the
+        // catalogue instead.
+        let raw = RawFunction {
+            variables: vec![var(0, "rdi"), var(1, "rax")],
+            blocks: vec![RawBlock {
+                ops: vec![mov_c(0, 16), call(Some(1), 0x3000, vec![0])],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        let arg_v = ins_value(&ssa, 0, 0);
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &malloc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
+        // ApiContext on malloc's first parameter (`n`) names it.
+        assert_eq!(table.lookup(arg_v), Some("n"));
+        assert_eq!(table.provenance[&arg_v].source, NameSource::ApiContext);
+    }
+
+    #[test]
+    fn induction_outranks_allocator_size() {
+        // Pathological: the loop counter `i` itself feeds malloc's
+        // size slot through an Add. The Add result picks up `size`;
+        // the phi value picks up `i`. Verify InductionCounter
+        // outranks AllocatorSize on the phi (the Add still gets
+        // `size`).
+        let raw = RawFunction {
+            variables: vec![var(0, "i"), var(1, "rdi"), var(2, "rax")],
+            blocks: vec![
+                RawBlock {
+                    ops: vec![mov_c(0, 0)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Branch {
+                        cond: RawOperand::Variable(0),
+                        taken: 2,
+                        not_taken: 3,
+                    },
+                },
+                RawBlock {
+                    ops: vec![
+                        add_op(1, 0, 8), // size_arg = i + 8
+                        call(Some(2), 0x3000, vec![1]),
+                        add_op(0, 0, 1), // i = i + 1
+                    ],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Return { value: None },
+                },
+            ],
+        };
+        let edges = [
+            (0, 1, EdgeKind::Fall),
+            (1, 2, EdgeKind::Taken),
+            (1, 3, EdgeKind::NotTaken),
+            (2, 1, EdgeKind::Branch),
+        ];
+        let (ssa, info, _) = build_with_edges(raw, &edges);
+        let phi_v = header_phi_dst(&ssa, 1);
+        let size_v = ins_value(&ssa, 2, 0);
+        let table = recover_names(
+            &ssa,
+            None,
+            &malloc_resolver,
+            &null_strings(),
+            &info,
+            &TypeMap::default(),
+        );
+        assert_eq!(table.lookup(phi_v), Some("i"));
+        assert_eq!(table.lookup(size_v), Some("size"));
+    }
+
+    #[test]
+    fn counter_falls_back_when_induction_already_claimed() {
+        // Two phis at the same header — both look like `+= 1`
+        // counters. The first earns `i`; the second falls back to
+        // `count`.
+        let raw = RawFunction {
+            variables: vec![var(0, "i"), var(1, "j")],
+            blocks: vec![
+                RawBlock {
+                    ops: vec![mov_c(0, 0), mov_c(1, 0)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Branch {
+                        cond: RawOperand::Variable(0),
+                        taken: 2,
+                        not_taken: 3,
+                    },
+                },
+                RawBlock {
+                    ops: vec![add_op(0, 0, 1), add_op(1, 1, 1)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Return { value: None },
+                },
+            ],
+        };
+        let edges = [
+            (0, 1, EdgeKind::Fall),
+            (1, 2, EdgeKind::Taken),
+            (1, 3, EdgeKind::NotTaken),
+            (2, 1, EdgeKind::Branch),
+        ];
+        let (ssa, info, _) = build_with_edges(raw, &edges);
+        let header = &ssa.blocks[1];
+        assert!(header.phis.len() >= 2, "expected two phis at the header");
+        let i_phi = header.phis[0].dst;
+        let j_phi = header.phis[1].dst;
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &info,
+            &TypeMap::default(),
+        );
+        assert_eq!(table.lookup(i_phi), Some("i"));
+        assert_eq!(table.lookup(j_phi), Some("count"));
+        assert_eq!(table.provenance[&j_phi].source, NameSource::Counter);
+    }
+
+    #[test]
+    fn loop_induction_skips_unrecognised_phi_shape() {
+        // Phi whose back-edge incoming is `i = i + 2`, not `i + 1`.
+        // The induction heuristic must NOT name it.
+        let raw = RawFunction {
+            variables: vec![var(0, "i")],
+            blocks: vec![
+                RawBlock {
+                    ops: vec![mov_c(0, 0)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Branch {
+                        cond: RawOperand::Variable(0),
+                        taken: 2,
+                        not_taken: 3,
+                    },
+                },
+                RawBlock {
+                    ops: vec![add_op(0, 0, 2)],
+                    terminator: RawTerminator::Jump { target: 1 },
+                },
+                RawBlock {
+                    ops: vec![],
+                    terminator: RawTerminator::Return { value: None },
+                },
+            ],
+        };
+        let edges = [
+            (0, 1, EdgeKind::Fall),
+            (1, 2, EdgeKind::Taken),
+            (1, 3, EdgeKind::NotTaken),
+            (2, 1, EdgeKind::Branch),
+        ];
+        let (ssa, info, _) = build_with_edges(raw, &edges);
+        let phi_v = header_phi_dst(&ssa, 1);
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &info,
+            &TypeMap::default(),
+        );
+        assert!(table.lookup(phi_v).is_none());
+    }
+
+    #[test]
+    fn calloc_size_argument_is_named_size_when_arithmetic() {
+        // calloc(n, size); both args are arithmetic.
+        let raw = RawFunction {
+            variables: vec![
+                var(0, "rdi"),
+                var(1, "rsi"),
+                var(2, "rdx"),
+                var(3, "rcx"),
+                var(4, "rax"),
+            ],
+            blocks: vec![RawBlock {
+                ops: vec![
+                    mov_c(0, 4),
+                    add_op(1, 0, 2), // n = base + 2
+                    mov_c(2, 8),
+                    mul_op(3, 2, 2), // size = 8 * 2
+                    call(Some(4), 0x3100, vec![1, 3]),
+                ],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        let n_v = ins_value(&ssa, 0, 1);
+        let size_v = ins_value(&ssa, 0, 3);
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &malloc_resolver,
+            &null_strings(),
+            &loops,
+            &TypeMap::default(),
+        );
+        // Both args carry the `size` candidate — one wins outright,
+        // the other gets the disambiguator suffix.
+        let n_name = table.lookup(n_v).expect("n earns a name");
+        let size_name = table.lookup(size_v).expect("size earns a name");
+        assert!(n_name == "size" || n_name == "size_1", "got {n_name}");
+        assert!(
+            size_name == "size" || size_name == "size_1",
+            "got {size_name}"
+        );
+        assert_ne!(n_name, size_name);
+        assert_eq!(table.provenance[&n_v].source, NameSource::AllocatorSize);
+        assert_eq!(table.provenance[&size_v].source, NameSource::AllocatorSize);
+    }
+
+    #[test]
+    fn loop_induction_skips_pointer_typed_phi() {
+        // `void *p; p++` walker — same SSA shape as a `for(i=0;;i++)`
+        // counter, but the propagation pass tagged the phi value as
+        // a pointer. The induction heuristic must NOT name it `i`.
+        let (ssa, info, _) = build_with_edges(induction_loop_function(), &induction_loop_edges());
+        let phi_v = header_phi_dst(&ssa, 1);
+        let mut types = TypeMap::default();
+        types.values.insert(
+            phi_v,
+            ValueType {
+                ty: Type::ptr_to(Type::Unknown),
+                confidence: Confidence::new(NAME_CONFIDENCE, Source::Derived),
+            },
+        );
+        let table = recover_names(&ssa, None, &NullApiResolver, &null_strings(), &info, &types);
+        assert!(
+            table.lookup(phi_v).is_none(),
+            "pointer-typed phi must not earn an induction name"
+        );
     }
 }

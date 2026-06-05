@@ -50,27 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.19 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 3 numbered follow-up batches (B3.20 – B3.22) below
+plus B3.11 – B3.20 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 2 numbered follow-up batches (B3.21 – B3.22) below
 are pre-M4 work: each closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.20 — Loop-induction & counter naming (B3.7 follow-up, spec §11.1)
-- Layer per-function dataflow naming on top of
-  `dac-recovery::names`. Three heuristics:
-    1. Loop-induction counter (`i` / `j` / `k`) — the phi value
-       of a natural loop header whose only back-edge increment is
-       `+= 1`.
-    2. Counter pattern (`count`) — a non-induction value whose
-       only mutating op is `+= 1`.
-    3. Allocator-size (`size`) — an arithmetic adjacent to a
-       `malloc` / `calloc` call where the result feeds the call's
-       size argument.
-- **Done when:** the ELF or PE corpus produces at least one
-  named `i` or `count` value where B3.7 emitted `v<id>`, and
-  the report row's heuristic-coverage % climbs against the prior
-  baseline.
 
 ### B3.21 — PLT-stub naming on ELF (B3.7 surfaced, FR-N spec §11.1)
 - Walk the PLT trampoline at `.plt.sec` / `.plt.got` and thread
