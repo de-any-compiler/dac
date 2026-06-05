@@ -34,10 +34,12 @@ typedef struct __attribute__((packed)) {
 
 /* dac-recovered struct */
 /* base: v17 */
-/* total_size: 36 bytes */
+/* total_size: 64 bytes */
 /* confidence: 0.65 (Derived) */
 typedef struct __attribute__((packed)) {
-    uint8_t __pad_0_3c[60];
+    uint8_t __pad_0_20[32];
+    int64_t field_20;
+    uint8_t __pad_28_3c[20];
     int32_t field_3c;
     uint8_t __pad_40_4c[12];
     int32_t field_4c;
@@ -179,6 +181,17 @@ typedef struct __attribute__((packed)) {
     int32_t field_0;
     int32_t field_4;
 } S_140001a00_v76_t;
+
+/* dac-recovered struct */
+/* base: v1 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_20[32];
+    int32_t field_20;
+    uint8_t __pad_24_28[4];
+    int64_t field_28;
+} S_140001d90_v1_t;
 
 /* dac-recovered struct */
 /* base: v2 */
@@ -512,15 +525,17 @@ typedef struct __attribute__((packed)) {
 
 /* dac-recovered struct */
 /* base: v7 */
-/* total_size: 88 bytes */
+/* total_size: 96 bytes */
 /* confidence: 0.65 (Derived) */
 typedef struct __attribute__((packed)) {
     uint8_t __pad_0_20[32];
     int64_t field_20;
-    uint8_t __pad_28_40[24];
+    uint8_t __pad_28_38[16];
+    int64_t field_38;
     int64_t field_40;
     uint8_t __pad_48_70[40];
     int64_t field_70;
+    int64_t field_78;
 } S_140002860_v7_t;
 
 /* dac-recovered struct */
@@ -533,6 +548,19 @@ typedef struct __attribute__((packed)) {
     uint8_t __pad_30_70[64];
     int64_t field_70;
 } S_140002900_v9_t;
+
+/* dac-recovered struct */
+/* base: v1 */
+/* total_size: 48 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_20[32];
+    int64_t field_20;
+    uint8_t __pad_28_38[16];
+    int32_t field_38;
+    uint8_t __pad_3c_4c[16];
+    int32_t field_4c;
+} S_140002a60_v1_t;
 
 /* dac-recovered function */
 /* address: 0x140001000 */
@@ -2158,7 +2186,7 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v5->field_68 = v14;
     v5->field_58 = v16;
     v17 = ((void *)((((int64_t)(v5)) + 40LL)));
-    *((int64_t *)(((int64_t)(v17)))) = v9;
+    v5->field_28 = v9;
     v19 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v18, v2, v16, v10, v12, v14);
     v20 = 5368726016LL;
     v21 = v19;
@@ -3074,11 +3102,11 @@ L4:;
 /* args: rdi,rsi,rdx,rcx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 2 */
-/* struct_layouts: pointer=0 stack=1 */
+/* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
 int64_t __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
-    int64_t v1 = 0LL;
+    S_140001d90_v1_t * v1 = ((S_140001d90_v1_t *)(0LL));
     int64_t v2 = 0LL;
     int64_t v3 = 0LL;
     int64_t v4 = 0LL;
@@ -3097,7 +3125,7 @@ int64_t __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     int64_t v17 = 0LL;
     int64_t v18 = 0LL;
 
-    v1 = (v0 - 88LL);
+    v1 = ((S_140001d90_v1_t *)((v0 - 88LL)));
     v2 = (*((int64_t *)(5368742160LL)));
     v3 = v2;
     v4 = (v3 & v3);
@@ -3106,17 +3134,17 @@ int64_t __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     } else {
         (/* opaque: movsd */ 0);
         (/* opaque: unpcklpd */ 0);
-        v6 = ((void *)((v1 + 32LL)));
-        *((int32_t *)(((int64_t)(v6)))) = v7;
+        v6 = ((void *)((((int64_t)(v1)) + 32LL)));
+        v1->field_20 = v7;
         v9 = ((void *)(((int64_t)(v6))));
-        v10 = ((void *)((v1 + 40LL)));
-        *((int64_t *)(((int64_t)(v10)))) = v11;
+        v10 = ((void *)((((int64_t)(v1)) + 40LL)));
+        v1->field_28 = v11;
         (/* opaque: movaps */ 0);
         (/* opaque: movsd */ 0);
         v16 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v12, v13, v11, ((int64_t)(v9)), v14, v15);
     }
     /* phi v17 <- (bb0: v3) (bb2: v16) */
-    v18 = (v1 + 88LL);
+    v18 = (((int64_t)(v1)) + 88LL);
     return v17;
 }
 
@@ -5363,9 +5391,9 @@ int64_t fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v13 = v12;
     v7->field_70 = v15;
     v16 = ((void *)((((int64_t)(v7)) + 120LL)));
-    *((int64_t *)(((int64_t)(v16)))) = v17;
+    v7->field_78 = v17;
     v18 = ((void *)((((int64_t)(v7)) + 56LL)));
-    *((int64_t *)(((int64_t)(v18)))) = v9;
+    v7->field_38 = v9;
     v19 = ((void *)(((long long (*)(long long, long long, long long, long long, long long, long long))__local_stdio_printf_options)(v9, v13, v12, v10, v15, v17)));
     v20 = (v17 ^ v17);
     v21 = v13;
@@ -6188,11 +6216,11 @@ void __p__environ(void) {
 /* args: rdi,rsi,rdx,rcx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 3 */
-/* struct_layouts: pointer=0 stack=0 */
+/* struct_layouts: pointer=1 stack=0 */
 /* switch_tables: 0 */
 int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
-    int64_t v1 = 0LL;
+    S_140002a60_v1_t * v1 = ((S_140002a60_v1_t *)(0LL));
     int64_t v2 = arg0;
     int64_t v3 = arg1;
     int64_t v4 = arg2;
@@ -6217,28 +6245,28 @@ int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg
     int64_t v23 = 0LL;
     int64_t v24 = 0LL;
 
-    v1 = (v0 - 88LL);
+    v1 = ((S_140002a60_v1_t *)((v0 - 88LL)));
     v8 = ((long long (*)(long long, long long, long long, long long, long long, long long))__main)(v2, v3, v4, v5, v6, v7);
     v9 = -11LL;
     v10 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v2, v3, v4, v9, v6, v7);
     (/* opaque: movaps */ 0);
     v11 = (v4 ^ v4);
     v12 = (v9 ^ v9);
-    v13 = ((void *)((v1 + 56LL)));
-    *((int32_t *)(((int64_t)(v13)))) = v11;
+    v13 = ((void *)((((int64_t)(v1)) + 56LL)));
+    v1->field_38 = v11;
     v15 = ((void *)(((int64_t)(v13))));
-    v16 = (v1 + 61LL);
+    v16 = (((int64_t)(v1)) + 61LL);
     v17 = v16;
     v18 = 18LL;
-    v19 = ((void *)((v1 + 32LL)));
-    *((int64_t *)(((int64_t)(v19)))) = v12;
+    v19 = ((void *)((((int64_t)(v1)) + 32LL)));
+    v1->field_20 = v12;
     v20 = v10;
     (/* opaque: movups */ 0);
-    v21 = ((void *)((v1 + 76LL)));
-    *((int32_t *)(((int64_t)(v21)))) = 673104LL;
+    v21 = ((void *)((((int64_t)(v1)) + 76LL)));
+    v1->field_4c = 673104LL;
     v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v2, v3, v17, v20, v18, ((int64_t)(v15)));
     v23 = 42LL;
-    v24 = (v1 + 88LL);
+    v24 = (((int64_t)(v1)) + 88LL);
     return v23;
 }
 

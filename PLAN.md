@@ -50,22 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.17 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 5 numbered follow-up batches (B3.18 – B3.22) below
+plus B3.11 – B3.18 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 4 numbered follow-up batches (B3.19 – B3.22) below
 are pre-M4 work: each closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.18 — `dac-recovery::structs` SSA-source bounds correctness (B3.10 surfaced)
-- `lookup_def_op` currently bounds-checks
-  `ValueSource::Instruction { block, index }` defensively after
-  the PE corpus surfaced an over-bound index. Chase the
-  underlying inconsistency in the SSA constructor /
-  value-source bookkeeping; remove the defensive guard when the
-  invariant holds again.
-- **Done when:** the bookkeeping is tightened (unit test covers
-  the previously-out-of-bounds case from the PE corpus), and the
-  defensive guard becomes a `debug_assert!`.
 
 ### B3.19 — Hint provenance in annotations (B3.6 follow-up, FR-19 / FR-20)
 - Thread the matched `EvidenceNode::UserHint` ID into

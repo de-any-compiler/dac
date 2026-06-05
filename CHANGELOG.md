@@ -4139,6 +4139,108 @@ without base, unsupported encoding, section overrun, VA
 that doesn't map to a CFG block — falls back honestly to
 the B3.10 surface rather than inventing arms).
 
+#### B3.18 — SSA value-source bookkeeping after CSE (2026-06-05)
+
+The trivial local CSE pass in
+`dac_analysis::ssa::local_value_number` drops redundant
+instructions from `block.instructions` but, before B3.18,
+left every surviving dst's
+`ValueDef.source = ValueSource::Instruction { index }`
+unchanged. So a value defined at original index 2 that
+ended up at compacted index 1 still claimed index 2 — the
+backing op was one slot to the left of where the
+value-source said it was. Any downstream pass that resolved
+a `ValueId` to its defining `SsaOp` through the index path
+(struct-field decomposition, idiom matching, the C
+backend's operand printer) either landed on the wrong op or
+fell off the end of the list, depending on how many
+redundancies the block had.
+
+The PE corpus surfaced this in B3.10 as an over-bound index
+into `block.instructions`. B3.10 patched the visible site —
+`dac_recovery::structs::lookup_def_op` — with an explicit
+`get()` guard that turned the panic into a silent `None`.
+That was the correct stopgap (the struct-field pass
+gracefully degrades to the self-base shape on `None`), but
+it also masked every other consumer of `ValueSource` that
+*didn't* guard: they continued to read the wrong op.
+
+B3.18 fixes the root cause:
+
+- **Reindex on compaction.** After
+  `local_value_number` finishes draining a block's
+  instructions into the `kept: Vec<SsaInstruction>` list,
+  it walks `kept` in order and rewrites each surviving
+  `dst`'s `ValueDef.source` to
+  `ValueSource::Instruction { block, index: new_index }`.
+  The block index is unchanged (CSE never moves a value
+  between blocks); only the slot index is rewritten.
+  Phi-sourced and parameter-sourced values are untouched —
+  CSE does not touch the phi list.
+- **Promote the defensive guard.** With the invariant
+  restored, `dac_recovery::structs::lookup_def_op`'s
+  `?`-on-`get()` becomes a `debug_assert!` plus direct
+  indexing, matching the style already used in
+  `dac_recovery::idioms::lookup_def_op`. The assertion
+  message names B3.18 so a future regression points at the
+  CSE reindex rather than at the consumer.
+
+The fix is small (one rewrite loop) but the effect on the
+PE corpus is visible. Before B3.18,
+`hello-pe-o1-c/source.c` had a single
+`/* base: v17 */` struct that compressed three real fields
+into a 60-byte opaque `__pad_0_3c` because every field
+walk-back beyond the first hit the stale-index
+degradation. After B3.18, that struct grows from 36 bytes
+to 64 bytes with a recovered `int64_t field_20`, and two
+new structs land at `/* base: v1 */` (16 bytes,
+`field_20` + `field_28`) and `/* base: v1 */` (48 bytes,
+`field_20` + `field_38` + `field_4c`).
+`S_140002860_v7_t` also gains `field_38` and `field_78`,
+growing from 88 to 96 bytes. Every gained field is a real
+struct-recovery hit that the stale-index path was throwing
+away.
+
+### Tests added
+
+- `dac_analysis::ssa::tests::ssa_07b_cse_reindexes_surviving_value_sources`
+  constructs a 3-instruction block where CSE drops the
+  non-last redundancy (`t1 = a + b` between
+  `t0 = a + b` and `t2 = t0 + 1`). The test asserts both
+  that the surviving `t2` lands at compacted index 1 and
+  that `ssa.value(t2).source` reports
+  `ValueSource::Instruction { block: 0, index: 1 }` rather
+  than the pre-compaction `index: 2`. The walk-back used
+  by downstream passes is exercised by the bound check at
+  the end of the test, mirroring how
+  `dac_recovery::structs::lookup_def_op` reaches the op.
+
+### Limitations
+
+- **CSE-only invariant.** The reindex only runs inside
+  `local_value_number`. No other pass currently mutates
+  `block.instructions` after SSA construction — `grep` of
+  the workspace confirms it. If a later batch adds an
+  instruction-removing pass (dead-store elimination,
+  load-forwarding, a cross-block CSE) it has to adopt the
+  same reindex contract. The `debug_assert!` in
+  `lookup_def_op` catches a regression in dev builds; a
+  release build still degrades silently to the
+  "self-base" shape that B3.10 was already doing.
+
+Closes: B3.18.
+Touches: I-2 (`ValueSource::Instruction { block, index }`
+once again denotes the *current* defining op for every
+live value, not a stale pre-CSE slot — the evidence chain
+from a struct-field read back to its base computation is
+unbroken), NFR-9 (the rewrite is a pure pass over
+`kept` in source order with no hashing or non-determinism
+beyond what was already in `local_value_number`; same
+SsaFunction in ⇒ same SsaFunction out), I-6 (the
+`debug_assert!` makes a future bookkeeping regression
+loud in dev while preserving the B3.10 graceful-degrade
+shape in release).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

@@ -798,10 +798,10 @@ impl<'a> RenameState<'a> {
 fn local_value_number(ssa: &mut SsaFunction) {
     let mut remap: BTreeMap<ValueId, ValueId> = BTreeMap::new();
 
-    for block in &mut ssa.blocks {
+    for bi in 0..ssa.blocks.len() {
         let mut seen: BTreeMap<VnKey, ValueId> = BTreeMap::new();
-        let mut kept: Vec<SsaInstruction> = Vec::with_capacity(block.instructions.len());
-        for ins in block.instructions.drain(..) {
+        let mut kept: Vec<SsaInstruction> = Vec::with_capacity(ssa.blocks[bi].instructions.len());
+        for ins in ssa.blocks[bi].instructions.drain(..) {
             // Apply current remap to operands first so equivalence
             // is detected after upstream redundancies are folded.
             let ins = remap_instruction(ins, &remap);
@@ -817,7 +817,21 @@ fn local_value_number(ssa: &mut SsaFunction) {
             }
             kept.push(ins);
         }
-        block.instructions = kept;
+        // Reindex surviving dsts so each `ValueSource::Instruction { index }`
+        // points at the value's new position in the compacted list. The
+        // invariant `blocks[block].instructions[index].dst == Some(id)`
+        // must hold for every live value — downstream passes (idiom
+        // recognition, struct-field recovery, C lowering) reach the
+        // defining op through this index without re-scanning the block.
+        for (new_index, ins) in kept.iter().enumerate() {
+            if let Some(dst) = ins.dst {
+                if let ValueSource::Instruction { index, .. } = &mut ssa.values[dst as usize].source
+                {
+                    *index = new_index as u32;
+                }
+            }
+        }
+        ssa.blocks[bi].instructions = kept;
     }
 
     if remap.is_empty() {
@@ -1364,6 +1378,50 @@ mod tests {
         } else {
             panic!("expected return");
         }
+    }
+
+    #[test]
+    fn ssa_07b_cse_reindexes_surviving_value_sources() {
+        // Block 0:
+        //   t0 = a + b      (survives at index 0)
+        //   t1 = a + b      (redundant, dropped)
+        //   t2 = t0 + 1     (originally index 2; after compaction at index 1)
+        //   ret t2
+        //
+        // The compaction has to rewrite t2's ValueSource::Instruction.index
+        // from 2 → 1, or downstream callers that follow the index back to
+        // the defining op (struct-field recovery, idiom matching, C
+        // lowering) read past the end of the block's compacted list.
+        // Documented in CHANGELOG B3.18 as the PE-corpus out-of-bounds.
+        let cfg = cfg(1, 0, &[]);
+        let doms = DominatorTree::build(&cfg);
+        let raw = RawFunction {
+            variables: vars(&["a", "b", "t0", "t1", "t2"]),
+            blocks: vec![RawBlock {
+                ops: vec![op_add(2, 0, 1), op_add(3, 0, 1), op_add_const(4, 2, 1)],
+                terminator: term_return(Some(4)),
+            }],
+        };
+        let ssa = construct_ssa(&cfg, &doms, &raw);
+        assert_eq!(
+            ssa.blocks[0].instructions.len(),
+            2,
+            "CSE must drop the duplicate add"
+        );
+        let surviving_t2 = ssa.blocks[0].instructions[1]
+            .dst
+            .expect("compacted index 1 must hold the t2 def");
+        assert_eq!(
+            ssa.value(surviving_t2).source,
+            ValueSource::Instruction { block: 0, index: 1 },
+            "reindex must point at the value's new compacted position"
+        );
+        // The walk-back used by downstream passes must land on the live
+        // instruction without an out-of-bounds index.
+        let ValueSource::Instruction { block, index } = ssa.value(surviving_t2).source else {
+            panic!("surviving dst must be an Instruction-sourced value");
+        };
+        assert!((index as usize) < ssa.blocks[block as usize].instructions.len());
     }
 
     #[test]
