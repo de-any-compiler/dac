@@ -52,8 +52,8 @@ use dac_knowledge::{lookup_api_signature, ApiSignature, X86_64_CONVENTIONS};
 use dac_lift::lift_function;
 use dac_recovery::{
     analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms, recover_names,
-    recover_structs, ApiResolver, ConventionMatch, Function, FunctionSet, NameTable,
-    RecoveredIdioms, RecoveredStructs, StackConvention, StackFrame, StringResolver,
+    recover_structs, resolve_switch_entries, ApiResolver, ConventionMatch, Function, FunctionSet,
+    NameTable, RecoveredIdioms, RecoveredStructs, StackConvention, StackFrame, StringResolver,
     SwitchTableIdiom, TypeMap, ValueType,
 };
 
@@ -346,7 +346,7 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     let idioms = recover_idioms(&ssa);
 
     let sem = structure(&ssa, &cfg, &doms, &pdoms, &loops);
-    let sem = lower_switch_idioms(sem, &idioms);
+    let sem = lower_switch_idioms(sem, &idioms, &cfg, ctx.model, ctx.bytes);
 
     // B3.6: overlay the user-hint catalogue. Hints update `types`
     // with `Source::UserHint` confidences and may promote the
@@ -468,76 +468,296 @@ fn hinted_return_register(c: &ConventionMatch) -> &'static str {
 
 /// Post-pass on the structurer output: rewrite each
 /// [`SemStmt::Unreachable`] whose source block matches a recognised
-/// [`SwitchTableIdiom`] into [`SemStmt::Switch`].
+/// [`SwitchTableIdiom`] into [`SemStmt::Switch`], populating arms by
+/// reading the table out of the binary section that backs the
+/// recovered table base (B3.17, FR-18).
 ///
-/// **Scope at B3.10.** Arms are left empty and the default body
-/// preserves the `Unreachable` shape; per-entry resolution that
-/// reads `.rodata` (and PE relocations) and mints labelled goto
-/// arms is on the B3 follow-up shelf. The visible change is that
-/// the C backend now emits `switch (scrutinee) { default: __builtin_unreachable(); }`
-/// with a comment describing the recovered table — instead of a bare
-/// `__builtin_unreachable();` — so a reader sees the recognised
-/// idiom even when the arms cannot yet be materialised (I-6).
-fn lower_switch_idioms(mut sem: SemFunction, idioms: &RecoveredIdioms) -> SemFunction {
+/// Resolution proceeds in three phases:
+/// 1. **Resolve entries.** [`resolve_switch_entries`] reads the
+///    binary at `idiom.table_base_const`, decoding the
+///    absolute-pointer (`width == stride == 8`) or `int32_t`-relative
+///    (`width == stride == 4`) shapes — bounded by the recovered
+///    `bound` and capped by [`MAX_SWITCH_ENTRIES`].
+/// 2. **Map VAs to blocks.** Every resolved target VA is looked up
+///    in the CFG's block-address table; matches mint a per-block
+///    [`LabelId`] from the function's existing label-id space so the
+///    structurer-allocated labels and the switch-allocated labels
+///    don't collide. Entries whose target VA doesn't hit a block
+///    boundary are dropped (the idiom recognition was structurally
+///    sound but the table contained a sentinel or jumped into the
+///    middle of a known block — honest degradation, I-6).
+/// 3. **Anchor labels.** The new [`SemStmt::Label`] markers are
+///    appended at the function-body tail, *outside* the structurer's
+///    recursive walk. They share the same orphan-anchor mechanism the
+///    structurer already uses for goto targets it can't place inside
+///    the structured tree, so an arm rewrite later in the pipeline
+///    can't drop the label slot.
+///
+/// When the idiom carries no resolvable entries (no base, no bound,
+/// or unsupported encoding), the switch surface degrades to the
+/// B3.10 shape: a `Switch` with empty arms and an `Unreachable`
+/// default body. The reader still sees the recognised idiom (I-6).
+fn lower_switch_idioms(
+    mut sem: SemFunction,
+    idioms: &RecoveredIdioms,
+    cfg: &dac_analysis::cfg::Cfg,
+    model: &BinaryModel,
+    bytes: &[u8],
+) -> SemFunction {
     if idioms.switch_tables.is_empty() {
         return sem;
     }
-    rewrite_block(&mut sem.body, &idioms.switch_tables);
+    let resolved = build_resolved_tables(&idioms.switch_tables, cfg, model, bytes, &sem);
+    rewrite_block(&mut sem.body, &resolved);
+    append_orphan_labels(&mut sem.body, &resolved);
     sem
 }
 
-fn rewrite_block(
-    block: &mut SemBlock,
+/// Per-switch resolution record threaded through the post-pass. Carries
+/// the scrutinee, the recovered arms (case value paired with the
+/// minted label id), and the distinct target blocks whose labels need
+/// to be anchored at the function-body tail.
+///
+/// Every recognised [`SwitchTableIdiom`] gets a record — even when
+/// `arms` is empty. The rewriter uses presence-in-map to decide whether
+/// to demote a `SemStmt::Unreachable` into a `SemStmt::Switch`, which
+/// keeps the B3.10 "switch with empty arms + Unreachable default"
+/// surface alive for tables whose entry resolution failed.
+struct ResolvedSwitch {
+    scrutinee: dac_ir::ssa::ValueId,
+    /// Case values paired with the [`LabelId`] of the target block's
+    /// label marker. Deterministic order: ascending by case value.
+    arms: Vec<(i64, dac_ir::sem::LabelId)>,
+    /// Distinct target blocks whose labels need to be anchored at the
+    /// function-body tail. Deterministic order: ascending by
+    /// [`LabelId`].
+    labels: Vec<(dac_ir::ssa::SsaBlockId, dac_ir::sem::LabelId)>,
+}
+
+type SwitchResolutions = BTreeMap<dac_ir::ssa::SsaBlockId, ResolvedSwitch>;
+
+fn build_resolved_tables(
     tables: &BTreeMap<dac_ir::ssa::SsaBlockId, SwitchTableIdiom>,
-) {
-    for stmt in block.stmts.iter_mut() {
-        rewrite_stmt(stmt, tables);
+    cfg: &dac_analysis::cfg::Cfg,
+    model: &BinaryModel,
+    bytes: &[u8],
+    sem: &SemFunction,
+) -> SwitchResolutions {
+    let block_index: BTreeMap<u64, dac_ir::ssa::SsaBlockId> =
+        cfg.blocks.iter().map(|b| (b.address, b.id)).collect();
+    let mut next_label = next_label_id(&sem.body);
+    let mut out = SwitchResolutions::new();
+    for (source_block, idiom) in tables {
+        let resolved = resolve_switch_entries(idiom, model, bytes);
+        let mut block_label: BTreeMap<dac_ir::ssa::SsaBlockId, dac_ir::sem::LabelId> =
+            BTreeMap::new();
+        let mut arms: Vec<(i64, dac_ir::sem::LabelId)> = Vec::new();
+        for entry in resolved {
+            let Some(&target_block) = block_index.get(&entry.target_va) else {
+                continue;
+            };
+            let lid = *block_label.entry(target_block).or_insert_with(|| {
+                let id = next_label;
+                next_label = next_label.saturating_add(1);
+                id
+            });
+            arms.push((entry.case_value, lid));
+        }
+        let mut labels: Vec<(dac_ir::ssa::SsaBlockId, dac_ir::sem::LabelId)> =
+            block_label.into_iter().collect();
+        labels.sort_by_key(|(_, lid)| *lid);
+        out.insert(
+            *source_block,
+            ResolvedSwitch {
+                scrutinee: idiom.scrutinee,
+                arms,
+                labels,
+            },
+        );
+    }
+    out
+}
+
+/// Next free [`LabelId`] given the function body — one past the highest
+/// id any existing [`SemStmt::Label`] or [`SemStmt::Goto`] references.
+/// Conservative: scans both labels and goto targets so the allocator
+/// stays above the structurer's range even when the structurer
+/// pre-allocated a slot whose label marker hasn't been inserted yet.
+fn next_label_id(body: &SemBlock) -> dac_ir::sem::LabelId {
+    let mut max: Option<dac_ir::sem::LabelId> = None;
+    walk_label_ids(body, &mut |id| {
+        max = Some(match max {
+            Some(prev) => prev.max(id),
+            None => id,
+        });
+    });
+    match max {
+        Some(prev) => prev.saturating_add(1),
+        None => 0,
     }
 }
 
-fn rewrite_stmt(stmt: &mut SemStmt, tables: &BTreeMap<dac_ir::ssa::SsaBlockId, SwitchTableIdiom>) {
+fn walk_label_ids(body: &SemBlock, f: &mut impl FnMut(dac_ir::sem::LabelId)) {
+    for stmt in &body.stmts {
+        match stmt {
+            SemStmt::Label { id, .. } => f(*id),
+            SemStmt::Goto { target, .. } => f(*target),
+            SemStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                walk_label_ids(then_body, f);
+                if let Some(eb) = else_body {
+                    walk_label_ids(eb, f);
+                }
+            }
+            SemStmt::While { body, .. }
+            | SemStmt::DoWhile { body, .. }
+            | SemStmt::Loop { body, .. } => walk_label_ids(body, f),
+            SemStmt::Switch { arms, default, .. } => {
+                for arm in arms {
+                    walk_label_ids(&arm.body, f);
+                }
+                if let Some(d) = default {
+                    walk_label_ids(d, f);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn append_orphan_labels(body: &mut SemBlock, resolved: &SwitchResolutions) {
+    // Already-anchored label ids — the structurer's `insert_labels`
+    // post-pass may have placed some of our newly-minted ids inside
+    // the tree if a target block happened to be visited via another
+    // path. Defensive: only emit a tail marker for label ids the
+    // tree doesn't already carry a `Stmt::Label` for. Goto targets
+    // do not count — a `goto` reference is the *consumer*, not the
+    // anchor.
+    let mut anchored: std::collections::BTreeSet<dac_ir::sem::LabelId> =
+        std::collections::BTreeSet::new();
+    walk_anchored_labels(body, &mut |id| {
+        anchored.insert(id);
+    });
+    let mut entries: Vec<(dac_ir::ssa::SsaBlockId, dac_ir::sem::LabelId)> = Vec::new();
+    for switch in resolved.values() {
+        for (block, lid) in &switch.labels {
+            if !entries.iter().any(|(_, existing)| *existing == *lid) {
+                entries.push((*block, *lid));
+            }
+        }
+    }
+    entries.sort_by_key(|(_, lid)| *lid);
+    for (block, lid) in entries {
+        if anchored.contains(&lid) {
+            continue;
+        }
+        body.stmts.push(SemStmt::Label {
+            id: lid,
+            source_block: block,
+        });
+    }
+}
+
+/// Like [`walk_label_ids`] but visits only `Stmt::Label` markers — the
+/// anchors — and not `Stmt::Goto` targets. Used by
+/// [`append_orphan_labels`] to decide which newly-minted label ids
+/// still need a tail anchor.
+fn walk_anchored_labels(body: &SemBlock, f: &mut impl FnMut(dac_ir::sem::LabelId)) {
+    for stmt in &body.stmts {
+        match stmt {
+            SemStmt::Label { id, .. } => f(*id),
+            SemStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                walk_anchored_labels(then_body, f);
+                if let Some(eb) = else_body {
+                    walk_anchored_labels(eb, f);
+                }
+            }
+            SemStmt::While { body, .. }
+            | SemStmt::DoWhile { body, .. }
+            | SemStmt::Loop { body, .. } => walk_anchored_labels(body, f),
+            SemStmt::Switch { arms, default, .. } => {
+                for arm in arms {
+                    walk_anchored_labels(&arm.body, f);
+                }
+                if let Some(d) = default {
+                    walk_anchored_labels(d, f);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn rewrite_block(block: &mut SemBlock, resolved: &SwitchResolutions) {
+    for stmt in block.stmts.iter_mut() {
+        rewrite_stmt(stmt, resolved);
+    }
+}
+
+fn rewrite_stmt(stmt: &mut SemStmt, resolved: &SwitchResolutions) {
     match stmt {
         SemStmt::Unreachable {
             source_block,
             evidence,
         } => {
-            if let Some(table) = tables.get(source_block) {
-                let scrutinee = Operand::Value(table.scrutinee);
-                let mut default = SemBlock::empty();
-                default.stmts.push(SemStmt::Unreachable {
-                    source_block: *source_block,
-                    evidence: *evidence,
-                });
-                *stmt = SemStmt::Switch {
-                    scrutinee,
-                    arms: Vec::<SwitchArm>::new(),
-                    default: Some(default),
-                    source_block: *source_block,
-                    evidence: *evidence,
-                };
-            }
+            let Some(record) = resolved.get(source_block) else {
+                return;
+            };
+            let switch_arms = record
+                .arms
+                .iter()
+                .map(|(value, lid)| SwitchArm {
+                    value: *value,
+                    body: SemBlock {
+                        stmts: vec![SemStmt::Goto {
+                            target: *lid,
+                            source_block: *source_block,
+                            evidence: *evidence,
+                        }],
+                    },
+                })
+                .collect::<Vec<_>>();
+            let mut default = SemBlock::empty();
+            default.stmts.push(SemStmt::Unreachable {
+                source_block: *source_block,
+                evidence: *evidence,
+            });
+            *stmt = SemStmt::Switch {
+                scrutinee: Operand::Value(record.scrutinee),
+                arms: switch_arms,
+                default: Some(default),
+                source_block: *source_block,
+                evidence: *evidence,
+            };
         }
         SemStmt::If {
             then_body,
             else_body,
             ..
         } => {
-            rewrite_block(then_body, tables);
+            rewrite_block(then_body, resolved);
             if let Some(eb) = else_body.as_mut() {
-                rewrite_block(eb, tables);
+                rewrite_block(eb, resolved);
             }
         }
         SemStmt::While { body, .. }
         | SemStmt::DoWhile { body, .. }
         | SemStmt::Loop { body, .. } => {
-            rewrite_block(body, tables);
+            rewrite_block(body, resolved);
         }
         SemStmt::Switch { arms, default, .. } => {
             for arm in arms.iter_mut() {
-                rewrite_block(&mut arm.body, tables);
+                rewrite_block(&mut arm.body, resolved);
             }
             if let Some(d) = default.as_mut() {
-                rewrite_block(d, tables);
+                rewrite_block(d, resolved);
             }
         }
         _ => {}
@@ -712,5 +932,111 @@ mod tests {
         let s = LiftStats::from(&[]);
         assert_eq!(s.total(), 0);
         assert_eq!(s.fraction(), 0.0);
+    }
+
+    // ---- B3.17 switch-table lowering -------------------------------
+
+    fn make_body_with_labels(label_ids: &[dac_ir::sem::LabelId]) -> SemBlock {
+        let mut body = SemBlock::empty();
+        for &id in label_ids {
+            body.stmts.push(SemStmt::Label {
+                id,
+                source_block: 0,
+            });
+        }
+        body
+    }
+
+    /// `next_label_id` reserves the slot one past the highest existing
+    /// label or goto target so the switch-allocated ids can't collide
+    /// with structurer-allocated ones.
+    #[test]
+    fn next_label_id_picks_one_past_the_highest_in_use() {
+        let body = make_body_with_labels(&[0, 1, 4]);
+        assert_eq!(next_label_id(&body), 5);
+    }
+
+    #[test]
+    fn next_label_id_on_empty_body_starts_at_zero() {
+        let body = SemBlock::empty();
+        assert_eq!(next_label_id(&body), 0);
+    }
+
+    #[test]
+    fn next_label_id_counts_goto_targets() {
+        // A Goto stmt's target reserves the slot too — even before its
+        // matching Label has been inserted by the structurer.
+        let mut body = SemBlock::empty();
+        body.stmts.push(SemStmt::Goto {
+            target: 7,
+            source_block: 0,
+            evidence: dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+                layer: dac_core::IrLayer::Semantic,
+                id: 0,
+            }),
+        });
+        assert_eq!(next_label_id(&body), 8);
+    }
+
+    /// `walk_anchored_labels` reports only `Stmt::Label` markers — it
+    /// excludes `Stmt::Goto` targets so `append_orphan_labels` knows
+    /// which label ids still need a tail anchor.
+    #[test]
+    fn walk_anchored_labels_ignores_goto_targets() {
+        let mut body = SemBlock::empty();
+        let ev = dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+            layer: dac_core::IrLayer::Semantic,
+            id: 0,
+        });
+        body.stmts.push(SemStmt::Label {
+            id: 1,
+            source_block: 0,
+        });
+        body.stmts.push(SemStmt::Goto {
+            target: 2,
+            source_block: 0,
+            evidence: ev,
+        });
+        let mut seen: std::collections::BTreeSet<dac_ir::sem::LabelId> =
+            std::collections::BTreeSet::new();
+        walk_anchored_labels(&body, &mut |id| {
+            seen.insert(id);
+        });
+        // Label id 1 is anchored; goto target 2 is *not* anchored.
+        assert!(seen.contains(&1));
+        assert!(!seen.contains(&2));
+    }
+
+    /// `append_orphan_labels` writes `Stmt::Label` markers at the
+    /// function-body tail for every newly-minted switch label id that
+    /// isn't already anchored inside the structured tree.
+    #[test]
+    fn append_orphan_labels_anchors_each_switch_label_at_body_tail() {
+        let mut body = SemBlock::empty();
+        // Pre-existing structurer-allocated label 0; switch will mint 1, 2.
+        body.stmts.push(SemStmt::Label {
+            id: 0,
+            source_block: 0,
+        });
+        let mut resolved = SwitchResolutions::new();
+        resolved.insert(
+            7,
+            ResolvedSwitch {
+                scrutinee: 99,
+                arms: vec![(0, 1), (1, 2)],
+                labels: vec![(11, 1), (12, 2)],
+            },
+        );
+        append_orphan_labels(&mut body, &resolved);
+        // Body should now end with Label{1}, Label{2}.
+        let tail_ids: Vec<dac_ir::sem::LabelId> = body
+            .stmts
+            .iter()
+            .filter_map(|s| match s {
+                SemStmt::Label { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tail_ids, vec![0, 1, 2]);
     }
 }

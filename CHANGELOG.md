@@ -3932,6 +3932,213 @@ positives degrade visibly to the B3.10 comment-only
 surface rather than producing a typedef the compile gate
 would reject).
 
+#### B3.17 — Switch-arm resolution (2026-06-05)
+
+`dac-recovery::idioms::SwitchTableIdiom` records the
+*shape* of a jump-table dispatch, and B3.10 lowered the
+recognised idiom to a `Stmt::Switch` whose `arms` were
+empty and whose `default` body wrapped an
+`__builtin_unreachable()` carrying the original
+`SemStmt::Unreachable`. The C printer surfaced that as
+`switch (scrutinee) { default: { __builtin_unreachable(); } }`
+with a `recovered switch table at block N (arm resolution
+pending)` comment — recognised, but not yet usable.
+
+B3.17 closes the loop. The post-pass that maps each
+recognised idiom into a `SemStmt::Switch` now reads the
+table out of the binary's `.rodata` (or `.rdata`), maps
+each entry's target VA to a CFG block, mints
+[`LabelId`](crates/dac-ir/src/sem.rs)s from the slot
+immediately above the structurer's range, and writes
+`case <const>: { goto L<n>; }` arms anchored against
+those labels. A new label-marker post-pass (`append_orphan_labels`)
+appends a `Stmt::Label` for every minted id at the
+function-body tail — *outside* the structurer's recursive
+walk — so the slots survive any subsequent arm-rewrite
+pass.
+
+#### What ships
+
+- **`SwitchBound` enum.** `SwitchTableIdiom::bound` now
+  encodes the `Ult` (`LessThan(n)`) vs `Ule` (`AtMost(n)`)
+  distinction lost by B3.3's `Option<i64>` shape. The
+  entry-resolution pass needs the inclusive-vs-exclusive
+  distinction to read the right number of entries; the
+  helper `SwitchBound::entry_count` returns `n` for
+  `LessThan` and `n + 1` for `AtMost`.
+- **`lookup_bound` recognises both branch polarities.**
+  The B3.3 recogniser only fired when the dispatch sat on
+  the `taken` edge of a guarding `Ult`/`Ule` compare. The
+  PE corpus emits the inverse shape (`if (cmd > N) goto
+  default; else goto dispatch`, where the dispatch is on
+  the `not_taken` edge of a guarding `Ugt`/`Uge`); the
+  recogniser now handles `(Ult, taken)`, `(Ule, taken)`,
+  `(Ugt, not_taken)`, and `(Uge, not_taken)`. Signed
+  compares stay rejected — `signed_lt_does_not_supply_bound`
+  still holds, because a signed `<` against a positive
+  limit could fire with a negative scrutinee that would
+  index the table backwards (I-6).
+- **Constant folder on the base leg.** PIC tables
+  materialise the table base as a short chain of `lea`s
+  (`Move(Const)` → `Add(base, Const)` → another `Move`),
+  which B3.3 surfaced as `table_base_const: None`. A new
+  `fold_constant_operand` helper walks up to four hops of
+  `Move` / `Add` / `Sub` and collapses the chain to a
+  single `Some(va)`. The fold is bounded so the SSA
+  well-formedness invariant cannot deadlock the
+  recogniser.
+- **Iced RIP-relative addressing surfaces correctly.**
+  `iced-x86` reports `Register::RIP` as the base for
+  RIP-relative `lea` / `mov` operands *and* returns the
+  already-resolved absolute target as the displacement.
+  The x86 lifter previously emitted both, so the SSA
+  carried `rip_param + abs_va` — semantically wrong and
+  invisible to any downstream constant-folding pass. With
+  `instr.is_ip_rel_memory_operand()` now driving a
+  base-drop, the lifter emits `Move(Const(abs_va))` and
+  the switch-table base lands in the recovery's
+  `value_const` table without the fold even running.
+- **`resolve_switch_entries` (dac-recovery).** Given an
+  idiom with a recovered base and bound, the helper reads
+  the bytes at `base + i * stride` for
+  `i ∈ 0..entry_count.min(MAX_SWITCH_ENTRIES)` (4 KiB-style
+  cap of 256 entries) and decodes them into target VAs:
+  - **Absolute pointer table** (`width == stride == 8`):
+    the entry *is* the target VA.
+  - **`int32_t`-relative table** (`width == stride == 4`):
+    the target is `(base as i64) + (entry as i32) as i64`
+    — the GCC PIE / clang PIC / MSVC `/GS-` shape.
+  Anything else (unsupported width/stride combo, base or
+  bound missing, section without file backing, section-
+  boundary overrun) returns an empty vector. Honest
+  degradation, never an error (I-6).
+- **`lower_switch_idioms` (dac-cli).** The post-pass now
+  takes the CFG + `BinaryModel` + raw bytes, calls
+  `resolve_switch_entries`, maps each target VA to a CFG
+  block via an `address → SsaBlockId` index, mints one
+  `LabelId` per *unique* target block (starting from
+  `next_label_id(&sem.body)` so the slot can't collide
+  with structurer-allocated ids or pre-existing goto
+  targets), and produces a `SwitchArm { value, body:
+  [Goto { target: lid }] }` for every resolved entry.
+  Idioms whose entries can't be resolved still get a
+  switch record — with empty arms — so the B3.10
+  comment-marked empty-arms surface is preserved
+  unchanged for the corpus shapes the resolver can't yet
+  decode (e.g. signed-Gt-bounded dispatches).
+- **Label anchoring at the function-body tail.** A new
+  `append_orphan_labels` walk pushes `Stmt::Label` markers
+  at `sem.body.stmts`' tail for every minted label id that
+  no `Stmt::Label` elsewhere in the tree already anchors.
+  Goto targets do not count as anchors — the original
+  structurer-style `walk_label_ids` helper that conflated
+  them was split, with `walk_anchored_labels` driving the
+  orphan-anchor decision. This matches the PLAN.md
+  requirement: "Anchor labels outside the structurer's
+  recursive walk so the label slots survive arm
+  rewriting."
+
+#### Corpus impact
+
+- The PE corpus (`hello-pe-o1-c`) has three recognised
+  switch tables. Two now lower with populated arms:
+  - `__mingw_SEH_error_handler` (0x140001de0) emits
+    `case 5LL: { goto L3; }`, `case 9LL: { goto L4; }`,
+    and anchors `L3:; L4:;` at the function tail.
+  - `_FX_init_default` (0x140001f80) emits the identical
+    `case 5LL` / `case 9LL` shape against its own
+    function-local label ids.
+- The third (`_matherr`, 0x140001730) keeps the B3.10
+  empty-arms surface: the guarding compare is signed
+  `Gt(v7, 6)` rather than `Ugt`, which the strict
+  `signed_lt_does_not_supply_bound` invariant continues
+  to reject (signed bounds are a known follow-up).
+- ELF goldens (`hello-elf-o1-c`, `syscall-hello-elf-o1-c`)
+  show no switch tables; the recovery is unaffected
+  there. They *do* drift on the RIP-relative lifter
+  change — listing rows now render
+  `mov rax, [<abs_va>]` rather than `mov rax,
+  [rip + <abs_va>]`, and per-value type recovery picks up
+  the constants the SSA no longer hides behind a phantom
+  `rip` parameter. The drift is uniform across both
+  corpora and improves the surface (fewer `void *` casts
+  for absolute-address loads).
+
+#### Tests
+
+- `dac-recovery::idioms::tests::fold_walks_short_add_chain_to_recover_table_base` — proves the folder catches the
+  two-hop PIC base shape that B3.3 missed.
+- `dac-recovery::idioms::tests::resolve_entries_reads_absolute_pointer_table` /
+  `_reads_int32_relative_table` /
+  `_at_most_reads_inclusive_count` /
+  `_stops_at_section_boundary` /
+  `_without_bound_returns_empty` /
+  `_without_base_returns_empty` /
+  `_rejects_unknown_encoding` /
+  `_caps_at_max_switch_entries` — pin the resolver's
+  contract for both encodings, both bound polarities, and
+  every degradation path.
+- `dac-recovery::idioms::tests::ule_compare_also_supplies_bound` / `predecessor_compare_supplies_upper_bound` updated
+  to assert the new `SwitchBound::AtMost(n)` /
+  `SwitchBound::LessThan(n)` variants and that
+  `entry_count` returns `n + 1` for `AtMost`, `n` for
+  `LessThan`.
+- `dac-arch-x86::lifter::tests::lifts_rip_relative_lea_as_constant_displacement` — guards the RIP-relative
+  base-drop so future iced upgrades can't regress the
+  recovery substrate.
+- `dac-cli::lift::tests::next_label_id_picks_one_past_the_highest_in_use` /
+  `_on_empty_body_starts_at_zero` /
+  `_counts_goto_targets` /
+  `walk_anchored_labels_ignores_goto_targets` /
+  `append_orphan_labels_anchors_each_switch_label_at_body_tail` — pin the label-allocation and
+  body-tail anchoring contracts the lowering pass relies on.
+
+#### Limitations carried forward
+
+- **Signed-Gt-bounded dispatches.** The third PE corpus
+  switch (`_matherr`) is guarded by a signed `Gt` rather
+  than `Ugt`; the bound recogniser rejects it. Promoting
+  signed compares to bounds requires arguing the
+  scrutinee is non-negative — that's a Type-lattice
+  upgrade (B3.18+) rather than an idiom-pass change.
+- **Tables without a recovered bound.** Without a bound
+  the resolver returns an empty entry list to avoid
+  reading past the table into unrelated `.rodata`. A
+  future batch could allow CFG-bounded fallback (stop
+  reading at the first entry whose VA doesn't map to a
+  CFG block within the same function) — the
+  block-address index is already built; only the policy
+  call is missing.
+- **PE absolute-pointer tables with `.reloc` rebasing.**
+  The resolver reads file bytes as-is, which gives the
+  correct final VA for the corpus binaries (statically
+  linked, no runtime relocation) but would mis-decode a
+  table that ships with `IMAGE_REL_BASED_DIR64` entries
+  the PE loader patches at runtime. Walking
+  `BinaryModel::relocations` to apply the addends lands
+  with the broader PE PIC handling.
+- **Default-arm goto.** The `default` body still
+  preserves the B3.10 `Unreachable` shape rather than
+  pointing at a recovered "fall-through to next block"
+  target. The structurer's region analysis would need to
+  surface the dispatch-block's structural successor for
+  this — a fold of `Stmt::Unreachable`-into-`Stmt::Goto`
+  is the natural follow-up.
+
+Closes: B3.17.
+Touches: FR-18 (per-arm case-to-goto shape replaces the
+B3.10 empty-arms surface for compiler-emitted jump tables
+on x86-64), I-2 (every minted label carries the source
+SSA block id, so the evidence graph can trace a case
+label back to the original CFG block whose address fed
+the switch entry), NFR-9 (resolution is a pure walk over
+`BTreeMap`-keyed recovery output; identical idiom +
+identical binary in ⇒ identical arm vector + label-id
+allocation out), I-6 (every degradation path — bounded
+without base, unsupported encoding, section overrun, VA
+that doesn't map to a CFG block — falls back honestly to
+the B3.10 surface rather than inventing arms).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

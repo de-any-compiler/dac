@@ -879,7 +879,7 @@ impl<'a> LowerCtx<'a> {
                 source_block,
                 ..
             } => {
-                let arms_c = arms
+                let arms_c: Vec<_> = arms
                     .iter()
                     .map(|a| crate::ast::SwitchArm {
                         value: a.value,
@@ -887,9 +887,21 @@ impl<'a> LowerCtx<'a> {
                     })
                     .collect();
                 let default_c = default.as_ref().map(|d| self.lower_block(d));
-                out.push(CStmt::Comment(format!(
-                    "recovered switch table at block {source_block} (arm resolution pending)"
-                )));
+                // B3.17: when arms is non-empty, entry resolution
+                // landed and the case-to-goto shape carries the
+                // table; only flag "arm resolution pending" when the
+                // table was recognised but no entries could be
+                // resolved (B3.10 surface). The comment is the
+                // reader's signal that the idiom is recognised
+                // regardless (I-6).
+                let comment = if arms.is_empty() {
+                    format!(
+                        "recovered switch table at block {source_block} (arm resolution pending)"
+                    )
+                } else {
+                    format!("recovered switch table at block {source_block}")
+                };
+                out.push(CStmt::Comment(comment));
                 out.push(CStmt::Switch {
                     scrutinee: self.lower_operand_for_use(scrutinee),
                     arms: arms_c,

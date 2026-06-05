@@ -397,7 +397,22 @@ fn register_operand(r: Register) -> Operand {
 }
 
 fn memory_operand(instr: &Instruction) -> Operand {
-    let base = nonzero_register(instr.memory_base());
+    // RIP-relative addressing is a special case: iced's
+    // `memory_displacement64` returns the already-resolved absolute
+    // target VA (not the raw displacement), and `memory_base` reports
+    // `Register::RIP`. The lift bridge would otherwise emit
+    // `rip_var + absolute_va`, which is semantically wrong and hides
+    // the constant from downstream constant-folding (B3.17: switch
+    // table resolution needs to see the table base as a concrete
+    // value, not as a sum involving an SSA parameter for RIP).
+    // Drop the base for RIP-relative operands and let the displacement
+    // carry the absolute VA on its own.
+    let is_rip_relative = instr.is_ip_rel_memory_operand();
+    let base = if is_rip_relative {
+        None
+    } else {
+        nonzero_register(instr.memory_base())
+    };
     let index = nonzero_register(instr.memory_index());
     Operand::Memory {
         base,
@@ -405,7 +420,8 @@ fn memory_operand(instr: &Instruction) -> Operand {
         scale: instr.memory_index_scale() as u8,
         // `memory_displacement64` returns the displacement already
         // sign-extended to 64 bits. Cast through `i64` so negative
-        // displacements (`[rbp-0x10]`) survive the trip intact.
+        // displacements (`[rbp-0x10]`) survive the trip intact. For
+        // RIP-relative this is the resolved absolute target.
         displacement: instr.memory_displacement64() as i64,
         size_bits: (instr.memory_size().size() as u16) * 8,
         segment: nonzero_register(instr.memory_segment()),
@@ -578,6 +594,37 @@ mod tests {
                 assert!(index.is_none());
             }
             other => panic!("expected LoadAddress(rax, [rsp+0x10]), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lifts_rip_relative_lea_as_constant_displacement() {
+        // 48 8D 05 04 00 00 00 = lea rax, [rip + 4] at 0x1000.
+        // iced resolves the target to 0x1000 + 7 (instruction length) +
+        // 4 = 0x100B. The lifter must surface that as a constant
+        // displacement with no base register so downstream constant
+        // folding (B3.17 switch-table resolution) sees the concrete VA.
+        let ir = lift_one(64, &[0x48, 0x8D, 0x05, 0x04, 0x00, 0x00, 0x00], 0x1000);
+        match ir.op {
+            Operation::LoadAddress {
+                dst: Operand::Register { name, .. },
+                src:
+                    Operand::Memory {
+                        base,
+                        displacement,
+                        index,
+                        ..
+                    },
+            } => {
+                assert_eq!(name, "rax");
+                assert!(
+                    base.is_none(),
+                    "RIP-relative addressing must drop the base register, got base={base:?}"
+                );
+                assert_eq!(displacement, 0x100B);
+                assert!(index.is_none());
+            }
+            other => panic!("expected LoadAddress(rax, [Const(0x100B)]), got {other:?}"),
         }
     }
 

@@ -50,22 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.16 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 6 numbered follow-up batches (B3.17 – B3.22) below
+plus B3.11 – B3.17 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 5 numbered follow-up batches (B3.18 – B3.22) below
 are pre-M4 work: each closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.17 — Switch-arm resolution (B3.10 follow-up, FR-18)
-- Resolve per-entry switch-table targets by reading bytes from
-  `.rodata` (and, on PE, walking the relocation table for rebased
-  entries). Mint labels at each target block and populate
-  `Stmt::Switch::arms` accordingly.
-- Anchor labels outside the structurer's recursive walk so the
-  label slots survive arm rewriting.
-- **Done when:** a corpus function with a jump-table dispatch
-  emits a populated `switch` with per-arm `case <const>:` /
-  `goto L<n>;` shapes, replacing the B3.10 empty-arms surface.
 
 ### B3.18 — `dac-recovery::structs` SSA-source bounds correctness (B3.10 surfaced)
 - `lookup_def_op` currently bounds-checks

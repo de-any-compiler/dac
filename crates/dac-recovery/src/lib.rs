@@ -59,7 +59,10 @@ pub use functions::{
     discover_functions, DiscoveryStats, Function, FunctionSet, SourceMask, CALL_EDGE_CONFIDENCE,
     ENTRY_CONFIDENCE, PROLOGUE_CONFIDENCE, SYMBOL_CONFIDENCE,
 };
-pub use idioms::{recover_idioms, RecoveredIdioms, SwitchTableIdiom, SWITCH_TABLE_CONFIDENCE};
+pub use idioms::{
+    recover_idioms, resolve_switch_entries, RecoveredIdioms, ResolvedSwitchEntry, SwitchBound,
+    SwitchTableIdiom, MAX_SWITCH_ENTRIES, SWITCH_TABLE_CONFIDENCE,
+};
 pub use names::{
     recover_names, NameCandidate, NameSource, NameTable, NullStringResolver, StringResolver,
     NAME_CONFIDENCE,
