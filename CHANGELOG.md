@@ -4593,6 +4593,229 @@ in index order — no clock, no environment, no
 filesystem iteration; the determinism gate is
 preserved).
 
+#### B3.21 — PLT-stub naming on ELF (2026-06-05)
+
+B3.7 shipped the variable-naming pass with
+API-context and string-literal heuristics. The
+naming-coverage row in `--emit-report` lit up on
+PE (`28 / 1889` at B3.20) but stayed at `0 / 79`
+on the canonical ELF fixture: PE binaries surface
+PLT-stub VAs as named `Symbol` entries the way
+`BinaryImportResolver` consumes them, but ELF's
+`.dynsym` lists imported functions as *undefined*
+with `address = 0`. A `main` calling `write@plt`
+at `0x1030` resolved to no signature, so
+`ApiContext` could not fire and the values for
+`fd`, `buf`, and `count` stayed `v3` / `v4` /
+`v5`.
+
+B3.21 walks the PLT trampoline table at parse
+time and threads the resulting `(stub_va,
+import_name)` pairs through the same resolver
+path PE already uses. Two pieces ship together:
+
+- **PLT walker.** A new module
+  `dac-binfmt::plt` exports
+  `elf_x86_64_plt_stubs(model, bytes) ->
+  Vec<(u64, String)>`. The walker builds a
+  `got_va → import_name` index from every
+  `RelocationKind::Glob` (which maps both
+  `R_X86_64_JUMP_SLOT` and `R_X86_64_GLOB_DAT`),
+  then scans every section whose name is
+  `.plt`, `.plt.sec`, or `.plt.got` in 8-byte
+  strides. Each stride either accepts
+  `ff 25 disp32` (`jmp qword ptr [rip +
+  disp32]`, 6 bytes) or
+  `f3 0f 1e fa ff 25 disp32` (`endbr64; jmp
+  …`, 10 bytes), computes the GOT VA the jump
+  targets, and records `(stub_va, import_name)`
+  when the GOT VA lives in the JUMP_SLOT index.
+  The probe stride covers canonical `.plt`
+  (16-byte stubs beyond PLT[0]), `.plt.sec`
+  (CFI-prefixed 16-byte stubs), and `.plt.got`
+  (8-byte stubs); the "must resolve to a
+  JUMP_SLOT GOT VA" filter suppresses spurious
+  hits at mid-instruction strides and
+  explicitly rejects PLT[0] itself (its
+  `ff 25` reads from
+  `_GLOBAL_OFFSET_TABLE_+0x10` — the runtime
+  resolver address — which is not a JUMP_SLOT
+  target). Symbol-versioned names
+  (`write@GLIBC_2.2.5`) have the `@` suffix
+  stripped so the API catalogue lookup hits
+  the bare name.
+- **Resolver wiring.**
+  `BinaryImportResolver::new` in
+  `dac_cli::lift` gains a `bytes: &[u8]`
+  argument, calls
+  `elf_x86_64_plt_stubs(model, bytes)`, and
+  merges each `(stub_va, ApiSignature)` into
+  `imports_by_va`. PE inputs hit the
+  early-return in the walker and behave
+  identically — the PE baseline holds exactly
+  at `28 / 1889`.
+
+### Pre-existing bridge bug surfaced and fixed
+
+The PLT walker's debug trip-wire surfaced a real
+bug in `dac-binfmt::bridge::relocation_symbol`.
+Dynamic relocations (from
+`obj.dynamic_relocations()`) index into the
+`.dynsym` table, while section-attached
+relocations (from `obj.sections().relocations()`)
+index into the static `.symtab`. The previous
+helper walked both lookup maps in fallback order:
+
+```rust
+RelocationTarget::Symbol(idx) => static_symbols
+    .get(idx)
+    .copied()
+    .or_else(|| dynamic_symbols.get(idx).copied()),
+```
+
+so every `SymbolIndex(n)` from a dynamic
+relocation silently matched whichever static
+`.symtab` entry shared that ordinal. On
+`hello-x86_64`, the dynamic
+`R_X86_64_JUMP_SLOT` at `0x4000` (binds the
+`write` slot) was being reported as resolving to
+symbol `hello.c` — a `File`-kind static entry.
+The fix splits the helper into a single-map
+lookup
+(`relocation_symbol(target, symbols)`) and
+routes each relocation through the table that
+owns its symbol-index space. No PE input
+exercises this path, so the PE corpus is
+unaffected; the ELF report is.
+
+### CLI plumbing
+
+`lift_all` already had `bytes: &[u8]` in scope
+(it feeds the decoder). The B3.21 patch threads
+it one hop further into
+`BinaryImportResolver::new(model, bytes)` and
+changes nothing else about the call graph. The
+resolver still implements `ApiResolver` through
+the same `imports_by_va` / `name_index` fields;
+PLT stubs land in the same `imports_by_va` map
+that PE-side `Symbol::address` entries already
+populate, so the `recover_names` /
+`propagate_types` consumers need no change.
+
+### Corpus drift
+
+- `tests/golden/hello-elf-o1-c` heuristic-name
+  coverage climbed from
+  `named_values=0 / 79 (0.00%)` to
+  `named_values=3 / 79 (3.80%)` — the three
+  positional arguments of `main`'s call to
+  `write@plt`: `int32_t fd` (was `v4`),
+  `void *buf` (was `v5`), `uint64_t n` (was
+  `v3`). The matching type propagations also
+  fire: `fd` becomes `int32_t`, `buf` becomes
+  `void *` (both seeded by the catalogue,
+  where they were previously `int64_t`
+  defaults).
+- `tests/golden/hello-elf-o1-c-hints` picks up
+  the same three names — the hint catalogue did
+  not override the `write` call site, so the
+  PLT-derived ApiContext names surface
+  unchanged.
+- PE baseline holds at
+  `named_values=28 / 1889 (1.48%)` exactly; the
+  PE-side `Symbol::address` → PLT pathway is
+  unchanged.
+- Stripped ELF (`hello-x86_64-stripped`) shows
+  no change. The fixture has zero
+  dynamic-symbol names (the unstripped `.dynsym`
+  was removed), so the PLT walker has nothing
+  to bind stubs to — the "no JUMP_SLOT names →
+  no stubs" early return fires. Recovering
+  names on a fully stripped binary needs a
+  different signal source (vtable scanning,
+  byte-pattern signature matching); that is
+  the "stripped-binary C++ recovery" residue
+  item.
+
+### Tests added
+
+- **PLT walker unit tests
+  (`dac-binfmt::plt`).** Twelve in-crate tests
+  use a synthetic `BinaryModel` and
+  hand-assembled stub bytes —
+  `empty_model_returns_no_stubs`,
+  `non_elf_returns_no_stubs`,
+  `non_x86_64_returns_no_stubs`,
+  `binary_without_jump_slots_yields_no_stubs`,
+  `canonical_plt_stub_is_named_from_jump_slot`,
+  `endbr_prefixed_plt_sec_stub_is_recognised`,
+  `plt_got_eight_byte_stubs_are_recognised`,
+  `versioned_symbol_name_is_stripped`,
+  `non_executable_section_named_dot_plt_is_ignored`,
+  `jump_to_unknown_got_va_is_filtered`,
+  `negative_displacement_resolves_correctly`,
+  `results_are_sorted_and_deduplicated`. Each
+  isolates a single property of the walker so
+  future regressions point at a specific shape.
+- **End-to-end regression test
+  (`real_hello_elf_binds_write_plt_stub`).**
+  Loads the actual `hello-x86_64` fixture and
+  asserts `elf_x86_64_plt_stubs` returns
+  exactly `[(0x1030, "write")]`. This is the
+  test the PLT-walker debug trip-wire reduced
+  to — it catches future regressions to either
+  the walker itself or to the
+  `bridge::relocation_symbol` static / dynamic
+  table split.
+
+### Limitations
+
+- **Other architectures.** The walker is
+  x86-64 only. AArch64 PLT stubs (`adrp x16,
+  GOT; ldr x17, [x16, #lo]; br x17`) need a
+  separate matcher; the early-return on
+  `Architecture != X86_64` keeps that work
+  scoped to a future arch-specific batch (M5
+  AArch64 / FR-N spec §11.1).
+- **Mach-O.** The walker rejects every Mach-O
+  input at the format gate. Mach-O has stubs
+  (`__stubs` / `__stub_helper`) that play the
+  same role but use a different opcode shape
+  and a different metadata table (indirect
+  symbols in `LC_DYSYMTAB`); landing it joins
+  the larger "Mach-O parser" residue item.
+- **Statically-linked or fully stripped ELF.**
+  The walker requires a populated JUMP_SLOT
+  relocation table. A statically-linked binary
+  has no dynamic relocations; a fully stripped
+  one has emptied them. In both cases the
+  walker returns no stubs and `--emit-report`
+  shows the pre-B3.21 coverage. Pattern-based
+  name recovery (libc-function signatures,
+  byte-pattern fingerprints) is the
+  longer-term answer there and stays on the
+  residue shelf.
+
+Closes: B3.21.
+Touches: FR-N spec §11.1 (the §11.1 list of
+naming heuristics now lights up on ELF too),
+I-1 (PLT metadata is read from the binary's own
+relocation table and section bytes — the walker
+never invents a stub), I-2 (every PLT-derived
+[`Symbol`] → [`ApiSignature`] binding traces
+back through the `R_X86_64_JUMP_SLOT`
+relocation to the binary bytes that defined
+it), I-3 (PLT-stub identity is `Observed`
+quality — the relocation table is the
+authoritative source — but the *names* the
+heuristic mints from it remain `Source::Derived`
+at the `NameSource::ApiContext` provenance
+level, so the confidence lattice stays honest),
+NFR-9 (the walker is a pure function of the
+[`BinaryModel`] and input bytes; no global
+state, no RNG; the resolver merges stubs by
+`stub_va` in `BTreeMap` iteration order).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

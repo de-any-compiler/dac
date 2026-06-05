@@ -105,7 +105,8 @@ pub(crate) fn parse_object(
     // Static relocations live in `.rela.<section>` (ELF) or `.<section>$reloc`
     // attached COFF relocations (PE/COFF object files). They apply to the
     // owning section and are typical for `.o` files; linked executables
-    // and shared libraries usually have none here.
+    // and shared libraries usually have none here. Their `Symbol(idx)`
+    // targets are indexed into the static `.symtab` only.
     for raw_section in obj.sections() {
         let Some(&section_idx) = section_lookup.get(&raw_section.index()) else {
             continue;
@@ -115,11 +116,7 @@ pub(crate) fn parse_object(
                 section: Some(section_idx),
                 offset,
                 kind: map_relocation_flags(raw.flags(), architecture),
-                symbol: relocation_symbol(
-                    &raw.target(),
-                    &static_symbol_lookup,
-                    &dynamic_symbol_lookup,
-                ),
+                symbol: relocation_symbol(&raw.target(), &static_symbol_lookup),
                 addend: raw.addend(),
             });
         }
@@ -128,17 +125,18 @@ pub(crate) fn parse_object(
     // images, base relocations live in `.reloc` and resolve image rebasing
     // rather than symbol bindings — they are deliberately not surfaced
     // here; the import table already covers the symbol-resolution view.
+    //
+    // Dynamic relocations index into `.dynsym`, not `.symtab` — looking up
+    // the same `SymbolIndex(n)` in the static table would silently
+    // mis-attribute every JUMP_SLOT / GLOB_DAT entry to whichever static
+    // symbol happens to share that ordinal (B3.21).
     if let Some(dyn_relocs) = obj.dynamic_relocations() {
         for (vaddr, raw) in dyn_relocs {
             relocations.push(Relocation {
                 section: address_to_section(vaddr, &sections),
                 offset: vaddr,
                 kind: map_relocation_flags(raw.flags(), architecture),
-                symbol: relocation_symbol(
-                    &raw.target(),
-                    &static_symbol_lookup,
-                    &dynamic_symbol_lookup,
-                ),
+                symbol: relocation_symbol(&raw.target(), &dynamic_symbol_lookup),
                 addend: raw.addend(),
             });
         }
@@ -234,16 +232,20 @@ fn address_to_section(addr: u64, sections: &[Section]) -> Option<usize> {
     })
 }
 
+/// Resolve a relocation target to an index into [`BinaryModel::symbols`].
+///
+/// The caller must pass the symbol-lookup map appropriate to the
+/// relocation's origin: static `.symtab` for section-attached
+/// relocations, `.dynsym` for `obj.dynamic_relocations()`. Mixing the
+/// two silently mis-attributes every dynamic JUMP_SLOT / GLOB_DAT
+/// entry because static and dynamic symbol-index spaces both start
+/// at zero (B3.21).
 fn relocation_symbol(
     target: &RelocationTarget,
-    static_symbols: &HashMap<object::SymbolIndex, usize>,
-    dynamic_symbols: &HashMap<object::SymbolIndex, usize>,
+    symbols: &HashMap<object::SymbolIndex, usize>,
 ) -> Option<usize> {
     match target {
-        RelocationTarget::Symbol(idx) => static_symbols
-            .get(idx)
-            .copied()
-            .or_else(|| dynamic_symbols.get(idx).copied()),
+        RelocationTarget::Symbol(idx) => symbols.get(idx).copied(),
         _ => None,
     }
 }

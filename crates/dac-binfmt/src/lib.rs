@@ -14,6 +14,7 @@ mod bridge;
 mod elf;
 mod model;
 mod pe;
+mod plt;
 
 use dac_core::{Error, Result};
 
@@ -22,6 +23,7 @@ pub use model::{
     RelocationKind, Section, SectionKind, Segment, StringRef, Symbol, SymbolBinding, SymbolKind,
     SymbolSource,
 };
+pub use plt::elf_x86_64_plt_stubs;
 
 /// Identify the binary format of `bytes` by inspecting magic numbers.
 ///

@@ -50,20 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.20 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 2 numbered follow-up batches (B3.21 – B3.22) below
-are pre-M4 work: each closes a specific deferral surfaced in a
+plus B3.11 – B3.21 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 1 numbered follow-up batch (B3.22) below
+is pre-M4 work: it closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.21 — PLT-stub naming on ELF (B3.7 surfaced, FR-N spec §11.1)
-- Walk the PLT trampoline at `.plt.sec` / `.plt.got` and thread
-  the trampoline VA → import-name map into
-  `BinaryImportResolver::resolve`. Lights up API-context naming
-  (and type-propagation seeds) on unstripped ELF binaries.
-- **Done when:** `tests/golden/hello-elf-o1-c` reaches a non-zero
-  heuristic-name coverage % (it was 0 / 98 at B3.7) and the
-  matching PE coverage baseline holds steady.
 
 ### B3.22 — Hint-driven naming (B3.7 follow-up, FR-20)
 - Thread `Hints::find_function`'s `rename` into

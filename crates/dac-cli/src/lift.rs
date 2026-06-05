@@ -42,7 +42,7 @@ use dac_analysis::loops::LoopForest;
 use dac_analysis::ssa::construct_ssa;
 use dac_analysis::structuring::structure;
 use dac_arch::{InstructionDecoder, InstructionLifter, RegisterFile};
-use dac_binfmt::{BinaryFormat, BinaryModel};
+use dac_binfmt::{elf_x86_64_plt_stubs, BinaryFormat, BinaryModel};
 use dac_core::{Confidence, EvidenceGraph, EvidenceNode, Source};
 use dac_hints::{HintId, Hints};
 use dac_ir::instr::InstructionIr;
@@ -153,7 +153,7 @@ pub(crate) fn lift_all(
         lifter,
         register_file,
         stack_convention: stack_convention_for(model),
-        api_resolver: BinaryImportResolver::new(model),
+        api_resolver: BinaryImportResolver::new(model, bytes),
         string_resolver: BinaryStringResolver::new(model),
         hints,
     };
@@ -793,14 +793,18 @@ fn rewrite_stmt(stmt: &mut SemStmt, resolved: &SwitchResolutions) {
     }
 }
 
-/// `ApiResolver` backed by the binary's import / symbol table. Only
-/// direct calls whose target VA exactly matches an imported function
-/// (or a non-import named symbol that resolves to a known API) bind
-/// to a signature. PLT-stub resolution lives in the PE / ELF
-/// binfmt layer; the resolver consults pre-built reverse maps so the
-/// lookup is `O(log n)`.
+/// `ApiResolver` backed by the binary's import / symbol table and,
+/// on ELF, the PLT trampolines discovered by
+/// [`elf_x86_64_plt_stubs`]. Only direct calls whose target VA
+/// exactly matches an imported function (or a non-import named
+/// symbol that resolves to a known API, or an ELF PLT stub for an
+/// imported function) bind to a signature. The resolver consults
+/// pre-built reverse maps so the lookup is `O(log n)`.
 struct BinaryImportResolver {
-    /// Map from import-target VA to signature.
+    /// Map from import-target VA to signature. Populated from both
+    /// the symbol-table side (PE / ELF binaries that still carry a
+    /// `.symtab` with PLT-stub addresses) and the PLT walker
+    /// (stripped or `.dynsym`-only ELF binaries — B3.21).
     imports_by_va: BTreeMap<u64, &'static ApiSignature>,
     /// Map from imported / exported symbol name to signature, used
     /// when the call site decodes a VA that lands on a named symbol
@@ -809,7 +813,10 @@ struct BinaryImportResolver {
 }
 
 impl BinaryImportResolver {
-    fn new(model: &BinaryModel) -> Self {
+    /// `bytes` is the input image required by the PLT walker on
+    /// ELF; on every other format it is unused and the
+    /// `elf_x86_64_plt_stubs` call returns an empty vector.
+    fn new(model: &BinaryModel, bytes: &[u8]) -> Self {
         let mut imports_by_va: BTreeMap<u64, &'static ApiSignature> = BTreeMap::new();
         // The `Import` records do not carry a VA on every format; the
         // PLT-stub VA lives on the matching `Symbol` entry produced
@@ -831,6 +838,18 @@ impl BinaryImportResolver {
             }
             if let Some(sig) = lookup_api_signature(&sym.name) {
                 name_index.insert(sym.address, sig);
+            }
+        }
+        // B3.21: ELF binaries don't surface PLT-stub VAs as named
+        // symbols the way PE imports do, so we walk the trampolines
+        // explicitly and bind each stub VA to the import it
+        // resolves through `.rela.plt`. This lights up the
+        // [`recover_names`] `ApiContext` heuristic (and the
+        // [`propagate_types`] API-signature seed) on every
+        // unstripped ELF that was 0% before.
+        for (stub_va, name) in elf_x86_64_plt_stubs(model, bytes) {
+            if let Some(sig) = lookup_api_signature(&name) {
+                imports_by_va.entry(stub_va).or_insert(sig);
             }
         }
         Self {

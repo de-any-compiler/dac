@@ -87,9 +87,9 @@ int32_t user_main(int32_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
-    int64_t v4 = 0LL;
-    int64_t v5 = 0LL;
+    uint64_t n = 0LL;
+    int32_t fd = 0LL;
+    void * buf = ((void *)(0LL));
     int32_t v6 = arg0;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
@@ -101,10 +101,10 @@ int32_t user_main(int32_t arg0) {
 
     v1 = ((void *)((v0 - 8LL)));
     *((int64_t *)(((int64_t)(v1)))) = v2;
-    v3 = 6LL;
-    v4 = 1LL;
-    v5 = 8196LL;
-    v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))fn_1030)(v4, v5, v3, v6, v7, v8);
+    n = 6LL;
+    fd = 1LL;
+    buf = ((void *)(8196LL));
+    v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))fn_1030)(fd, ((int64_t)(buf)), n, v6, v7, v8);
     v10 = 42LL;
     v11 = (*((int64_t *)(((int64_t)(v1)))));
     v12 = ((void *)((((int64_t)(v1)) + 8LL)));
