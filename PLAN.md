@@ -50,22 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.15 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 7 numbered follow-up batches (B3.16 – B3.22) below
+plus B3.11 – B3.16 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 6 numbered follow-up batches (B3.17 – B3.22) below
 are pre-M4 work: each closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.16 — Struct typedef surface (B3.10 follow-up, FR-17)
-- Grow the C AST a translation-unit-level `struct` typedef node
-  (`Item::StructDecl`).
-- Plumb `dac-recovery::RecoveredStructs` into the lowering pass so
-  each pointer-anchored layout emits a real typedef plus
-  `s->field` access in place of the B3.10 `/* recovered field:
-  … */` comment.
-- **Done when:** the PE corpus golden shows at least one
-  `struct {...}` typedef and at least one `s->field_<hex>`
-  access where B3.10 emitted only the marker comment.
 
 ### B3.17 — Switch-arm resolution (B3.10 follow-up, FR-18)
 - Resolve per-entry switch-table targets by reading bytes from
@@ -168,9 +157,10 @@ above.
   the printed signature can carry the full hinted arity.
 - **Struct hint application** (B3.6 follow-up, FR-17 / FR-20).
   `[[struct]]` hints parse and enter the evidence graph, but
-  the lowering pass still surfaces struct fields as
-  `/* recovered field: … */` comments. Lands once the struct
-  typedef surface (B3.16) is in place.
+  `apply_struct_hint` still has no path to retype recovered
+  layouts. B3.16 landed the typedef substrate the lowering
+  pass needs; wiring the hint into the struct typedef table
+  remains.
 - **Mach-O parser** (FR-3). The format is detected and the model
   has a `BinaryFormat::MachO` variant, but no parser populates it.
 

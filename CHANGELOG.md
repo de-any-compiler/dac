@@ -3705,6 +3705,233 @@ still produces the same C AST byte-for-byte), I-6 (composite
 or unrepresentable lattice types degrade to the width-based
 shape rather than producing an invalid C type spelling).
 
+#### B3.16 — Struct typedef surface (2026-06-05)
+
+The B3.10 lowering pass surfaced every recovered pointer-
+anchored field as a `/* recovered field: base=… offset=…
+field=… */` comment but kept the access spelled as
+`*((<ty> *)(base + 0xN))` because the C AST had no
+translation-unit-level typedef shape. B3.16 grows the AST a
+`StructDecl` item, walks `dac_recovery::RecoveredStructs` at
+lowering time to mint one typedef per promoted layout, and
+rewrites the matching `Load` / `Store` accesses into
+`base->field_<hex>` form.
+
+##### C AST
+
+`dac-backend-c::ast` gains three new shapes:
+
+- `Item::StructDecl(StructDecl)` — translation-unit-level
+  `typedef struct __attribute__((packed)) { … } NAME;`. The
+  packed attribute is load-bearing: the per-field offsets
+  come straight from the recovery pass, and a normal aligned
+  layout would silently re-shape the byte positions the
+  recovery observed.
+- `StructDecl { name, fields, leading_comment }` and
+  `StructField { name, ty }` — the typedef body. Field order
+  is recovery's source order; the emitter renders each entry
+  on its own line.
+- `CType::Named(String)` — a reference to a typedef'd name.
+  Used by the lowering pass to declare pointer-anchored
+  locals as `<typedef> *`. Includes `CType::Array { element,
+  count }` for the leading and inter-field padding members
+  the typedef body needs.
+
+The new variants land with exhaustive-match coverage tests
+so any future variant addition breaks the emit / lowering
+stages at compile time (I-6 carries forward from B2.8).
+
+##### Lowering pass
+
+`lower_function` is now a thin wrapper around the new
+`lower_function_with_typedefs`. The richer entry point
+returns a `LoweredFunction { function, struct_decls }`
+where `struct_decls` is the deterministic, name-sorted list
+of typedefs the function references. The translation-unit-
+level entry point `lower_unit` aggregates `struct_decls`
+across every lowered function, deduplicates by typedef name,
+and prepends the resulting `Item::StructDecl`s so each
+typedef is in scope at every function that references it.
+
+The per-function plumbing:
+
+- `build_struct_typedef_table` walks
+  `RecoveredStructs::pointer_structs` and synthesises one
+  `StructTypedef { decl, layout }` per layout whose
+  *effective* size (`last.offset + last.width`) is within
+  `MAX_PROMOTED_STRUCT_SIZE` (4 KiB). Layouts above the cap
+  — almost always absolute-address false positives such as
+  `Add(base, Const(0x140008008))` — are dropped so the
+  comment-only surface still covers them without producing
+  a multi-MB typedef that breaks the round-trip compile
+  gate.
+- `struct_typedef_name(function_address, base)` produces
+  the deterministic name `S_<funcaddr_hex>_v<base_id>_t`.
+  Per-function naming lets two functions that share the
+  same `ValueId` for different bases land at distinct
+  typedef names; `lower_unit`'s name-keyed dedup collapses
+  the duplicates an inlined helper would produce.
+- `build_struct_fields(layout)` emits padding (`uint8_t
+  __pad_<from>_<to>[N];`) between adjacent recovered fields
+  so the byte position the recovery observed survives the
+  round trip. The first field's leading padding starts at
+  byte 0 — `field_60` at offset 0x60 sits at byte 0x60 of
+  the typedef.
+
+`declared_ctype` (B3.15) gains a typedef short-circuit: a
+base value present in the per-function table is declared as
+`<typedef> *`, overriding any lattice mapping for that
+value. The B3.15 cast pair (`ptr_cast_if_needed`) continues
+to bridge the `int64_t` body arithmetic against the new
+pointer-to-typedef declarations — every define-site cast
+becomes `((S_…_t *)(<rhs>))` and every use-site cast becomes
+`((int64_t)(<local>))`.
+
+##### Per-access rewriting
+
+`LowerCtx::match_promoted_struct_field` is the new matcher,
+gated on the per-function typedef table rather than
+`recovered.structs` directly. When a `Load` / `Store`
+address decomposes to `Add(base, Const(offset))` and the
+base appears in the typedef table at a field with the
+matching offset:
+
+- `Stmt::Store` becomes `Stmt::FieldStore { base, field,
+  arrow: true, value }`, rendering as
+  `v5->field_60 = v12;`.
+- `SsaOp::Load`'s `lower_value_op` arm becomes
+  `Expr::Field { base, field, arrow: true }`, rendering as
+  `v26 = v5->field_28;`.
+
+When the base does *not* appear in the typedef table (size
+cap fired, or the lattice never produced the layout), the
+B3.10 comment-on-top-of-Store / bare-Load surface is
+unchanged. The matcher is layered, not exclusive — bases
+the size cap skipped still receive the `/* recovered field:
+… */` provenance comment.
+
+##### CLI wiring
+
+`render_c_unit` in `dac-cli/src/main.rs` is rewired to read
+each `LoweredFunction`'s `struct_decls`, accumulate them
+across the function set into a name-keyed `BTreeMap`, and
+prepend the resulting `CItem::StructDecl` items to the
+function items. Each typedef appears once in the
+translation unit regardless of how many functions
+reference it (the dedup mirrors `lower_unit`'s but lives in
+the CLI so the per-function `LoweredFunction` shape stays
+small and serialisable).
+
+##### Corpus impact
+
+`tests/golden/hello-pe-o1-c/source.c` now opens with 48
+`typedef struct __attribute__((packed)) { … } S_<addr>_v<id>_t;`
+items and 91 `<base>-><field_hex>` accesses scattered
+through the recovered function bodies — both well above
+B3.16's "at least one" success criterion. The ELF goldens
+(`hello-elf-o1-c`, `hello-elf-o1-c-hints`,
+`syscall-hello-elf-o1-c`) recovery only produced
+absolute-address candidates, which the size cap correctly
+declined, so those goldens carry zero typedefs and the
+matching `/* recovered field: ... */` comments survive
+verbatim — the surface stays B3.10-shaped where there is no
+real layout to promote.
+
+##### Tests
+
+`dac-backend-c::ast::tests` — three new exhaustive-match
+guards: `item_variants_are_exhaustively_matchable`,
+`ctype_variants_are_exhaustively_matchable`, and the
+existing expression / statement guards still pin every
+variant.
+
+`dac-backend-c::emit::tests` — two new tests:
+`struct_decl_renders_typedef_with_packed_attribute` pins
+the full rendered shape (packed attribute, padded fields,
+trailing typedef name) and
+`named_ctype_renders_as_typedef_name` pins that
+`Ptr(Named("S_v5_t"))` renders as `S_v5_t *`.
+
+`dac-backend-c::lower::tests` — four new tests:
+- `b3_16_pointer_struct_promotes_to_typedef_and_field_access`
+  exercises the end-to-end path: a layout at offsets 0/8
+  produces a `S_3000_v0_t` typedef with two `field_*` members,
+  the base local is declared as `S_3000_v0_t *`, and a
+  `Load(v0 + 8)` lowers to `v0->field_8`.
+- `b3_16_oversized_struct_declines_to_typedef` builds a
+  layout whose first field is just past
+  `MAX_PROMOTED_STRUCT_SIZE` and asserts the typedef is
+  dropped and the base stays width-typed.
+- `b3_16_no_typemap_no_structs_keeps_b3_10_surface` is the
+  backward-compat guard: no recovery facts → no typedefs,
+  no declared-type changes.
+- `b3_16_struct_field_padding_lays_out_to_observed_offset`
+  builds a layout whose first field is at byte 0x10 and
+  asserts the padding member spans 0..0x10 so `field_10`
+  lives at the recovery's observed byte position.
+
+`cargo xtask ci` is green: 576 workspace tests pass
+(was 572 at B3.15, +4 net), 32 goldens across 12 cases
+match, fmt + clippy clean. The round-trip `cc` gate accepts
+the new PE corpus output unchanged.
+
+##### Limitations carried forward
+
+- **Inferred field types are `int<width>_t`.** The
+  recovered layout records each field's *access width* (8,
+  4, 1 bytes) but the type lattice rarely reaches a
+  pointer-typed field — even with `RecoveredStructs::ty`
+  set per-field, the type pass leaves `Type::Unknown` on
+  almost every field across the corpus. The typedef body
+  uses the width fallback (`int_type_for_width`); a follow-
+  up batch refining `dac_recovery::types`'s per-field
+  inference will let the typedef carry pointer-typed and
+  signed/unsigned-aware fields without changing the
+  backend.
+- **Stack-anchored structs still surface as
+  `*(int*)(rsp + k)`.** B3.16 only promotes
+  `RecoveredStructs::pointer_structs`. The stack-anchored
+  variant needs a `Stmt::Decl` shape for composite locals
+  (the AST currently models `Local::ty` as a scalar) and
+  is on the B3 residue shelf alongside the union /
+  nested-struct deferrals.
+- **Field type recovery deferred.** Pointer-anchored
+  layouts whose effective size exceeds 4 KiB (the
+  absolute-address false-positive case the PE corpus
+  exhibits at `Add(base, Const(0x140008008))`) keep the
+  B3.10 comment-on-top-of-bare-Store surface. Tightening
+  the recovery pass so it never produces these candidates
+  is the B3.18 follow-up; B3.16's cap is the visible-
+  degradation guard until that lands.
+- **Struct hint application (B3.6 follow-up).** Now that
+  the typedef surface exists, a `[[struct]]` hint can
+  rename a recovered typedef and its fields. Wiring the
+  hint through `apply_struct_hint` stays on the B3
+  follow-up shelf — the substrate is in place.
+
+Touches:
+`crates/dac-backend-c/src/ast.rs`,
+`crates/dac-backend-c/src/emit.rs`,
+`crates/dac-backend-c/src/lower.rs`,
+`crates/dac-backend-c/src/lib.rs`,
+`crates/dac-cli/src/main.rs`,
+`tests/golden/hello-pe-o1-c/source.c`,
+`CHANGELOG.md`,
+`PLAN.md`.
+
+Closes: B3.16.
+Touches: FR-17 (recovered struct layouts now surface as
+real C `typedef` declarations and field accesses, not
+comment markers), I-2 (each typedef carries the recovered
+layout's confidence + provenance through its leading
+comment; the underlying SSA evidence is unchanged), NFR-9
+(typedef synthesis is a pure, deterministic walk over
+`BTreeMap`-keyed recovery output; identical input still
+yields identical C source), I-6 (absolute-address false
+positives degrade visibly to the B3.10 comment-only
+surface rather than producing a typedef the compile gate
+would reject).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

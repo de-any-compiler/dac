@@ -40,7 +40,8 @@ use dac_backend_c::ast::{
     Block as CBlock, CType, Function as CFunction, Item as CItem, Stmt as CStmt, TranslationUnit,
 };
 use dac_backend_c::{
-    default_includes as c_default_includes, emit as c_emit, lower_function as c_lower_function,
+    default_includes as c_default_includes, emit as c_emit,
+    lower_function_with_typedefs as c_lower_function_with_typedefs, LoweredFunction,
     NameResolver as CNameResolver, Recovered as CRecovered,
 };
 use dac_backend_cpp::{
@@ -444,19 +445,29 @@ fn render_c_unit(
     // (no callers requested it), every function degrades to a stub
     // with the same reason — this keeps the matching call sites
     // simple while preserving the I-6 visible-degradation contract.
-    let items: Vec<CItem> = functions
-        .functions
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let outcome = lift_outcomes.and_then(|os| os.get(i));
-            let annot = annotations
-                .functions
-                .iter()
-                .find(|a| a.address == f.address);
-            CItem::Function(lower_one_c_function(f, outcome, annot, &resolver, debug))
-        })
-        .collect();
+    //
+    // B3.16: each lowered function may carry struct typedefs the
+    // pointer-anchored recovery promoted. We collect them all,
+    // deduplicate by typedef name, and prepend the resulting
+    // `StructDecl` items so each typedef is in scope at every
+    // function that references it.
+    let mut typedefs: std::collections::BTreeMap<String, dac_backend_c::ast::StructDecl> =
+        std::collections::BTreeMap::new();
+    let mut function_items: Vec<CItem> = Vec::with_capacity(functions.functions.len());
+    for (i, f) in functions.functions.iter().enumerate() {
+        let outcome = lift_outcomes.and_then(|os| os.get(i));
+        let annot = annotations
+            .functions
+            .iter()
+            .find(|a| a.address == f.address);
+        let lowered = lower_one_c_function(f, outcome, annot, &resolver, debug);
+        for decl in lowered.struct_decls {
+            typedefs.entry(decl.name.clone()).or_insert(decl);
+        }
+        function_items.push(CItem::Function(lowered.function));
+    }
+    let mut items: Vec<CItem> = typedefs.into_values().map(CItem::StructDecl).collect();
+    items.extend(function_items);
     let mut includes = c_default_includes();
     includes.insert(
         0,
@@ -506,7 +517,7 @@ fn lower_one_c_function(
     annot: Option<&FunctionAnnotation>,
     resolver: &CNameResolver,
     debug: bool,
-) -> CFunction {
+) -> LoweredFunction {
     // B3.6: an applied `rename` hint takes precedence over the
     // recovered symbol. The sanitiser still runs so a hint that
     // accidentally contains `@` or `.` cannot break the round-trip
@@ -529,12 +540,12 @@ fn lower_one_c_function(
                 Some(&facts.structs),
                 Some(&facts.names),
             );
-            let mut lowered = c_lower_function(ssa, sem, resolver, &recovered);
-            // `lower_function` derives the name from `sem.function_name`
-            // (the recovered symbol); sanitise to keep emitted C
-            // syntactically valid for symbols that contain `@`, `.`
-            // and friends.
-            lowered.name = sanitized;
+            let mut lowered = c_lower_function_with_typedefs(ssa, sem, resolver, &recovered);
+            // `lower_function_with_typedefs` derives the name from
+            // `sem.function_name` (the recovered symbol); sanitise to
+            // keep emitted C syntactically valid for symbols that
+            // contain `@`, `.` and friends.
+            lowered.function.name = sanitized;
             // Replace the structurer's auto-generated leading comment
             // (a duplicate of the address line plus the structurer
             // stats) with a single unified head that carries the
@@ -542,7 +553,8 @@ fn lower_one_c_function(
             // recovered convention citation (B3.10). The `--debug`
             // block from the annotation channel is appended when
             // requested.
-            lowered.leading_comment = Some(real_body_leading_comment(f, sem, facts, annot, debug));
+            lowered.function.leading_comment =
+                Some(real_body_leading_comment(f, sem, facts, annot, debug));
             lowered
         }
         outcome => {
@@ -550,17 +562,20 @@ fn lower_one_c_function(
                 Some(LiftOutcome::Stub { reason }) => reason.clone(),
                 _ => "orchestrator did not run for this function".into(),
             };
-            CFunction {
-                name: sanitized,
-                return_type: CType::Void,
-                params: Vec::new(),
-                locals: Vec::new(),
-                body: CBlock {
-                    stmts: vec![CStmt::Comment(format!(
-                        "lifter→SSA bridge pending: {reason}"
-                    ))],
+            LoweredFunction {
+                function: CFunction {
+                    name: sanitized,
+                    return_type: CType::Void,
+                    params: Vec::new(),
+                    locals: Vec::new(),
+                    body: CBlock {
+                        stmts: vec![CStmt::Comment(format!(
+                            "lifter→SSA bridge pending: {reason}"
+                        ))],
+                    },
+                    leading_comment: Some(stub_body_leading_comment(f, annot, debug)),
                 },
-                leading_comment: Some(stub_body_leading_comment(f, annot, debug)),
+                struct_decls: Vec::new(),
             }
         }
     }

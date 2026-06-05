@@ -4,6 +4,536 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* dac-recovered struct */
+/* base: v165 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_140001020_v165_t;
+
+/* dac-recovered struct */
+/* base: v171 */
+/* total_size: 252 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_18[20];
+    int16_t field_18;
+    uint8_t __pad_1a_74[90];
+    int32_t field_74;
+    uint8_t __pad_78_84[12];
+    int32_t field_84;
+    uint8_t __pad_88_e8[96];
+    int32_t field_e8;
+    uint8_t __pad_ec_f8[12];
+    int32_t field_f8;
+} S_140001020_v171_t;
+
+/* dac-recovered struct */
+/* base: v17 */
+/* total_size: 36 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_3c[60];
+    int32_t field_3c;
+    uint8_t __pad_40_4c[12];
+    int32_t field_4c;
+    uint8_t __pad_50_58[8];
+    int64_t field_58;
+} S_140001020_v17_t;
+
+/* dac-recovered struct */
+/* base: v6 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_8[4];
+    int64_t field_8;
+} S_140001730_v6_t;
+
+/* dac-recovered struct */
+/* base: v5 */
+/* total_size: 72 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_28[40];
+    int64_t field_28;
+    uint8_t __pad_30_58[40];
+    int64_t field_58;
+    int64_t field_60;
+    int64_t field_68;
+} S_140001830_v5_t;
+
+/* dac-recovered struct */
+/* base: v24 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int64_t field_0;
+    int64_t field_8;
+} S_140001890_v24_t;
+
+/* dac-recovered struct */
+/* base: v51 */
+/* total_size: 8 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_8[8];
+    int32_t field_8;
+    int32_t field_c;
+} S_140001890_v51_t;
+
+/* dac-recovered struct */
+/* base: v61 */
+/* total_size: 40 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_20[28];
+    int64_t field_20;
+} S_140001890_v61_t;
+
+/* dac-recovered struct */
+/* base: v7 */
+/* total_size: 56 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_20[32];
+    int64_t field_20;
+    uint8_t __pad_28_38[16];
+    int64_t field_38;
+    uint8_t __pad_40_44[4];
+    int32_t field_44;
+    uint8_t __pad_48_50[8];
+    int64_t field_50;
+} S_140001890_v7_t;
+
+/* dac-recovered struct */
+/* base: v99 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_8[8];
+    int64_t field_8;
+    int64_t field_10;
+} S_140001890_v99_t;
+
+/* dac-recovered struct */
+/* base: v110 */
+/* total_size: 12 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    int32_t field_4;
+    int32_t field_8;
+} S_140001a00_v110_t;
+
+/* dac-recovered struct */
+/* base: v231 */
+/* total_size: 24 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_8[4];
+    int64_t field_8;
+    int64_t field_10;
+} S_140001a00_v231_t;
+
+/* dac-recovered struct */
+/* base: v276 */
+/* total_size: 8 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    int32_t field_4;
+} S_140001a00_v276_t;
+
+/* dac-recovered struct */
+/* base: v29 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int64_t field_0;
+    int64_t field_8;
+} S_140001a00_v29_t;
+
+/* dac-recovered struct */
+/* base: v73 */
+/* total_size: 12 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    int32_t field_4;
+    int32_t field_8;
+} S_140001a00_v73_t;
+
+/* dac-recovered struct */
+/* base: v83 */
+/* total_size: 8 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    int32_t field_4;
+} S_140001a00_v83_t;
+
+/* dac-recovered struct */
+/* base: v2 */
+/* total_size: 5 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int64_t field_0;
+    int8_t field_4;
+} S_140001de0_v2_t;
+
+/* dac-recovered struct */
+/* base: v6 */
+/* total_size: 5 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    int8_t field_4;
+} S_140001f80_v6_t;
+
+/* dac-recovered struct */
+/* base: v29 */
+/* total_size: 24 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_8[4];
+    int64_t field_8;
+    int64_t field_10;
+} S_140002140_v29_t;
+
+/* dac-recovered struct */
+/* base: v1 */
+/* total_size: 40 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_28[40];
+    int64_t field_28;
+    uint8_t __pad_30_40[16];
+    int32_t field_40;
+    uint8_t __pad_44_48[4];
+    int64_t field_48;
+} S_1400021b0_v1_t;
+
+/* dac-recovered struct */
+/* base: v22 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_8[4];
+    int64_t field_8;
+} S_1400021b0_v22_t;
+
+/* dac-recovered struct */
+/* base: v29 */
+/* total_size: 24 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_10[12];
+    int64_t field_10;
+} S_140002240_v29_t;
+
+/* dac-recovered struct */
+/* base: v2 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_1400023f0_v2_t;
+
+/* dac-recovered struct */
+/* base: v8 */
+/* total_size: 26 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_18[20];
+    int16_t field_18;
+} S_1400023f0_v8_t;
+
+/* dac-recovered struct */
+/* base: v24 */
+/* total_size: 8 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_8[8];
+    int32_t field_8;
+    int32_t field_c;
+} S_140002420_v24_t;
+
+/* dac-recovered struct */
+/* base: v4 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_6[6];
+    int16_t field_6;
+    uint8_t __pad_8_14[12];
+    int16_t field_14;
+} S_140002420_v4_t;
+
+/* dac-recovered struct */
+/* base: v20 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_140002470_v20_t;
+
+/* dac-recovered struct */
+/* base: v26 */
+/* total_size: 26 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_6[2];
+    int16_t field_6;
+    uint8_t __pad_8_14[12];
+    int16_t field_14;
+    uint8_t __pad_16_18[2];
+    int16_t field_18;
+} S_140002470_v26_t;
+
+/* dac-recovered struct */
+/* base: v11 */
+/* total_size: 26 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_6[2];
+    int16_t field_6;
+    uint8_t __pad_8_14[12];
+    int16_t field_14;
+    uint8_t __pad_16_18[2];
+    int16_t field_18;
+} S_140002510_v11_t;
+
+/* dac-recovered struct */
+/* base: v39 */
+/* total_size: 8 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_8[8];
+    int32_t field_8;
+    int32_t field_c;
+} S_140002510_v39_t;
+
+/* dac-recovered struct */
+/* base: v3 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_140002510_v3_t;
+
+/* dac-recovered struct */
+/* base: v11 */
+/* total_size: 26 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_6[2];
+    int16_t field_6;
+    uint8_t __pad_8_18[16];
+    int16_t field_18;
+} S_140002590_v11_t;
+
+/* dac-recovered struct */
+/* base: v3 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_140002590_v3_t;
+
+/* dac-recovered struct */
+/* base: v11 */
+/* total_size: 26 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_6[2];
+    int16_t field_6;
+    uint8_t __pad_8_14[12];
+    int16_t field_14;
+    uint8_t __pad_16_18[2];
+    int16_t field_18;
+} S_1400025d0_v11_t;
+
+/* dac-recovered struct */
+/* base: v3 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_1400025d0_v3_t;
+
+/* dac-recovered struct */
+/* base: v11 */
+/* total_size: 26 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_18[20];
+    int16_t field_18;
+} S_140002650_v11_t;
+
+/* dac-recovered struct */
+/* base: v3 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_140002650_v3_t;
+
+/* dac-recovered struct */
+/* base: v11 */
+/* total_size: 26 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_6[2];
+    int16_t field_6;
+    uint8_t __pad_8_14[12];
+    int16_t field_14;
+    uint8_t __pad_16_18[2];
+    int16_t field_18;
+} S_140002690_v11_t;
+
+/* dac-recovered struct */
+/* base: v39 */
+/* total_size: 32 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_8[8];
+    int32_t field_8;
+    int32_t field_c;
+    uint8_t __pad_10_24[20];
+    int32_t field_24;
+} S_140002690_v39_t;
+
+/* dac-recovered struct */
+/* base: v3 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_140002690_v3_t;
+
+/* dac-recovered struct */
+/* base: v11 */
+/* total_size: 148 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int32_t field_0;
+    uint8_t __pad_4_6[2];
+    int16_t field_6;
+    uint8_t __pad_8_14[12];
+    int16_t field_14;
+    uint8_t __pad_16_18[2];
+    int16_t field_18;
+    uint8_t __pad_1a_90[118];
+    int32_t field_90;
+} S_140002720_v11_t;
+
+/* dac-recovered struct */
+/* base: v3 */
+/* total_size: 64 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int16_t field_0;
+    uint8_t __pad_2_3c[58];
+    int32_t field_3c;
+} S_140002720_v3_t;
+
+/* dac-recovered struct */
+/* base: v42 */
+/* total_size: 8 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_8[8];
+    int32_t field_8;
+    int32_t field_c;
+} S_140002720_v42_t;
+
+/* dac-recovered struct */
+/* base: v54 */
+/* total_size: 12 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_4[4];
+    int32_t field_4;
+    uint8_t __pad_8_c[4];
+    int32_t field_c;
+} S_140002720_v54_t;
+
+/* dac-recovered struct */
+/* base: v3 */
+/* total_size: 16 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    int64_t field_0;
+    int64_t field_8;
+} S_1400027e0_v3_t;
+
+/* dac-recovered struct */
+/* base: v7 */
+/* total_size: 24 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_20[32];
+    int64_t field_20;
+    uint8_t __pad_28_30[8];
+    int64_t field_30;
+} S_140002820_v7_t;
+
+/* dac-recovered struct */
+/* base: v7 */
+/* total_size: 88 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_20[32];
+    int64_t field_20;
+    uint8_t __pad_28_40[24];
+    int64_t field_40;
+    uint8_t __pad_48_70[40];
+    int64_t field_70;
+} S_140002860_v7_t;
+
+/* dac-recovered struct */
+/* base: v9 */
+/* total_size: 80 bytes */
+/* confidence: 0.65 (Derived) */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_28[40];
+    int64_t field_28;
+    uint8_t __pad_30_70[64];
+    int64_t field_70;
+} S_140002900_v9_t;
+
 /* dac-recovered function */
 /* address: 0x140001000 */
 /* end: 0x140001010 */
@@ -79,7 +609,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int64_t v14 = arg1;
     void * v15 = ((void *)(0LL));
     int64_t v16 = 0LL;
-    void * v17 = ((void *)(0LL));
+    S_140001020_v17_t * v17 = ((S_140001020_v17_t *)(0LL));
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
     int64_t v20 = 0LL;
@@ -227,13 +757,13 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int64_t v162 = 0LL;
     void * v163 = ((void *)(0LL));
     int64_t v164 = 0LL;
-    int64_t v165 = 0LL;
+    S_140001020_v165_t * v165 = ((S_140001020_v165_t *)(0LL));
     int16_t v166 = 0LL;
     int8_t v167 = 0LL;
     int64_t v168 = 0LL;
     int32_t v169 = 0LL;
     int32_t v170 = 0LL;
-    void * v171 = ((void *)(0LL));
+    S_140001020_v171_t * v171 = ((S_140001020_v171_t *)(0LL));
     int32_t v172 = 0LL;
     int8_t v173 = 0LL;
     void * v174 = ((void *)(0LL));
@@ -449,7 +979,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     *((int64_t *)(((int64_t)(v13)))) = v14;
     v15 = ((void *)((((int64_t)(v13)) - 8LL)));
     *((int64_t *)(((int64_t)(v15)))) = v16;
-    v17 = ((void *)((((int64_t)(v15)) - 88LL)));
+    v17 = ((S_140001020_v17_t *)((((int64_t)(v15)) - 88LL)));
     v18 = (*((int64_t *)(48LL)));
     v19 = v18;
     v20 = (v19 + 8LL);
@@ -553,31 +1083,31 @@ L1:;
                 *((int32_t *)(v162)) = 1LL;
                 v163 = ((void *)((v23 + 5368726528LL)));
                 v164 = (*((int64_t *)(((int64_t)(v163)))));
-                v165 = v164;
-                v166 = (*((int16_t *)(v165)));
+                v165 = ((S_140001020_v165_t *)(v164));
+                v166 = (*((int16_t *)(((int64_t)(v165)))));
                 v167 = (v166 != 23117LL);
                 if (v167) {
                 } else {
-                    v168 = (v165 + 60LL);
-                    v169 = (*((int32_t *)(v168)));
+                    v168 = (((int64_t)(v165)) + 60LL);
+                    v169 = v165->field_3c;
                     v170 = v169;
-                    v171 = ((void *)((v165 + v170)));
+                    v171 = ((S_140001020_v171_t *)((((int64_t)(v165)) + v170)));
                     v172 = (*((int32_t *)(((int64_t)(v171)))));
                     v173 = (v172 != 17744LL);
                     if (v173) {
                     } else {
                         v174 = ((void *)((((int64_t)(v171)) + 24LL)));
-                        v175 = (*((int16_t *)(((int64_t)(v174)))));
+                        v175 = v171->field_18;
                         v176 = v175;
                         v177 = (v176 == 267LL);
                         if (v177) {
                             v186 = ((void *)((((int64_t)(v171)) + 116LL)));
-                            v187 = (*((int32_t *)(((int64_t)(v186)))));
+                            v187 = v171->field_74;
                             v188 = (v187 <= 14LL);
                             if (v188) {
                             } else {
                                 v189 = ((void *)((((int64_t)(v171)) + 232LL)));
-                                v190 = (*((int32_t *)(((int64_t)(v189)))));
+                                v190 = v171->field_e8;
                                 v191 = v190;
                                 v192 = (v140 ^ v140);
                                 (/* opaque: setne */ 0);
@@ -587,12 +1117,12 @@ L1:;
                             if (v178) {
                             } else {
                                 v179 = ((void *)((((int64_t)(v171)) + 132LL)));
-                                v180 = (*((int32_t *)(((int64_t)(v179)))));
+                                v180 = v171->field_84;
                                 v181 = (v180 <= 14LL);
                                 if (v181) {
                                 } else {
                                     v182 = ((void *)((((int64_t)(v171)) + 248LL)));
-                                    v183 = (*((int32_t *)(((int64_t)(v182)))));
+                                    v183 = v171->field_f8;
                                     v184 = v183;
                                     v185 = (v140 ^ v140);
                                     (/* opaque: setne */ 0);
@@ -711,16 +1241,15 @@ L1:;
                 v97 = (v96 == 0LL);
                 if (v97) {
                     v124 = ((void *)((((int64_t)(v17)) + 60LL)));
-                    /* recovered field: base=v17 offset=0x3c field=field_3c */
-                    *((int32_t *)(((int64_t)(v124)))) = v87;
+                    v17->field_3c = v87;
                     v125 = ((long long (*)(long long, long long, long long, long long, long long, long long))_cexit)(v54, v55, v95, v90, v80, v60);
                     v126 = ((void *)((((int64_t)(v17)) + 60LL)));
-                    v127 = (*((int32_t *)(((int64_t)(v126)))));
+                    v127 = v17->field_3c;
                     v128 = v127;
                 }
                 /* phi v98 <- (bb15: v87) (bb21: v128) */
                 v99 = ((void *)((((int64_t)(v17)) + 88LL)));
-                v100 = (*((int64_t *)(((int64_t)(v99)))));
+                v100 = v17->field_58;
                 v101 = ((void *)((((int64_t)(v99)) + 8LL)));
                 v102 = v100;
                 v103 = (*((int64_t *)(((int64_t)(v101)))));
@@ -1591,14 +2120,14 @@ int64_t __tlregdtor(void) {
 /* stack_locals: 2 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 1 */
-int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, S_140001730_v6_t * arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = arg1;
     void * v3 = ((void *)(0LL));
     int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
-    int64_t v6 = arg3;
+    S_140001730_v6_t * v6 = arg3;
     int32_t v7 = 0LL;
     int8_t v8 = 0LL;
     int32_t v9 = 0LL;
@@ -1645,7 +2174,7 @@ int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t
     (/* opaque: movaps */ 0);
     (/* opaque: movaps */ 0);
     (/* opaque: movaps */ 0);
-    v7 = (*((int32_t *)(v6)));
+    v7 = (*((int32_t *)(((int64_t)(v6)))));
     v8 = (v7 > 6LL);
     if (v8) {
         v19 = (v11 + 5368725926LL);
@@ -1653,8 +2182,8 @@ int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t
         (/* opaque: movsd */ 0);
         (/* opaque: movsd */ 0);
         (/* opaque: movsd */ 0);
-        v21 = (v6 + 8LL);
-        v22 = (*((int64_t *)(v21)));
+        v21 = (((int64_t)(v6)) + 8LL);
+        v22 = v6->field_8;
         v23 = v22;
         v24 = 2LL;
         v29 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v25, v23, v26, v24, v27, v28);
@@ -1680,7 +2209,7 @@ int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t
         v43 = v41;
         return v36;
     } else {
-        v9 = (*((int32_t *)(v6)));
+        v9 = (*((int32_t *)(((int64_t)(v6)))));
         v10 = v9;
         v12 = (v11 + 5368725988LL);
         v13 = v12;
@@ -1719,7 +2248,7 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
     int64_t v4 = 0LL;
-    void * v5 = ((void *)(0LL));
+    S_140001830_v5_t * v5 = ((S_140001830_v5_t *)(0LL));
     int64_t v6 = arg0;
     int64_t v7 = 0LL;
     void * v8 = ((void *)(0LL));
@@ -1754,19 +2283,16 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     *((int64_t *)(((int64_t)(v1)))) = v2;
     v3 = ((void *)((((int64_t)(v1)) - 8LL)));
     *((int64_t *)(((int64_t)(v3)))) = v4;
-    v5 = ((void *)((((int64_t)(v3)) - 56LL)));
+    v5 = ((S_140001830_v5_t *)((((int64_t)(v3)) - 56LL)));
     v7 = v6;
     v8 = ((void *)((((int64_t)(v5)) + 88LL)));
     v9 = ((int64_t)(v8));
     v10 = 2LL;
     v11 = ((void *)((((int64_t)(v5)) + 96LL)));
-    /* recovered field: base=v5 offset=0x60 field=field_60 */
-    *((int64_t *)(((int64_t)(v11)))) = v12;
+    v5->field_60 = v12;
     v13 = ((void *)((((int64_t)(v5)) + 104LL)));
-    /* recovered field: base=v5 offset=0x68 field=field_68 */
-    *((int64_t *)(((int64_t)(v13)))) = v14;
-    /* recovered field: base=v5 offset=0x58 field=field_58 */
-    *((int64_t *)(((int64_t)(v8)))) = v16;
+    v5->field_68 = v14;
+    v5->field_58 = v16;
     v17 = ((void *)((((int64_t)(v5)) + 40LL)));
     *((int64_t *)(((int64_t)(v17)))) = v9;
     v19 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v18, v2, v16, v10, v12, v14);
@@ -1775,7 +2301,7 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v23 = v19;
     v24 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v18, v2, v22, v23, v12, v14);
     v25 = ((void *)((((int64_t)(v5)) + 40LL)));
-    v26 = (*((int64_t *)(((int64_t)(v25)))));
+    v26 = v5->field_28;
     v27 = v26;
     v28 = 2LL;
     v29 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v18, v27, v22, v28, v12, v14);
@@ -1810,7 +2336,7 @@ int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     int64_t v4 = arg1;
     void * v5 = ((void *)(0LL));
     int64_t v6 = 0LL;
-    void * v7 = ((void *)(0LL));
+    S_140001890_v7_t * v7 = ((S_140001890_v7_t *)(0LL));
     int64_t v8 = 0LL;
     void * v9 = ((void *)(0LL));
     int32_t v10 = 0LL;
@@ -1827,7 +2353,7 @@ int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     int64_t v21 = 0LL;
     int64_t v22 = 0LL;
     int64_t v23 = 0LL;
-    int64_t v24 = 0LL;
+    S_140001890_v24_t * v24 = ((S_140001890_v24_t *)(0LL));
     int64_t v25 = 0LL;
     int64_t v26 = 0LL;
     int64_t v27 = 0LL;
@@ -1854,7 +2380,7 @@ int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     int64_t v48 = 0LL;
     int64_t v49 = 0LL;
     int64_t v50 = 0LL;
-    int64_t v51 = 0LL;
+    S_140001890_v51_t * v51 = ((S_140001890_v51_t *)(0LL));
     int64_t v52 = 0LL;
     int8_t v53 = 0LL;
     void * v54 = ((void *)(0LL));
@@ -1864,7 +2390,7 @@ int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     int32_t v58 = 0LL;
     int32_t v59 = 0LL;
     int32_t v60 = 0LL;
-    void * v61 = ((void *)(0LL));
+    S_140001890_v61_t * v61 = ((S_140001890_v61_t *)(0LL));
     void * v62 = ((void *)(0LL));
     int64_t v63 = 0LL;
     int64_t v64 = 0LL;
@@ -1902,7 +2428,7 @@ int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     int64_t v96 = 0LL;
     void * v97 = ((void *)(0LL));
     int64_t v98 = 0LL;
-    int64_t v99 = 0LL;
+    S_140001890_v99_t * v99 = ((S_140001890_v99_t *)(0LL));
     void * v100 = ((void *)(0LL));
     int64_t v101 = 0LL;
     void * v102 = ((void *)(0LL));
@@ -1963,7 +2489,7 @@ int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     *((int64_t *)(((int64_t)(v3)))) = v4;
     v5 = ((void *)((((int64_t)(v3)) - 8LL)));
     *((int64_t *)(((int64_t)(v5)))) = v6;
-    v7 = ((void *)((((int64_t)(v5)) - 80LL)));
+    v7 = ((S_140001890_v7_t *)((((int64_t)(v5)) - 80LL)));
     v9 = ((void *)((v8 + 5368742148LL)));
     v10 = (*((int32_t *)(((int64_t)(v9)))));
     v11 = v10;
@@ -1987,7 +2513,7 @@ L2:;
         /* phi v48 <- (bb4: v39) (bb20: v151) */
         v49 = v45;
         v50 = ((long long (*)(long long, long long, long long, long long, long long, long long))__mingw_GetSectionForAddress)(v43, v44, v48, v49, v47, v46);
-        v51 = v50;
+        v51 = ((S_140001890_v51_t *)(v50));
         v52 = (v50 & v50);
         v53 = (v52 == 0LL);
         if (v53) {
@@ -1997,7 +2523,7 @@ L0:;
             v131 = v129;
             v132 = (v8 + 5368726048LL);
             v133 = v132;
-            v134 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(v51, v44, v131, v133, v130, v46);
+            v134 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(((int64_t)(v51)), v44, v131, v133, v130, v46);
             /* structurally unreachable: block 23 */
             __builtin_unreachable();
         } else {
@@ -2008,14 +2534,13 @@ L0:;
             v58 = (v44 + v57);
             v59 = v58;
             v60 = (v59 << 3LL);
-            v61 = ((void *)((v56 + v60)));
+            v61 = ((S_140001890_v61_t *)((v56 + v60)));
             v62 = ((void *)((((int64_t)(v61)) + 32LL)));
-            /* recovered field: base=v61 offset=0x20 field=field_20 */
-            *((int64_t *)(((int64_t)(v62)))) = v51;
+            v61->field_20 = ((int64_t)(v51));
             *((int32_t *)(((int64_t)(v61)))) = 0LL;
-            v63 = ((long long (*)(long long, long long, long long, long long, long long, long long))_GetPEImageBase)(v51, v44, v48, v49, v47, v46);
-            v64 = (v51 + 12LL);
-            v65 = (*((int32_t *)(v64)));
+            v63 = ((long long (*)(long long, long long, long long, long long, long long, long long))_GetPEImageBase)(((int64_t)(v51)), v44, v48, v49, v47, v46);
+            v64 = (((int64_t)(v51)) + 12LL);
+            v65 = v51->field_c;
             v66 = v65;
             v67 = 48LL;
             v68 = (v63 + v66);
@@ -2028,15 +2553,15 @@ L0:;
             v75 = (v72 + 24LL);
             v76 = ((void *)((v75 + v60)));
             *((int64_t *)(((int64_t)(v76)))) = v69;
-            v77 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v51, v44, ((int64_t)(v74)), v69, v67, v46);
+            v77 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(((int64_t)(v51)), v44, ((int64_t)(v74)), v69, v67, v46);
             v78 = (v77 & v77);
             v79 = (v78 == 0LL);
             if (v79) {
                 v116 = ((void *)((v8 + 5368742152LL)));
                 v117 = (*((int64_t *)(((int64_t)(v116)))));
                 v118 = v117;
-                v119 = (v51 + 8LL);
-                v120 = (*((int32_t *)(v119)));
+                v119 = (((int64_t)(v51)) + 8LL);
+                v120 = v51->field_8;
                 v121 = v120;
                 v122 = (v8 + 5368726080LL);
                 v123 = v122;
@@ -2044,11 +2569,11 @@ L0:;
                 v125 = ((void *)((v124 + v60)));
                 v126 = (*((int64_t *)(((int64_t)(v125)))));
                 v127 = v126;
-                v128 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(v51, v44, v121, v123, v127, v46);
+                v128 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(((int64_t)(v51)), v44, v121, v123, v127, v46);
                 goto L0;
             } else {
                 v80 = ((void *)((((int64_t)(v7)) + 68LL)));
-                v81 = (*((int32_t *)(((int64_t)(v80)))));
+                v81 = v7->field_44;
                 v82 = v81;
                 v83 = (v82 + -4LL);
                 v84 = v83;
@@ -2067,7 +2592,7 @@ L0:;
             /* phi v24 <- (bb1: v23) (bb4: v41) */
             /* phi v25 <- (bb1: v22) (bb4: v40) */
             /* phi v26 <- (bb1: v18) (bb4: v39) */
-            v27 = (*((int64_t *)(v24)));
+            v27 = (*((int64_t *)(((int64_t)(v24)))));
             v28 = v27;
             v29 = (v13 < v28);
             if (v29) {
@@ -2075,7 +2600,7 @@ L1:;
                 /* phi v38 <- (bb2: v28) (bb3: v36) */
                 /* phi v39 <- (bb2: v26) (bb3: v35) */
                 v40 = (v25 + 1LL);
-                v41 = (v24 + 40LL);
+                v41 = (((int64_t)(v24)) + 40LL);
                 v42 = (v40 != v11);
                 if (v42) {
                     continue;
@@ -2083,8 +2608,8 @@ L1:;
                     break;
                 }
             } else {
-                v30 = (v24 + 8LL);
-                v31 = (*((int64_t *)(v30)));
+                v30 = (((int64_t)(v24)) + 8LL);
+                v31 = v24->field_8;
                 v32 = v31;
                 v33 = (v32 + 8LL);
                 v34 = (*((int32_t *)(v33)));
@@ -2094,7 +2619,7 @@ L1:;
                 if (v37) {
                     /* phi v135 <- (bb3: v24) (bb12: v111) */
                     v136 = ((void *)((((int64_t)(v7)) + 80LL)));
-                    v137 = (*((int64_t *)(((int64_t)(v136)))));
+                    v137 = v7->field_50;
                     v138 = ((void *)((((int64_t)(v136)) + 8LL)));
                     v139 = v137;
                     v140 = (*((int64_t *)(((int64_t)(v138)))));
@@ -2157,7 +2682,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v26 = 0LL;
     int64_t v27 = 0LL;
     void * v28 = ((void *)(0LL));
-    void * v29 = ((void *)(0LL));
+    S_140001a00_v29_t * v29 = ((S_140001a00_v29_t *)(0LL));
     int64_t v30 = 0LL;
     void * v31 = ((void *)(0LL));
     int64_t v32 = 0LL;
@@ -2201,7 +2726,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t dst = 0LL;
     void * v71 = ((void *)(0LL));
     int64_t v72 = 0LL;
-    int64_t v73 = 0LL;
+    S_140001a00_v73_t * v73 = ((S_140001a00_v73_t *)(0LL));
     void * v74 = ((void *)(0LL));
     void * v75 = ((void *)(0LL));
     void * v76 = ((void *)(0LL));
@@ -2211,7 +2736,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v80 = 0LL;
     int8_t v81 = 0LL;
     int8_t v82 = 0LL;
-    int64_t v83 = 0LL;
+    S_140001a00_v83_t * v83 = ((S_140001a00_v83_t *)(0LL));
     int64_t v84 = 0LL;
     int64_t v85 = 0LL;
     int32_t v86 = 0LL;
@@ -2238,7 +2763,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     void * v107 = ((void *)(0LL));
     void * v108 = ((void *)(0LL));
     int8_t v109 = 0LL;
-    int64_t v110 = 0LL;
+    S_140001a00_v110_t * v110 = ((S_140001a00_v110_t *)(0LL));
     int32_t v111 = 0LL;
     int32_t v112 = 0LL;
     int64_t v113 = 0LL;
@@ -2359,7 +2884,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     void * v228 = ((void *)(0LL));
     int64_t v229 = 0LL;
     int64_t v230 = 0LL;
-    int64_t v231 = 0LL;
+    S_140001a00_v231_t * v231 = ((S_140001a00_v231_t *)(0LL));
     int32_t v232 = 0LL;
     int32_t v233 = 0LL;
     int32_t v234 = 0LL;
@@ -2404,7 +2929,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v273 = 0LL;
     void * v274 = ((void *)(0LL));
     void * v275 = ((void *)(0LL));
-    int64_t v276 = 0LL;
+    S_140001a00_v276_t * v276 = ((S_140001a00_v276_t *)(0LL));
     int64_t v277 = 0LL;
     int64_t v278 = 0LL;
     int64_t v279 = 0LL;
@@ -2470,7 +2995,7 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
         dst = v69;
         v71 = ((void *)((v20 + 5368726560LL)));
         v72 = (*((int64_t *)(((int64_t)(v71)))));
-        v73 = v72;
+        v73 = ((S_140001a00_v73_t *)(v72));
         v74 = ((void *)((((int64_t)(v17)) - v67)));
         v75 = ((void *)((v20 + 5368742148LL)));
         /* recovered field: base=v20 offset=0x140008104 field=field_140008104 */
@@ -2481,17 +3006,17 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
         /* recovered field: base=v20 offset=0x140008108 field=field_140008108 */
         *((int64_t *)(((int64_t)(v78)))) = v77;
         v79 = dst;
-        v80 = (v79 - v73);
+        v80 = (v79 - ((int64_t)(v73)));
         v81 = (v80 <= 7LL);
         if (v81) {
 L0:;
             /* phi v27 <- (bb0: v26) (bb4: v80) (bb10: v96) (bb31: v219) (bb36: v244) (bb40: v266) */
             v28 = ((void *)((((int64_t)(v19)) + 8LL)));
-            v29 = ((void *)(((int64_t)(v28))));
+            v29 = ((S_140001a00_v29_t *)(((int64_t)(v28))));
             v30 = (*((int64_t *)(((int64_t)(v29)))));
             v31 = ((void *)((((int64_t)(v29)) + 8LL)));
             v32 = v30;
-            v33 = (*((int64_t *)(((int64_t)(v31)))));
+            v33 = v29->field_8;
             v34 = ((void *)((((int64_t)(v31)) + 8LL)));
             v35 = v33;
             v36 = (*((int64_t *)(((int64_t)(v34)))));
@@ -2516,7 +3041,7 @@ L0:;
         } else {
             v82 = (v80 > 11LL);
             if (v82) {
-                v250 = (*((int32_t *)(v73)));
+                v250 = (*((int32_t *)(((int64_t)(v73)))));
                 v251 = v250;
                 v252 = (v251 & v251);
                 v253 = (v252 != 0LL);
@@ -2539,12 +3064,12 @@ L2:;
                             /* phi v276 <- (bb41: v265) (bb44: v284) */
                             /* phi v277 <- (bb41: v267) (bb44: n_4) */
                             /* phi v278 <- (bb41: v268) (bb44: v292) */
-                            v279 = (v276 + 4LL);
-                            v280 = (*((int32_t *)(v279)));
+                            v279 = (((int64_t)(v276)) + 4LL);
+                            v280 = v276->field_4;
                             v281 = v280;
-                            v282 = (*((int32_t *)(v276)));
+                            v282 = (*((int32_t *)(((int64_t)(v276)))));
                             v283 = v282;
-                            v284 = (v276 + 8LL);
+                            v284 = (((int64_t)(v276)) + 8LL);
                             v285 = ((void *)((v273 + v281)));
                             v286 = (*((int32_t *)(((int64_t)(v285)))));
                             v287 = (v283 + v286);
@@ -2585,18 +3110,18 @@ L1:;
                                 v228 = ((void *)((v20 + 5368742152LL)));
                                 v229 = (*((int64_t *)(((int64_t)(v228)))));
                                 v230 = v229;
-                                v231 = (v230 + v227);
-                                v232 = (*((int32_t *)(v231)));
+                                v231 = ((S_140001a00_v231_t *)((v230 + v227)));
+                                v232 = (*((int32_t *)(((int64_t)(v231)))));
                                 v233 = v232;
                                 v234 = (v233 & v233);
                                 v235 = (v234 == 0LL);
                                 if (v235) {
                                 } else {
-                                    v236 = (v231 + 16LL);
-                                    v237 = (*((int64_t *)(v236)));
+                                    v236 = (((int64_t)(v231)) + 16LL);
+                                    v237 = v231->field_10;
                                     v238 = v237;
-                                    v239 = (v231 + 8LL);
-                                    v240 = (*((int64_t *)(v239)));
+                                    v239 = (((int64_t)(v231)) + 8LL);
+                                    v240 = v231->field_8;
                                     v241 = v240;
                                     v242 = ((void *)(((int64_t)(v215))));
                                     v243 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v224, v226, v238, v241, v233, ((int64_t)(v242)));
@@ -2617,14 +3142,14 @@ L1:;
                     }
                     goto L0;
                 } else {
-                    v254 = (v73 + 4LL);
-                    v255 = (*((int32_t *)(v254)));
+                    v254 = (((int64_t)(v73)) + 4LL);
+                    v255 = v73->field_4;
                     v256 = v255;
                     v257 = (v256 & v256);
                     v258 = (v257 == 0LL);
                     if (v258) {
-                        v259 = (v73 + 8LL);
-                        v260 = (*((int32_t *)(v259)));
+                        v259 = (((int64_t)(v73)) + 8LL);
+                        v260 = v73->field_8;
                         v261 = v260;
                         v262 = (v261 & v261);
                         v263 = (v262 != 0LL);
@@ -2658,13 +3183,13 @@ L3:;
                                 if (v109) {
                                     while (1) {
                                         /* phi v110 <- (bb9: v103) (bb21: v126) (bb29: v172) */
-                                        v111 = (*((int32_t *)(v110)));
+                                        v111 = (*((int32_t *)(((int64_t)(v110)))));
                                         v112 = v111;
-                                        v113 = (v110 + 8LL);
-                                        v114 = (*((int32_t *)(v113)));
+                                        v113 = (((int64_t)(v110)) + 8LL);
+                                        v114 = v110->field_8;
                                         v115 = v114;
-                                        v116 = (v110 + 4LL);
-                                        v117 = (*((int32_t *)(v116)));
+                                        v116 = (((int64_t)(v110)) + 4LL);
+                                        v117 = v110->field_4;
                                         v118 = v117;
                                         v119 = ((void *)((v112 + v106)));
                                         v120 = v115;
@@ -2688,20 +3213,20 @@ L3:;
                                 }
                             }
                         } else {
-                            v264 = (v73 + 12LL);
+                            v264 = (((int64_t)(v73)) + 12LL);
 L4:;
                             /* phi v83 <- (bb5: v73) (bb65: v264) */
                             /* phi v84 <- (bb5: v57) (bb65: v256) */
                             /* phi v85 <- (bb5: v58) (bb65: v251) */
-                            v86 = (*((int32_t *)(v83)));
+                            v86 = (*((int32_t *)(((int64_t)(v83)))));
                             v87 = v86;
                             v88 = (v87 & v87);
                             v89 = (v88 != 0LL);
                             if (v89) {
                                 goto L2;
                             } else {
-                                v90 = (v83 + 4LL);
-                                v91 = (*((int32_t *)(v90)));
+                                v90 = (((int64_t)(v83)) + 4LL);
+                                v91 = v83->field_4;
                                 v92 = v91;
                                 v93 = (v92 & v92);
                                 v94 = (v93 != 0LL);
@@ -2825,10 +3350,10 @@ void __mingw_setusermatherr(int64_t arg0) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=1 stack=0 */
 /* switch_tables: 1 */
-int64_t __mingw_SEH_error_handler(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t __mingw_SEH_error_handler(int64_t arg0, int64_t arg1, int64_t arg2, S_140001de0_v2_t * arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = arg3;
+    S_140001de0_v2_t * v2 = arg3;
     int64_t v3 = 0LL;
     int8_t v4 = 0LL;
     int8_t v5 = 0LL;
@@ -2889,8 +3414,8 @@ int64_t __mingw_SEH_error_handler(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v60 = 0LL;
 
     v1 = (v0 - 40LL);
-    v3 = (v2 + 4LL);
-    v4 = (*((int8_t *)(v3)));
+    v3 = (((int64_t)(v2)) + 4LL);
+    v4 = v2->field_4;
     v5 = (v4 & 2LL);
     v6 = (v5 != 0LL);
     if (v6) {
@@ -2902,7 +3427,7 @@ L0:;
         return v58;
     } else {
         v7 = 4848615423LL;
-        v8 = (*((int64_t *)(v2)));
+        v8 = (*((int64_t *)(((int64_t)(v2)))));
         v9 = (v7 & v8);
         v10 = (v9 == 541541187LL);
         if (v10) {
@@ -2911,7 +3436,7 @@ L2:;
             v57 = (v56 ^ v56);
             goto L0;
         } else {
-            v11 = (*((int32_t *)(v2)));
+            v11 = (*((int32_t *)(((int64_t)(v2)))));
             v12 = v11;
             v13 = (v12 > -1073741674LL);
             if (v13) {
@@ -2994,7 +3519,7 @@ int64_t _gnu_exception_handler(int64_t arg0) {
     void * v3 = ((void *)(0LL));
     int64_t v4 = arg0;
     int64_t v5 = 0LL;
-    int64_t v6 = 0LL;
+    S_140001f80_v6_t * v6 = ((S_140001f80_v6_t *)(0LL));
     int32_t v7 = 0LL;
     int32_t v8 = 0LL;
     int64_t v9 = 0LL;
@@ -3072,16 +3597,16 @@ int64_t _gnu_exception_handler(int64_t arg0) {
     *((int64_t *)(((int64_t)(v1)))) = v2;
     v3 = ((void *)((((int64_t)(v1)) - 32LL)));
     v5 = (*((int64_t *)(v4)));
-    v6 = v5;
-    v7 = (*((int32_t *)(v6)));
+    v6 = ((S_140001f80_v6_t *)(v5));
+    v7 = (*((int32_t *)(((int64_t)(v6)))));
     v8 = v7;
     v9 = v4;
     v10 = v8;
     v11 = (v10 & 553648127LL);
     v12 = (v11 == 541541187LL);
     if (v12) {
-        v75 = (v6 + 4LL);
-        v76 = (*((int8_t *)(v75)));
+        v75 = (((int64_t)(v6)) + 4LL);
+        v76 = v6->field_4;
         v77 = (v76 & 1LL);
         v78 = (v77 != 0LL);
         if (v78) {
@@ -3115,7 +3640,7 @@ L0:;
                 if (v14) {
                     v25 = (v8 == -1073741819LL);
                     if (v25) {
-                        v44 = (v6 ^ v6);
+                        v44 = (((int64_t)(v6)) ^ ((int64_t)(v6)));
                         v45 = 11LL;
                         v46 = ((long long (*)(long long, long long, long long, long long, long long, long long))signal)(v30, v31, v44, v45, v32, v33);
                         v47 = (v46 == 1LL);
@@ -3220,7 +3745,7 @@ void __mingwthr_run_key_dtors_part_0(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v26 = 0LL;
     int64_t v27 = 0LL;
     int64_t v28 = 0LL;
-    int64_t v29 = 0LL;
+    S_140002140_v29_t * v29 = ((S_140002140_v29_t *)(0LL));
     int32_t v30 = 0LL;
     int32_t v31 = 0LL;
     int64_t v32 = 0LL;
@@ -3284,7 +3809,7 @@ void __mingwthr_run_key_dtors_part_0(int64_t arg0, int64_t arg1, int64_t arg2) {
         while (1) {
             /* phi v28 <- (bb2: v6) (bb8: v33) */
             /* phi v29 <- (bb2: v19) (bb8: v46) */
-            v30 = (*((int32_t *)(v29)));
+            v30 = (*((int32_t *)(((int64_t)(v29)))));
             v31 = v30;
             v32 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v27, v28, v13, v31, v14, v15);
             v33 = v32;
@@ -3297,15 +3822,15 @@ void __mingwthr_run_key_dtors_part_0(int64_t arg0, int64_t arg1, int64_t arg2) {
                 v38 = (v37 != 0LL);
                 if (v38) {
                 } else {
-                    v39 = (v29 + 8LL);
-                    v40 = (*((int64_t *)(v39)));
+                    v39 = (((int64_t)(v29)) + 8LL);
+                    v40 = v29->field_8;
                     v41 = v40;
                     v42 = v33;
                     v43 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v27, v33, v13, v42, v14, v15);
                 }
             }
-            v44 = (v29 + 16LL);
-            v45 = (*((int64_t *)(v44)));
+            v44 = (((int64_t)(v29)) + 16LL);
+            v45 = v29->field_10;
             v46 = v45;
             v47 = (v46 & v46);
             v48 = (v47 != 0LL);
@@ -3349,7 +3874,7 @@ void __mingwthr_run_key_dtors_part_0(int64_t arg0, int64_t arg1, int64_t arg2) {
 /* switch_tables: 0 */
 int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v0 = 0LL;
-    int64_t v1 = 0LL;
+    S_1400021b0_v1_t * v1 = ((S_1400021b0_v1_t *)(0LL));
     int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
     int32_t v4 = 0LL;
@@ -3370,7 +3895,7 @@ int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
     uint64_t n = 0LL;
     uint64_t size = 0LL;
     int64_t v21 = arg2;
-    int64_t v22 = 0LL;
+    S_1400021b0_v22_t * v22 = ((S_1400021b0_v22_t *)(0LL));
     int64_t v23 = 0LL;
     int8_t v24 = 0LL;
     void * v25 = ((void *)(0LL));
@@ -3397,7 +3922,7 @@ int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v46 = 0LL;
     int64_t v47 = 0LL;
 
-    v1 = (v0 - 56LL);
+    v1 = ((S_1400021b0_v1_t *)((v0 - 56LL)));
     v3 = ((void *)((v2 + 5368742216LL)));
     v4 = (*((int32_t *)(((int64_t)(v3)))));
     v5 = v4;
@@ -3405,41 +3930,37 @@ int64_t ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
     v8 = (v5 & v5);
     v9 = (v8 != 0LL);
     if (v9) {
-        v14 = ((void *)((v1 + 72LL)));
-        /* recovered field: base=v1 offset=0x48 field=field_48 */
-        *((int64_t *)(((int64_t)(v14)))) = v15;
+        v14 = ((void *)((((int64_t)(v1)) + 72LL)));
+        v1->field_48 = v15;
         v16 = 1LL;
         v17 = 24LL;
-        v18 = ((void *)((v1 + 64LL)));
-        /* recovered field: base=v1 offset=0x40 field=field_40 */
-        *((int32_t *)(((int64_t)(v18)))) = v7;
-        v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))calloc)(n, size, v17, v16, v21, v7);
-        v23 = (v22 & v22);
+        v18 = ((void *)((((int64_t)(v1)) + 64LL)));
+        v1->field_40 = v7;
+        v22 = ((S_1400021b0_v22_t *)(((long long (*)(long long, long long, long long, long long, long long, long long))calloc)(n, size, v17, v16, v21, v7)));
+        v23 = (((int64_t)(v22)) & ((int64_t)(v22)));
         v24 = (v23 == 0LL);
         if (v24) {
             v47 = -1LL;
         } else {
-            v25 = ((void *)((v1 + 64LL)));
-            v26 = (*((int32_t *)(((int64_t)(v25)))));
+            v25 = ((void *)((((int64_t)(v1)) + 64LL)));
+            v26 = v1->field_40;
             v27 = v26;
-            v28 = ((void *)((v1 + 72LL)));
-            v29 = (*((int64_t *)(((int64_t)(v28)))));
+            v28 = ((void *)((((int64_t)(v1)) + 72LL)));
+            v29 = v1->field_48;
             v30 = v29;
-            v31 = ((void *)((v1 + 40LL)));
-            /* recovered field: base=v1 offset=0x28 field=field_28 */
-            *((int64_t *)(((int64_t)(v31)))) = v22;
+            v31 = ((void *)((((int64_t)(v1)) + 40LL)));
+            v1->field_28 = ((int64_t)(v22));
             v32 = (v2 + 5368742240LL);
             v33 = v32;
-            *((int32_t *)(v22)) = v27;
-            v34 = (v22 + 8LL);
-            /* recovered field: base=v22 offset=0x8 field=field_8 */
-            *((int64_t *)(v34)) = v30;
+            *((int32_t *)(((int64_t)(v22)))) = v27;
+            v34 = (((int64_t)(v22)) + 8LL);
+            v22->field_8 = v30;
             v35 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(n, size, v17, v33, v30, v27);
             v36 = ((void *)((v2 + 5368742208LL)));
             v37 = (*((int64_t *)(((int64_t)(v36)))));
             v38 = v37;
-            v39 = ((void *)((v1 + 40LL)));
-            v40 = (*((int64_t *)(((int64_t)(v39)))));
+            v39 = ((void *)((((int64_t)(v1)) + 40LL)));
+            v40 = v1->field_28;
             v41 = v40;
             v42 = (v2 + 5368742240LL);
             v43 = v42;
@@ -3456,7 +3977,7 @@ L0:;
         goto L0;
     }
     /* phi v12 <- (bb1: v11) (bb9: v47) */
-    v13 = (v1 + 56LL);
+    v13 = (((int64_t)(v1)) + 56LL);
     return v12;
 }
 
@@ -3504,7 +4025,7 @@ int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2
     int32_t v26 = 0LL;
     int32_t v27 = 0LL;
     int64_t v28 = 0LL;
-    int64_t v29 = 0LL;
+    S_140002240_v29_t * v29 = ((S_140002240_v29_t *)(0LL));
     int64_t v30 = 0LL;
     int32_t v31 = 0LL;
     int32_t v32 = 0LL;
@@ -3554,10 +4075,10 @@ int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2
             while (1) {
                 /* phi v29 <- (bb5: v22) (bb8: v39) */
                 /* phi v30 <- (bb5: v28) (bb8: v36) */
-                v31 = (*((int32_t *)(v29)));
+                v31 = (*((int32_t *)(((int64_t)(v29)))));
                 v32 = v31;
-                v33 = (v29 + 16LL);
-                v34 = (*((int64_t *)(v33)));
+                v33 = (((int64_t)(v29)) + 16LL);
+                v34 = v29->field_10;
                 v35 = v34;
                 /* structurally unreachable: block 9 */
                 __builtin_unreachable();
@@ -3707,16 +4228,16 @@ int64_t _fpreset(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=2 stack=0 */
 /* switch_tables: 0 */
-int64_t _ValidateImageBase(int64_t arg0) {
+int64_t _ValidateImageBase(S_1400023f0_v2_t * arg0) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = arg0;
+    S_1400023f0_v2_t * v2 = arg0;
     int16_t v3 = 0LL;
     int8_t v4 = 0LL;
     int64_t v5 = 0LL;
     int32_t v6 = 0LL;
     int32_t v7 = 0LL;
-    void * v8 = ((void *)(0LL));
+    S_1400023f0_v8_t * v8 = ((S_1400023f0_v8_t *)(0LL));
     int32_t v9 = 0LL;
     int8_t v10 = 0LL;
     int64_t v11 = 0LL;
@@ -3724,21 +4245,21 @@ int64_t _ValidateImageBase(int64_t arg0) {
     int16_t v13 = 0LL;
 
     v1 = (v0 ^ v0);
-    v3 = (*((int16_t *)(v2)));
+    v3 = (*((int16_t *)(((int64_t)(v2)))));
     v4 = (v3 != 23117LL);
     if (v4) {
         return v1;
     } else {
-        v5 = (v2 + 60LL);
-        v6 = (*((int32_t *)(v5)));
+        v5 = (((int64_t)(v2)) + 60LL);
+        v6 = v2->field_3c;
         v7 = v6;
-        v8 = ((void *)((v2 + v7)));
+        v8 = ((S_1400023f0_v8_t *)((((int64_t)(v2)) + v7)));
         v9 = (*((int32_t *)(((int64_t)(v8)))));
         v10 = (v9 == 17744LL);
         if (v10) {
             v11 = (v1 ^ v1);
             v12 = ((void *)((((int64_t)(v8)) + 24LL)));
-            v13 = (*((int16_t *)(((int64_t)(v12)))));
+            v13 = v8->field_18;
             (/* opaque: sete */ 0);
             return v11;
         } else {
@@ -3767,7 +4288,7 @@ int64_t _FindPESection(int64_t arg0, int64_t arg1) {
     int64_t v1 = 0LL;
     int32_t v2 = 0LL;
     int32_t v3 = 0LL;
-    int64_t v4 = 0LL;
+    S_140002420_v4_t * v4 = ((S_140002420_v4_t *)(0LL));
     void * v5 = ((void *)(0LL));
     int16_t v6 = 0LL;
     int16_t v7 = 0LL;
@@ -3787,7 +4308,7 @@ int64_t _FindPESection(int64_t arg0, int64_t arg1) {
     int16_t v21 = 0LL;
     int16_t v22 = 0LL;
     int16_t v23 = 0LL;
-    int16_t v24 = 0LL;
+    S_140002420_v24_t * v24 = ((S_140002420_v24_t *)(0LL));
     int64_t v25 = 0LL;
     int32_t v26 = 0LL;
     int32_t v27 = 0LL;
@@ -3807,9 +4328,9 @@ int64_t _FindPESection(int64_t arg0, int64_t arg1) {
     v1 = (v0 + 60LL);
     v2 = (*((int32_t *)(v1)));
     v3 = v2;
-    v4 = (v3 + v0);
-    v5 = ((void *)((v4 + 6LL)));
-    v6 = (*((int16_t *)(((int64_t)(v5)))));
+    v4 = ((S_140002420_v4_t *)((v3 + v0)));
+    v5 = ((void *)((((int64_t)(v4)) + 6LL)));
+    v6 = v4->field_6;
     v7 = v6;
     v8 = (v7 & v7);
     v9 = (v8 == 0LL);
@@ -3818,14 +4339,14 @@ L0:;
         /* phi v37 <- (bb0: v4) (bb4: v35) */
         v38 = (v37 ^ v37);
     } else {
-        v10 = ((void *)((v4 + 20LL)));
-        v11 = (*((int16_t *)(((int64_t)(v10)))));
+        v10 = ((void *)((((int64_t)(v4)) + 20LL)));
+        v11 = v4->field_14;
         v12 = v11;
         v13 = (v7 - 1LL);
         v14 = (v13 * 4LL);
         v15 = (v13 + v14);
         v16 = v15;
-        v17 = (v4 + 24LL);
+        v17 = (((int64_t)(v4)) + 24LL);
         v18 = (v17 + v12);
         v19 = v18;
         v20 = (v19 + 40LL);
@@ -3834,14 +4355,14 @@ L0:;
         v23 = v22;
         while (1) {
             /* phi v24 <- (bb1: v19) (bb4: v35) */
-            v25 = (v24 + 12LL);
-            v26 = (*((int32_t *)(v25)));
+            v25 = (((int64_t)(v24)) + 12LL);
+            v26 = v24->field_c;
             v27 = v26;
             v28 = v27;
             v30 = (v29 < v27);
             if (v30) {
 L1:;
-                v35 = (v24 + 40LL);
+                v35 = (((int64_t)(v24)) + 40LL);
                 v36 = (v35 != v23);
                 if (v36) {
                     continue;
@@ -3849,8 +4370,8 @@ L1:;
                     goto L0;
                 }
             } else {
-                v31 = (v24 + 8LL);
-                v32 = (*((int32_t *)(v31)));
+                v31 = (((int64_t)(v24)) + 8LL);
+                v32 = v24->field_8;
                 v33 = (v28 + v32);
                 v34 = (v29 < v33);
                 if (v34) {
@@ -3899,13 +4420,13 @@ int64_t _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t a
     int64_t v17 = 0LL;
     void * v18 = ((void *)(0LL));
     int64_t v19 = 0LL;
-    int64_t v20 = 0LL;
+    S_140002470_v20_t * v20 = ((S_140002470_v20_t *)(0LL));
     int16_t v21 = 0LL;
     int8_t v22 = 0LL;
     int64_t v23 = 0LL;
     int32_t v24 = 0LL;
     int32_t v25 = 0LL;
-    void * v26 = ((void *)(0LL));
+    S_140002470_v26_t * v26 = ((S_140002470_v26_t *)(0LL));
     int32_t v27 = 0LL;
     int8_t v28 = 0LL;
     void * v29 = ((void *)(0LL));
@@ -3972,33 +4493,33 @@ L0:;
     } else {
         v18 = ((void *)((v17 + 5368726528LL)));
         v19 = (*((int64_t *)(((int64_t)(v18)))));
-        v20 = v19;
-        v21 = (*((int16_t *)(v20)));
+        v20 = ((S_140002470_v20_t *)(v19));
+        v21 = (*((int16_t *)(((int64_t)(v20)))));
         v22 = (v21 == 23117LL);
         if (v22) {
-            v23 = (v20 + 60LL);
-            v24 = (*((int32_t *)(v23)));
+            v23 = (((int64_t)(v20)) + 60LL);
+            v24 = v20->field_3c;
             v25 = v24;
-            v26 = ((void *)((v25 + v20)));
+            v26 = ((S_140002470_v26_t *)((v25 + ((int64_t)(v20)))));
             v27 = (*((int32_t *)(((int64_t)(v26)))));
             v28 = (v27 != 17744LL);
             if (v28) {
                 goto L0;
             } else {
                 v29 = ((void *)((((int64_t)(v26)) + 24LL)));
-                v30 = (*((int16_t *)(((int64_t)(v29)))));
+                v30 = v26->field_18;
                 v31 = (v30 != 523LL);
                 if (v31) {
                     goto L0;
                 } else {
                     v32 = ((void *)((((int64_t)(v26)) + 6LL)));
-                    v33 = (*((int16_t *)(((int64_t)(v32)))));
+                    v33 = v26->field_6;
                     v34 = (v33 == 0LL);
                     if (v34) {
                         goto L0;
                     } else {
                         v35 = ((void *)((((int64_t)(v26)) + 20LL)));
-                        v36 = (*((int16_t *)(((int64_t)(v35)))));
+                        v36 = v26->field_14;
                         v37 = v36;
                         v38 = (v6 ^ v6);
                         v39 = ((void *)((((int64_t)(v26)) + 24LL)));
@@ -4016,7 +4537,7 @@ L0:;
                             if (v49) {
                             } else {
                                 v50 = ((void *)((((int64_t)(v26)) + 6LL)));
-                                v51 = (*((int16_t *)(((int64_t)(v50)))));
+                                v51 = v26->field_6;
                                 v52 = v51;
                                 v53 = (v42 + 1LL);
                                 v54 = (v43 + 40LL);
@@ -4071,7 +4592,7 @@ int64_t __mingw_GetSectionForAddress(int64_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
+    S_140002510_v3_t * v3 = ((S_140002510_v3_t *)(0LL));
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
     int16_t v6 = 0LL;
@@ -4079,7 +4600,7 @@ int64_t __mingw_GetSectionForAddress(int64_t arg0) {
     int64_t v8 = 0LL;
     int32_t v9 = 0LL;
     int32_t v10 = 0LL;
-    void * v11 = ((void *)(0LL));
+    S_140002510_v11_t * v11 = ((S_140002510_v11_t *)(0LL));
     int32_t v12 = 0LL;
     int8_t v13 = 0LL;
     void * v14 = ((void *)(0LL));
@@ -4107,7 +4628,7 @@ int64_t __mingw_GetSectionForAddress(int64_t arg0) {
     int16_t v36 = 0LL;
     int16_t v37 = 0LL;
     int16_t v38 = 0LL;
-    int64_t v39 = 0LL;
+    S_140002510_v39_t * v39 = ((S_140002510_v39_t *)(0LL));
     void * v40 = ((void *)(0LL));
     int32_t v41 = 0LL;
     int32_t v42 = 0LL;
@@ -4124,30 +4645,30 @@ int64_t __mingw_GetSectionForAddress(int64_t arg0) {
 
     v1 = ((void *)((v0 + 5368726528LL)));
     v2 = (*((int64_t *)(((int64_t)(v1)))));
-    v3 = v2;
+    v3 = ((S_140002510_v3_t *)(v2));
     v5 = (v4 ^ v4);
-    v6 = (*((int16_t *)(v3)));
+    v6 = (*((int16_t *)(((int64_t)(v3)))));
     v7 = (v6 != 23117LL);
     if (v7) {
 L0:;
         /* phi v52 <- (bb0: v5) (bb1: v5) (bb4: v5) (bb5: v5) (bb8: v39) */
         return v52;
     } else {
-        v8 = (v3 + 60LL);
-        v9 = (*((int32_t *)(v8)));
+        v8 = (((int64_t)(v3)) + 60LL);
+        v9 = v3->field_3c;
         v10 = v9;
-        v11 = ((void *)((v10 + v3)));
+        v11 = ((S_140002510_v11_t *)((v10 + ((int64_t)(v3)))));
         v12 = (*((int32_t *)(((int64_t)(v11)))));
         v13 = (v12 == 17744LL);
         if (v13) {
             v14 = ((void *)((((int64_t)(v11)) + 24LL)));
-            v15 = (*((int16_t *)(((int64_t)(v14)))));
+            v15 = v11->field_18;
             v16 = (v15 != 523LL);
             if (v16) {
                 goto L0;
             } else {
                 v17 = ((void *)((((int64_t)(v11)) + 6LL)));
-                v18 = (*((int16_t *)(((int64_t)(v17)))));
+                v18 = v11->field_6;
                 v19 = v18;
                 v20 = (v19 & v19);
                 v21 = (v20 == 0LL);
@@ -4155,9 +4676,9 @@ L0:;
                     goto L0;
                 } else {
                     v22 = ((void *)((((int64_t)(v11)) + 20LL)));
-                    v23 = (*((int16_t *)(((int64_t)(v22)))));
+                    v23 = v11->field_14;
                     v24 = v23;
-                    v26 = (v25 - v3);
+                    v26 = (v25 - ((int64_t)(v3)));
                     v27 = (v19 + -1LL);
                     v28 = v27;
                     v29 = (v28 * 4LL);
@@ -4172,14 +4693,14 @@ L0:;
                     v38 = v37;
                     while (1) {
                         /* phi v39 <- (bb6: v34) (bb9: v49) */
-                        v40 = ((void *)((v39 + 12LL)));
-                        v41 = (*((int32_t *)(((int64_t)(v40)))));
+                        v40 = ((void *)((((int64_t)(v39)) + 12LL)));
+                        v41 = v39->field_c;
                         v42 = v41;
                         v43 = v42;
                         v44 = (v26 < v42);
                         if (v44) {
 L1:;
-                            v49 = (v39 + 40LL);
+                            v49 = (((int64_t)(v39)) + 40LL);
                             v50 = (v49 != v38);
                             if (v50) {
                                 continue;
@@ -4188,8 +4709,8 @@ L1:;
                                 return v51;
                             }
                         } else {
-                            v45 = ((void *)((v39 + 8LL)));
-                            v46 = (*((int32_t *)(((int64_t)(v45)))));
+                            v45 = ((void *)((((int64_t)(v39)) + 8LL)));
+                            v46 = v39->field_8;
                             v47 = (v43 + v46);
                             v48 = (v26 < v47);
                             if (v48) {
@@ -4226,7 +4747,7 @@ int64_t __mingw_GetSectionCount(int64_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
+    S_140002590_v3_t * v3 = ((S_140002590_v3_t *)(0LL));
     int64_t v4 = arg0;
     int64_t v5 = 0LL;
     int16_t v6 = 0LL;
@@ -4234,7 +4755,7 @@ int64_t __mingw_GetSectionCount(int64_t arg0) {
     int64_t v8 = 0LL;
     int32_t v9 = 0LL;
     int32_t v10 = 0LL;
-    void * v11 = ((void *)(0LL));
+    S_140002590_v11_t * v11 = ((S_140002590_v11_t *)(0LL));
     int32_t v12 = 0LL;
     int8_t v13 = 0LL;
     void * v14 = ((void *)(0LL));
@@ -4248,30 +4769,30 @@ int64_t __mingw_GetSectionCount(int64_t arg0) {
 
     v1 = ((void *)((v0 + 5368726528LL)));
     v2 = (*((int64_t *)(((int64_t)(v1)))));
-    v3 = v2;
+    v3 = ((S_140002590_v3_t *)(v2));
     v5 = (v4 ^ v4);
-    v6 = (*((int16_t *)(v3)));
+    v6 = (*((int16_t *)(((int64_t)(v3)))));
     v7 = (v6 != 23117LL);
     if (v7) {
 L0:;
         v21 = v5;
         return v21;
     } else {
-        v8 = (v3 + 60LL);
-        v9 = (*((int32_t *)(v8)));
+        v8 = (((int64_t)(v3)) + 60LL);
+        v9 = v3->field_3c;
         v10 = v9;
-        v11 = ((void *)((v3 + v10)));
+        v11 = ((S_140002590_v11_t *)((((int64_t)(v3)) + v10)));
         v12 = (*((int32_t *)(((int64_t)(v11)))));
         v13 = (v12 == 17744LL);
         if (v13) {
             v14 = ((void *)((((int64_t)(v11)) + 24LL)));
-            v15 = (*((int16_t *)(((int64_t)(v14)))));
+            v15 = v11->field_18;
             v16 = (v15 != 523LL);
             if (v16) {
                 goto L0;
             } else {
                 v17 = ((void *)((((int64_t)(v11)) + 6LL)));
-                v18 = (*((int16_t *)(((int64_t)(v17)))));
+                v18 = v11->field_6;
                 v19 = v18;
                 v20 = v19;
                 return v20;
@@ -4300,7 +4821,7 @@ int64_t _FindPESectionExec(int64_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
+    S_1400025d0_v3_t * v3 = ((S_1400025d0_v3_t *)(0LL));
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
     int16_t v6 = 0LL;
@@ -4308,7 +4829,7 @@ int64_t _FindPESectionExec(int64_t arg0) {
     int64_t v8 = 0LL;
     int32_t v9 = 0LL;
     int32_t v10 = 0LL;
-    void * v11 = ((void *)(0LL));
+    S_1400025d0_v11_t * v11 = ((S_1400025d0_v11_t *)(0LL));
     int32_t v12 = 0LL;
     int8_t v13 = 0LL;
     void * v14 = ((void *)(0LL));
@@ -4352,30 +4873,30 @@ int64_t _FindPESectionExec(int64_t arg0) {
 
     v1 = ((void *)((v0 + 5368726528LL)));
     v2 = (*((int64_t *)(((int64_t)(v1)))));
-    v3 = v2;
+    v3 = ((S_1400025d0_v3_t *)(v2));
     v5 = (v4 ^ v4);
-    v6 = (*((int16_t *)(v3)));
+    v6 = (*((int16_t *)(((int64_t)(v3)))));
     v7 = (v6 != 23117LL);
     if (v7) {
 L0:;
         /* phi v51 <- (bb0: v5) (bb1: v5) (bb4: v5) (bb5: v5) (bb8: v38) */
         return v51;
     } else {
-        v8 = (v3 + 60LL);
-        v9 = (*((int32_t *)(v8)));
+        v8 = (((int64_t)(v3)) + 60LL);
+        v9 = v3->field_3c;
         v10 = v9;
-        v11 = ((void *)((v10 + v3)));
+        v11 = ((S_1400025d0_v11_t *)((v10 + ((int64_t)(v3)))));
         v12 = (*((int32_t *)(((int64_t)(v11)))));
         v13 = (v12 == 17744LL);
         if (v13) {
             v14 = ((void *)((((int64_t)(v11)) + 24LL)));
-            v15 = (*((int16_t *)(((int64_t)(v14)))));
+            v15 = v11->field_18;
             v16 = (v15 != 523LL);
             if (v16) {
                 goto L0;
             } else {
                 v17 = ((void *)((((int64_t)(v11)) + 6LL)));
-                v18 = (*((int16_t *)(((int64_t)(v17)))));
+                v18 = v11->field_6;
                 v19 = v18;
                 v20 = (v19 & v19);
                 v21 = (v20 == 0LL);
@@ -4383,7 +4904,7 @@ L0:;
                     goto L0;
                 } else {
                     v22 = ((void *)((((int64_t)(v11)) + 20LL)));
-                    v23 = (*((int16_t *)(((int64_t)(v22)))));
+                    v23 = v11->field_14;
                     v24 = v23;
                     v25 = ((void *)((((int64_t)(v11)) + 24LL)));
                     v26 = (((int64_t)(v25)) + v24);
@@ -4453,7 +4974,7 @@ int64_t _GetPEImageBase(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
+    S_140002650_v3_t * v3 = ((S_140002650_v3_t *)(0LL));
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
     int16_t v6 = 0LL;
@@ -4461,7 +4982,7 @@ int64_t _GetPEImageBase(void) {
     int64_t v8 = 0LL;
     int32_t v9 = 0LL;
     int32_t v10 = 0LL;
-    void * v11 = ((void *)(0LL));
+    S_140002650_v11_t * v11 = ((S_140002650_v11_t *)(0LL));
     int32_t v12 = 0LL;
     int8_t v13 = 0LL;
     void * v14 = ((void *)(0LL));
@@ -4471,24 +4992,24 @@ int64_t _GetPEImageBase(void) {
 
     v1 = ((void *)((v0 + 5368726528LL)));
     v2 = (*((int64_t *)(((int64_t)(v1)))));
-    v3 = v2;
+    v3 = ((S_140002650_v3_t *)(v2));
     v5 = (v4 ^ v4);
-    v6 = (*((int16_t *)(v3)));
+    v6 = (*((int16_t *)(((int64_t)(v3)))));
     v7 = (v6 != 23117LL);
     if (v7) {
 L0:;
         v17 = v5;
         return v17;
     } else {
-        v8 = (v3 + 60LL);
-        v9 = (*((int32_t *)(v8)));
+        v8 = (((int64_t)(v3)) + 60LL);
+        v9 = v3->field_3c;
         v10 = v9;
-        v11 = ((void *)((v10 + v3)));
+        v11 = ((S_140002650_v11_t *)((v10 + ((int64_t)(v3)))));
         v12 = (*((int32_t *)(((int64_t)(v11)))));
         v13 = (v12 == 17744LL);
         if (v13) {
             v14 = ((void *)((((int64_t)(v11)) + 24LL)));
-            v15 = (*((int16_t *)(((int64_t)(v14)))));
+            v15 = v11->field_18;
             (/* opaque: cmove */ 0);
             v16 = v5;
             return v16;
@@ -4516,7 +5037,7 @@ int64_t _IsNonwritableInCurrentImage(int64_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
+    S_140002690_v3_t * v3 = ((S_140002690_v3_t *)(0LL));
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
     int16_t v6 = 0LL;
@@ -4524,7 +5045,7 @@ int64_t _IsNonwritableInCurrentImage(int64_t arg0) {
     int64_t v8 = 0LL;
     int32_t v9 = 0LL;
     int32_t v10 = 0LL;
-    void * v11 = ((void *)(0LL));
+    S_140002690_v11_t * v11 = ((S_140002690_v11_t *)(0LL));
     int32_t v12 = 0LL;
     int8_t v13 = 0LL;
     void * v14 = ((void *)(0LL));
@@ -4552,7 +5073,7 @@ int64_t _IsNonwritableInCurrentImage(int64_t arg0) {
     int16_t v36 = 0LL;
     int16_t v37 = 0LL;
     int16_t v38 = 0LL;
-    int64_t v39 = 0LL;
+    S_140002690_v39_t * v39 = ((S_140002690_v39_t *)(0LL));
     void * v40 = ((void *)(0LL));
     int32_t v41 = 0LL;
     int32_t v42 = 0LL;
@@ -4573,29 +5094,29 @@ int64_t _IsNonwritableInCurrentImage(int64_t arg0) {
 
     v1 = ((void *)((v0 + 5368726528LL)));
     v2 = (*((int64_t *)(((int64_t)(v1)))));
-    v3 = v2;
+    v3 = ((S_140002690_v3_t *)(v2));
     v5 = (v4 ^ v4);
-    v6 = (*((int16_t *)(v3)));
+    v6 = (*((int16_t *)(((int64_t)(v3)))));
     v7 = (v6 != 23117LL);
     if (v7) {
         return v5;
     } else {
-        v8 = (v3 + 60LL);
-        v9 = (*((int32_t *)(v8)));
+        v8 = (((int64_t)(v3)) + 60LL);
+        v9 = v3->field_3c;
         v10 = v9;
-        v11 = ((void *)((v10 + v3)));
+        v11 = ((S_140002690_v11_t *)((v10 + ((int64_t)(v3)))));
         v12 = (*((int32_t *)(((int64_t)(v11)))));
         v13 = (v12 == 17744LL);
         if (v13) {
             v14 = ((void *)((((int64_t)(v11)) + 24LL)));
-            v15 = (*((int16_t *)(((int64_t)(v14)))));
+            v15 = v11->field_18;
             v16 = (v15 != 523LL);
             if (v16) {
 L0:;
                 goto L0;
             } else {
                 v17 = ((void *)((((int64_t)(v11)) + 6LL)));
-                v18 = (*((int16_t *)(((int64_t)(v17)))));
+                v18 = v11->field_6;
                 v19 = v18;
                 v20 = (v19 & v19);
                 v21 = (v20 == 0LL);
@@ -4603,9 +5124,9 @@ L0:;
                     goto L0;
                 } else {
                     v22 = ((void *)((((int64_t)(v11)) + 20LL)));
-                    v23 = (*((int16_t *)(((int64_t)(v22)))));
+                    v23 = v11->field_14;
                     v24 = v23;
-                    v26 = (v25 - v3);
+                    v26 = (v25 - ((int64_t)(v3)));
                     v27 = (v19 + -1LL);
                     v28 = v27;
                     v29 = (v28 * 4LL);
@@ -4620,14 +5141,14 @@ L0:;
                     v38 = v37;
                     while (1) {
                         /* phi v39 <- (bb6: v34) (bb9: v54) */
-                        v40 = ((void *)((v39 + 12LL)));
-                        v41 = (*((int32_t *)(((int64_t)(v40)))));
+                        v40 = ((void *)((((int64_t)(v39)) + 12LL)));
+                        v41 = v39->field_c;
                         v42 = v41;
                         v43 = v42;
                         v44 = (v26 < v42);
                         if (v44) {
 L1:;
-                            v54 = (v39 + 40LL);
+                            v54 = (((int64_t)(v39)) + 40LL);
                             v55 = (v38 != v54);
                             if (v55) {
                                 continue;
@@ -4635,13 +5156,13 @@ L1:;
                                 break;
                             }
                         } else {
-                            v45 = ((void *)((v39 + 8LL)));
-                            v46 = (*((int32_t *)(((int64_t)(v45)))));
+                            v45 = ((void *)((((int64_t)(v39)) + 8LL)));
+                            v46 = v39->field_8;
                             v47 = (v43 + v46);
                             v48 = (v26 < v47);
                             if (v48) {
-                                v49 = ((void *)((v39 + 36LL)));
-                                v50 = (*((int32_t *)(((int64_t)(v49)))));
+                                v49 = ((void *)((((int64_t)(v39)) + 36LL)));
+                                v50 = v39->field_24;
                                 v51 = v50;
                                 v52 = ~(v51);
                                 v53 = (v52 >> 31LL);
@@ -4679,7 +5200,7 @@ int64_t __mingw_enum_import_library_names(int64_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v3 = 0LL;
+    S_140002720_v3_t * v3 = ((S_140002720_v3_t *)(0LL));
     int64_t v4 = 0LL;
     int64_t v5 = 0LL;
     int16_t v6 = 0LL;
@@ -4687,7 +5208,7 @@ int64_t __mingw_enum_import_library_names(int64_t arg0) {
     int64_t v8 = 0LL;
     int32_t v9 = 0LL;
     int32_t v10 = 0LL;
-    void * v11 = ((void *)(0LL));
+    S_140002720_v11_t * v11 = ((S_140002720_v11_t *)(0LL));
     int32_t v12 = 0LL;
     int8_t v13 = 0LL;
     void * v14 = ((void *)(0LL));
@@ -4718,7 +5239,7 @@ int64_t __mingw_enum_import_library_names(int64_t arg0) {
     int16_t v39 = 0LL;
     int16_t v40 = 0LL;
     int16_t v41 = 0LL;
-    int64_t v42 = 0LL;
+    S_140002720_v42_t * v42 = ((S_140002720_v42_t *)(0LL));
     void * v43 = ((void *)(0LL));
     int32_t v44 = 0LL;
     int32_t v45 = 0LL;
@@ -4730,7 +5251,7 @@ int64_t __mingw_enum_import_library_names(int64_t arg0) {
     int8_t v51 = 0LL;
     int64_t v52 = 0LL;
     int64_t v53 = arg0;
-    int64_t v54 = 0LL;
+    S_140002720_v54_t * v54 = ((S_140002720_v54_t *)(0LL));
     int64_t v55 = 0LL;
     void * v56 = ((void *)(0LL));
     int32_t v57 = 0LL;
@@ -4761,30 +5282,30 @@ int64_t __mingw_enum_import_library_names(int64_t arg0) {
 
     v1 = ((void *)((v0 + 5368726528LL)));
     v2 = (*((int64_t *)(((int64_t)(v1)))));
-    v3 = v2;
+    v3 = ((S_140002720_v3_t *)(v2));
     v5 = (v4 ^ v4);
-    v6 = (*((int16_t *)(v3)));
+    v6 = (*((int16_t *)(((int64_t)(v3)))));
     v7 = (v6 != 23117LL);
     if (v7) {
 L0:;
         v81 = v5;
         return v81;
     } else {
-        v8 = (v3 + 60LL);
-        v9 = (*((int32_t *)(v8)));
+        v8 = (((int64_t)(v3)) + 60LL);
+        v9 = v3->field_3c;
         v10 = v9;
-        v11 = ((void *)((v10 + v3)));
+        v11 = ((S_140002720_v11_t *)((v10 + ((int64_t)(v3)))));
         v12 = (*((int32_t *)(((int64_t)(v11)))));
         v13 = (v12 == 17744LL);
         if (v13) {
             v14 = ((void *)((((int64_t)(v11)) + 24LL)));
-            v15 = (*((int16_t *)(((int64_t)(v14)))));
+            v15 = v11->field_18;
             v16 = (v15 != 523LL);
             if (v16) {
                 goto L0;
             } else {
                 v17 = ((void *)((((int64_t)(v11)) + 144LL)));
-                v18 = (*((int32_t *)(((int64_t)(v17)))));
+                v18 = v11->field_90;
                 v19 = v18;
                 v20 = (v19 & v19);
                 v21 = (v20 == 0LL);
@@ -4792,7 +5313,7 @@ L0:;
                     goto L0;
                 } else {
                     v22 = ((void *)((((int64_t)(v11)) + 6LL)));
-                    v23 = (*((int16_t *)(((int64_t)(v22)))));
+                    v23 = v11->field_6;
                     v24 = v23;
                     v25 = (v24 & v24);
                     v26 = (v25 == 0LL);
@@ -4800,7 +5321,7 @@ L0:;
                         goto L0;
                     } else {
                         v27 = ((void *)((((int64_t)(v11)) + 20LL)));
-                        v28 = (*((int16_t *)(((int64_t)(v27)))));
+                        v28 = v11->field_14;
                         v29 = v28;
                         v30 = ((void *)((((int64_t)(v11)) + 24LL)));
                         v31 = (((int64_t)(v30)) + v29);
@@ -4816,15 +5337,15 @@ L0:;
                         v41 = v40;
                         while (1) {
                             /* phi v42 <- (bb7: v32) (bb10: v76) */
-                            v43 = ((void *)((v42 + 12LL)));
-                            v44 = (*((int32_t *)(((int64_t)(v43)))));
+                            v43 = ((void *)((((int64_t)(v42)) + 12LL)));
+                            v44 = v42->field_c;
                             v45 = v44;
                             v46 = v45;
                             v47 = (v19 < v45);
                             if (v47) {
 L2:;
                                 /* phi v75 <- (bb8: v46) (bb9: v50) */
-                                v76 = (v42 + 40LL);
+                                v76 = (((int64_t)(v42)) + 40LL);
                                 v77 = (v41 != v76);
                                 if (v77) {
                                     continue;
@@ -4832,17 +5353,17 @@ L2:;
                                     break;
                                 }
                             } else {
-                                v48 = ((void *)((v42 + 8LL)));
-                                v49 = (*((int32_t *)(((int64_t)(v48)))));
+                                v48 = ((void *)((((int64_t)(v42)) + 8LL)));
+                                v49 = v42->field_8;
                                 v50 = (v46 + v49);
                                 v51 = (v19 < v50);
                                 if (v51) {
-                                    v52 = (v19 + v3);
+                                    v52 = (v19 + ((int64_t)(v3)));
                                     while (1) {
                                         /* phi v54 <- (bb13: v52) (bb15: v69) */
                                         /* phi v55 <- (bb13: v53) (bb15: v68) */
-                                        v56 = ((void *)((v54 + 4LL)));
-                                        v57 = (*((int32_t *)(((int64_t)(v56)))));
+                                        v56 = ((void *)((((int64_t)(v54)) + 4LL)));
+                                        v57 = v54->field_4;
                                         v58 = v57;
                                         v59 = (v58 & v58);
                                         v60 = (v59 != 0LL);
@@ -4852,19 +5373,19 @@ L1:;
                                             v67 = (v66 > 0LL);
                                             if (v67) {
                                                 v68 = (v55 - 1LL);
-                                                v69 = (v54 + 20LL);
+                                                v69 = (((int64_t)(v54)) + 20LL);
                                                 continue;
                                             } else {
-                                                v70 = ((void *)((v54 + 12LL)));
-                                                v71 = (*((int32_t *)(((int64_t)(v70)))));
+                                                v70 = ((void *)((((int64_t)(v54)) + 12LL)));
+                                                v71 = v54->field_c;
                                                 v72 = v71;
-                                                v73 = (v72 + v3);
+                                                v73 = (v72 + ((int64_t)(v3)));
                                                 v74 = v73;
                                                 return v74;
                                             }
                                         } else {
-                                            v61 = ((void *)((v54 + 12LL)));
-                                            v62 = (*((int32_t *)(((int64_t)(v61)))));
+                                            v61 = ((void *)((((int64_t)(v54)) + 12LL)));
+                                            v62 = v54->field_c;
                                             v63 = v62;
                                             v64 = (v63 & v63);
                                             v65 = (v64 == 0LL);
@@ -4912,7 +5433,7 @@ int64_t fn_1400027e0(int64_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = arg0;
-    void * v3 = ((void *)(0LL));
+    S_1400027e0_v3_t * v3 = ((S_1400027e0_v3_t *)(0LL));
     int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
     void * v6 = ((void *)(0LL));
@@ -4937,7 +5458,7 @@ int64_t fn_1400027e0(int64_t arg0) {
 
     v1 = ((void *)((v0 - 8LL)));
     *((int64_t *)(((int64_t)(v1)))) = v2;
-    v3 = ((void *)((((int64_t)(v1)) - 8LL)));
+    v3 = ((S_1400027e0_v3_t *)((((int64_t)(v1)) - 8LL)));
     *((int64_t *)(((int64_t)(v3)))) = v4;
     v5 = ((void *)((((int64_t)(v3)) + 24LL)));
     v6 = ((void *)(((int64_t)(v5))));
@@ -4967,7 +5488,7 @@ int64_t vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t
     int64_t v4 = arg1;
     void * v5 = ((void *)(0LL));
     int64_t v6 = 0LL;
-    void * v7 = ((void *)(0LL));
+    S_140002820_v7_t * v7 = ((S_140002820_v7_t *)(0LL));
     int64_t v8 = arg3;
     int64_t v9 = 0LL;
     int64_t v10 = arg2;
@@ -5000,7 +5521,7 @@ int64_t vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t
     *((int64_t *)(((int64_t)(v3)))) = v4;
     v5 = ((void *)((((int64_t)(v3)) - 8LL)));
     *((int64_t *)(((int64_t)(v5)))) = v6;
-    v7 = ((void *)((((int64_t)(v5)) - 48LL)));
+    v7 = ((S_140002820_v7_t *)((((int64_t)(v5)) - 48LL)));
     v9 = v8;
     v11 = v10;
     v13 = v12;
@@ -5011,11 +5532,10 @@ int64_t vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t
     v19 = (*((int64_t *)(((int64_t)(v15)))));
     v20 = v19;
     v21 = ((void *)((((int64_t)(v7)) + 32LL)));
-    /* recovered field: base=v7 offset=0x20 field=field_20 */
-    *((int64_t *)(((int64_t)(v21)))) = v13;
+    v7->field_20 = v13;
     v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))__stdio_common_vfprintf)(v13, v11, v18, v20, v17, v16);
     v23 = ((void *)((((int64_t)(v7)) + 48LL)));
-    v24 = (*((int64_t *)(((int64_t)(v23)))));
+    v24 = v7->field_30;
     v25 = ((void *)((((int64_t)(v23)) + 8LL)));
     v26 = v24;
     v27 = (*((int64_t *)(((int64_t)(v25)))));
@@ -5049,7 +5569,7 @@ int64_t fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
     int64_t v6 = 0LL;
-    void * v7 = ((void *)(0LL));
+    S_140002860_v7_t * v7 = ((S_140002860_v7_t *)(0LL));
     void * v8 = ((void *)(0LL));
     int64_t v9 = 0LL;
     int64_t v10 = arg0;
@@ -5086,13 +5606,12 @@ int64_t fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     *((int64_t *)(((int64_t)(v3)))) = v4;
     v5 = ((void *)((((int64_t)(v3)) - 8LL)));
     *((int64_t *)(((int64_t)(v5)))) = v6;
-    v7 = ((void *)((((int64_t)(v5)) - 64LL)));
+    v7 = ((S_140002860_v7_t *)((((int64_t)(v5)) - 64LL)));
     v8 = ((void *)((((int64_t)(v7)) + 112LL)));
     v9 = ((int64_t)(v8));
     v11 = v10;
     v13 = v12;
-    /* recovered field: base=v7 offset=0x70 field=field_70 */
-    *((int64_t *)(((int64_t)(v8)))) = v15;
+    v7->field_70 = v15;
     v16 = ((void *)((((int64_t)(v7)) + 120LL)));
     *((int64_t *)(((int64_t)(v16)))) = v17;
     v18 = ((void *)((((int64_t)(v7)) + 56LL)));
@@ -5104,11 +5623,10 @@ int64_t fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v23 = (*((int64_t *)(((int64_t)(v19)))));
     v24 = v23;
     v25 = ((void *)((((int64_t)(v7)) + 32LL)));
-    /* recovered field: base=v7 offset=0x20 field=field_20 */
-    *((int64_t *)(((int64_t)(v25)))) = v9;
+    v7->field_20 = v9;
     v26 = ((long long (*)(long long, long long, long long, long long, long long, long long))__stdio_common_vfprintf)(v9, v13, v22, v24, v21, v20);
     v27 = ((void *)((((int64_t)(v7)) + 64LL)));
-    v28 = (*((int64_t *)(((int64_t)(v27)))));
+    v28 = v7->field_40;
     v29 = ((void *)((((int64_t)(v27)) + 8LL)));
     v30 = v28;
     v31 = (*((int64_t *)(((int64_t)(v29)))));
@@ -5252,7 +5770,7 @@ int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, in
     int64_t v6 = arg1;
     void * v7 = ((void *)(0LL));
     int64_t v8 = 0LL;
-    void * v9 = ((void *)(0LL));
+    S_140002900_v9_t * v9 = ((S_140002900_v9_t *)(0LL));
     int64_t v10 = arg5;
     int64_t v11 = 0LL;
     int64_t v12 = arg2;
@@ -5303,7 +5821,7 @@ int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, in
     *((int64_t *)(((int64_t)(v5)))) = v6;
     v7 = ((void *)((((int64_t)(v5)) - 8LL)));
     *((int64_t *)(((int64_t)(v7)))) = v8;
-    v9 = ((void *)((((int64_t)(v7)) - 40LL)));
+    v9 = ((S_140002900_v9_t *)((((int64_t)(v7)) - 40LL)));
     v11 = v10;
     v13 = v12;
     v15 = v14;
@@ -5325,14 +5843,14 @@ int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, in
     v30 = v29;
     *((int64_t *)(v15)) = v30;
     v31 = ((void *)((((int64_t)(v9)) + 112LL)));
-    v32 = (*((int64_t *)(((int64_t)(v31)))));
+    v32 = v9->field_70;
     v33 = v32;
     v34 = (*((int32_t *)(v33)));
     v35 = v34;
     v36 = ((long long (*)(long long, long long, long long, long long, long long, long long))_set_new_mode)(v17, v13, v12, v35, v14, v10);
     v37 = (v36 ^ v36);
     v38 = ((void *)((((int64_t)(v9)) + 40LL)));
-    v39 = (*((int64_t *)(((int64_t)(v38)))));
+    v39 = v9->field_28;
     v40 = ((void *)((((int64_t)(v38)) + 8LL)));
     v41 = v39;
     v42 = (*((int64_t *)(((int64_t)(v40)))));

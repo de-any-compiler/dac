@@ -51,12 +51,46 @@ pub struct TranslationUnit {
 }
 
 /// One top-level item in a [`TranslationUnit`]. The enum is closed so
-/// future kinds (type-defs, globals) land as new variants and break the
-/// emitter at compile time rather than silently producing nothing.
+/// future kinds (globals, function-pointer typedefs) land as new
+/// variants and break the emitter at compile time rather than
+/// silently producing nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
     /// A function definition.
     Function(Function),
+    /// `typedef struct { … } NAME;` — surface for a recovered
+    /// pointer-anchored struct layout (B3.16, FR-17). Each typedef is
+    /// rendered with `__attribute__((packed))` so the per-field
+    /// `offset` produced by `dac-recovery::structs` survives lowering
+    /// to C: a `field_<hex>` reference resolves to the same byte
+    /// position the recovery observed at the SSA layer.
+    StructDecl(StructDecl),
+}
+
+/// A `typedef struct { … } NAME;` declaration emitted at translation-
+/// unit scope (B3.16). The lowering pass synthesises one of these per
+/// pointer-anchored layout in [`dac_recovery::RecoveredStructs::pointer_structs`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructDecl {
+    /// Typedef'd name (e.g. `S_140001234_v5_t`). Emitted both as the
+    /// `struct` tag-less typedef and as the C-side identifier other
+    /// items reference via [`CType::Named`].
+    pub name: String,
+    /// Fields in source order. The emitter adds padding fields
+    /// (`uint8_t __pad_<from>_<to>[N];`) where the recovered layout
+    /// has gaps so the offsets the recovery pass observed (e.g.
+    /// `field_60` lives at byte 0x60) survive the round-trip compile
+    /// gate.
+    pub fields: Vec<StructField>,
+    /// Optional `/* … */` comment rendered above the typedef.
+    pub leading_comment: Option<String>,
+}
+
+/// One member of a [`StructDecl`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructField {
+    pub name: String,
+    pub ty: CType,
 }
 
 /// A C function definition.
@@ -322,6 +356,16 @@ pub enum CType {
     Int { width_bits: u16, signed: bool },
     /// Pointer to another type — emits `<inner> *`.
     Ptr(Box<CType>),
+    /// Reference to a `typedef`'d name (e.g. a [`StructDecl`]'s
+    /// identifier). The emitter renders the name verbatim — no
+    /// `struct` keyword is added, so the typedef must already be
+    /// `typedef struct { … } NAME;`-shaped (B3.16).
+    Named(String),
+    /// Fixed-extent array — emits `<element>` as the prefix and
+    /// `<name>[count]` at the declarator site. Used inside
+    /// [`StructField`] for the padding members the B3.16 lowering pass
+    /// emits between recovered struct fields.
+    Array { element: Box<CType>, count: u64 },
 }
 
 impl CType {
@@ -416,6 +460,33 @@ mod tests {
             | Expr::Field { .. }
             | Expr::Cast { .. }
             | Expr::Opaque(_) => {}
+        }
+    }
+
+    #[test]
+    fn item_variants_are_exhaustively_matchable() {
+        let i = Item::Function(Function {
+            name: "f".into(),
+            return_type: CType::Void,
+            params: vec![],
+            locals: vec![],
+            body: Block::empty(),
+            leading_comment: None,
+        });
+        match i {
+            Item::Function(_) | Item::StructDecl(_) => {}
+        }
+    }
+
+    #[test]
+    fn ctype_variants_are_exhaustively_matchable() {
+        let t = CType::Void;
+        match t {
+            CType::Void
+            | CType::Int { .. }
+            | CType::Ptr(_)
+            | CType::Named(_)
+            | CType::Array { .. } => {}
         }
     }
 }

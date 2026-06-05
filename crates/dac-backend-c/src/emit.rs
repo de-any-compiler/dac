@@ -25,9 +25,11 @@
 
 use std::fmt::Write as _;
 
+#[cfg(test)]
+use crate::ast::StructField;
 use crate::ast::{
-    BinaryOp, Block, CType, Expr, Function, Item, Local, Param, Stmt, SwitchArm, TranslationUnit,
-    UnaryOp,
+    BinaryOp, Block, CType, Expr, Function, Item, Local, Param, Stmt, StructDecl, SwitchArm,
+    TranslationUnit, UnaryOp,
 };
 
 /// Render a [`TranslationUnit`] as formatted C source.
@@ -62,6 +64,31 @@ pub fn emit_function(f: &Function) -> String {
 fn emit_item(p: &mut Printer<'_>, item: &Item) {
     match item {
         Item::Function(f) => emit_function_into(p, f),
+        Item::StructDecl(s) => emit_struct_decl(p, s),
+    }
+}
+
+fn emit_struct_decl(p: &mut Printer<'_>, s: &StructDecl) {
+    if let Some(comment) = &s.leading_comment {
+        for line in comment.lines() {
+            p.write_line(&format!("/* {line} */"));
+        }
+    }
+    p.write_line("typedef struct __attribute__((packed)) {");
+    p.indent();
+    for f in &s.fields {
+        p.write_line(&format!("{};", render_field_decl(&f.ty, &f.name)));
+    }
+    p.dedent();
+    p.write_line(&format!("}} {};", s.name));
+}
+
+fn render_field_decl(ty: &CType, name: &str) -> String {
+    match ty {
+        CType::Array { element, count } => {
+            format!("{} {}[{}]", render_type_prefix(element), name, count)
+        }
+        _ => render_decl(ty, name),
     }
 }
 
@@ -257,6 +284,14 @@ fn render_type_prefix(ty: &CType) -> String {
         CType::Void => "void".to_string(),
         CType::Int { width_bits, signed } => render_int_type(*width_bits, *signed),
         CType::Ptr(inner) => format!("{} *", render_type_prefix(inner)),
+        CType::Named(name) => name.clone(),
+        // Arrays only appear inside struct fields; the field-decl
+        // path renders them as `<element> name[N]`. Outside that
+        // context (parameters, locals) the lowering pass does not
+        // emit `CType::Array`, so this is a safety net that prints
+        // a faithful (if unusual) spelling instead of corrupting
+        // the output.
+        CType::Array { element, count } => format!("{}[{count}]", render_type_prefix(element)),
     }
 }
 
@@ -666,6 +701,53 @@ void g(void) {
 }
 "
         );
+    }
+
+    #[test]
+    fn struct_decl_renders_typedef_with_packed_attribute() {
+        let s = StructDecl {
+            name: "S_v5_t".into(),
+            fields: vec![
+                StructField {
+                    name: "__pad_0_60".into(),
+                    ty: CType::Array {
+                        element: Box::new(CType::u8()),
+                        count: 0x60,
+                    },
+                },
+                StructField {
+                    name: "field_60".into(),
+                    ty: CType::i64(),
+                },
+                StructField {
+                    name: "field_68".into(),
+                    ty: CType::i64(),
+                },
+            ],
+            leading_comment: Some("recovered: base=v5".into()),
+        };
+        let u = TranslationUnit {
+            includes: vec![],
+            items: vec![Item::StructDecl(s)],
+        };
+        let want = "\
+/* recovered: base=v5 */
+typedef struct __attribute__((packed)) {
+    uint8_t __pad_0_60[96];
+    int64_t field_60;
+    int64_t field_68;
+} S_v5_t;
+";
+        assert_eq!(emit(&u), want);
+    }
+
+    #[test]
+    fn named_ctype_renders_as_typedef_name() {
+        // `Ptr(Named("S_v5_t"))` becomes `S_v5_t *` — the typedef name
+        // is rendered verbatim so a recovered pointer-anchored local
+        // can carry the struct type without re-emitting `struct {…}`.
+        let s = render_type_prefix(&CType::Ptr(Box::new(CType::Named("S_v5_t".into()))));
+        assert_eq!(s, "S_v5_t *");
     }
 
     #[test]

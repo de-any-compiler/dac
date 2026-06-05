@@ -61,16 +61,20 @@
 //! 6. **Unknown call targets** lower through [`Expr::AddrLit`] so the
 //!    cast-and-call shape compiles even when the symbol is not
 //!    recoverable.
-//! 7. **Recovered struct-field accesses surface as a comment**
-//!    (B3.10, FR-17). The orchestrator detects pointer-anchored
-//!    struct layouts via [`RecoveredStructs`] but the emitted source
-//!    still uses the bare `*(int*)(base + 0xN)` shape because the C
-//!    AST does not yet model struct typedefs in scope. The lowering
-//!    pass records `/* recovered field: base=v_<id> offset=0x<hex>
-//!    field=field_<hex> */` above each matching access so the reader
-//!    sees where the field surface would land. Promoting these to
-//!    `base->field` requires translation-unit-level struct
-//!    declarations and is a B3 follow-up shelf entry.
+//! 7. **Recovered pointer-anchored struct layouts surface as real
+//!    typedefs** (B3.16, FR-17). The orchestrator's
+//!    [`RecoveredStructs::pointer_structs`] is walked at lowering
+//!    time; each layout that fits within
+//!    [`MAX_PROMOTED_STRUCT_SIZE`] mints a translation-unit-level
+//!    `typedef struct { … } NAME;` and the base value is re-typed as
+//!    `<typedef> *`. `Load` / `Store` whose address decomposes to
+//!    `Add(base, Const(offset))` and matches a field in the layout
+//!    rewrite to `base->field_<hex>` directly. Layouts above the size
+//!    cap — almost always the absolute-address false-positive shape
+//!    from `Add(base, Const(0x140008008))` — fall back to the B3.10
+//!    `/* recovered field: … */` comment-on-top-of-bare-Store surface
+//!    so the round-trip compile gate is not blown up by a multi-MB
+//!    typedef.
 //!
 //! ## What lands later
 //!
@@ -105,7 +109,7 @@ use dac_recovery::{
 
 use crate::ast::{
     BinaryOp, Block as CBlock, CType, Expr, Function, Item, Local, Param, Stmt as CStmt,
-    TranslationUnit, UnaryOp,
+    StructDecl, StructField, TranslationUnit, UnaryOp,
 };
 
 /// The set of `#include` directives every emitted translation unit
@@ -177,6 +181,11 @@ impl<'a> Recovered<'a> {
 /// equal `sem.function_address`. The [`Recovered`] view threads the
 /// per-function recovery facts (convention, types, structs) the
 /// orchestrator computed (B3.10).
+///
+/// Returns only the lowered [`Function`]. Callers that also want the
+/// translation-unit-level struct typedefs synthesised from
+/// [`RecoveredStructs::pointer_structs`] (B3.16) should call
+/// [`lower_function_with_typedefs`] instead.
 #[must_use]
 pub fn lower_function(
     ssa: &SsaFunction,
@@ -184,22 +193,61 @@ pub fn lower_function(
     resolver: &NameResolver,
     recovered: &Recovered<'_>,
 ) -> Function {
+    lower_function_with_typedefs(ssa, sem, resolver, recovered).function
+}
+
+/// Output of [`lower_function_with_typedefs`]: the lowered C function
+/// plus the translation-unit-level struct typedefs the lowering pass
+/// synthesised for the recovered pointer-anchored layouts referenced
+/// by this function (B3.16, FR-17).
+///
+/// `struct_decls` is sorted by typedef name so multi-function
+/// translation units can dedup deterministically before prepending
+/// them to the [`TranslationUnit`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoweredFunction {
+    pub function: Function,
+    pub struct_decls: Vec<StructDecl>,
+}
+
+/// Lower a function and also return the struct typedefs the lowering
+/// pass needs at translation-unit scope. The typedef shape mirrors the
+/// recovered [`StructLayout`]: leading padding bringing the first
+/// field to its observed offset, then one field per observed offset
+/// (B3.16, FR-17). Layouts whose `total_size` exceeds
+/// [`MAX_PROMOTED_STRUCT_SIZE`] are skipped — they are almost always
+/// the recovery clustering an absolute-address access (e.g. a PE
+/// `[rip + 0x140008008]` rendered as `Add(base, Const(0x140008008))`)
+/// rather than a real per-field offset, and emitting a multi-MB
+/// typedef would silently break the round-trip compile gate. Those
+/// bases stay declared with their B3.15 width-typed / lattice-driven
+/// shape, and the B3.10 `recovered field` comment trail still surfaces
+/// the access pattern in the body.
+#[must_use]
+pub fn lower_function_with_typedefs(
+    ssa: &SsaFunction,
+    sem: &SemFunction,
+    resolver: &NameResolver,
+    recovered: &Recovered<'_>,
+) -> LoweredFunction {
     debug_assert_eq!(ssa.function_address, sem.function_address);
     let name = sem
         .function_name
         .clone()
         .unwrap_or_else(|| format!("fn_{:x}", sem.function_address));
-    let params = build_params(recovered);
-    let parameter_inits = parameter_initialisers(recovered);
-    let locals = lower_locals(ssa, recovered, &parameter_inits);
+    let struct_typedefs = build_struct_typedef_table(sem.function_address, recovered);
+    let params = build_params(recovered, &struct_typedefs);
+    let parameter_inits = parameter_initialisers(recovered, &struct_typedefs);
+    let locals = lower_locals(ssa, recovered, &parameter_inits, &struct_typedefs);
     let return_type = pick_return_type(&sem.body, ssa, recovered);
-    let value_types = build_value_types(ssa, recovered);
+    let value_types = build_value_types(ssa, recovered, &struct_typedefs);
     let ctx = LowerCtx {
         ssa,
         resolver,
         recovered,
         return_type: return_type.clone(),
         value_types,
+        struct_typedefs: &struct_typedefs,
     };
     let body = ctx.lower_block(&sem.body);
     let leading_comment = Some(format!(
@@ -215,25 +263,69 @@ pub fn lower_function(
         sem.stats.label_count,
         sem.stats.irreducible
     ));
-    Function {
-        name,
-        return_type,
-        params,
-        locals,
-        body,
-        leading_comment,
+    let mut struct_decls: Vec<StructDecl> = struct_typedefs
+        .into_values()
+        .map(|typedef| typedef.decl)
+        .collect();
+    struct_decls.sort_by(|a, b| a.name.cmp(&b.name));
+    LoweredFunction {
+        function: Function {
+            name,
+            return_type,
+            params,
+            locals,
+            body,
+            leading_comment,
+        },
+        struct_decls,
     }
+}
+
+/// Upper bound on a recovered struct's effective on-wire size (the
+/// highest byte the layout touches, **including leading padding**)
+/// before the typedef synthesis declines to emit it. Recovery
+/// occasionally clusters absolute-address shapes such as
+/// `Add(base, Const(0x140008008))` against a shared base — those land
+/// with a tiny `last.offset - first.offset` span but a huge
+/// `last.offset + width` upper bound. Emitting that as a typedef
+/// would silently break the round-trip compile gate without adding
+/// signal, so we gate on the upper bound instead of the span. 4 KiB
+/// is generous for the real recovered layouts in the corpus (typical
+/// structs are well under 1 KiB) and firmly excludes the
+/// absolute-address false positives.
+pub const MAX_PROMOTED_STRUCT_SIZE: u64 = 4 * 1024;
+
+fn struct_effective_size(layout: &StructLayout) -> u64 {
+    let Some(last) = layout.fields.last() else {
+        return 0;
+    };
+    last.offset.saturating_add(u64::from(last.width.max(1)))
 }
 
 /// Map from parameter `ValueId` to the [`ParameterInit`] describing
 /// the matching [`Param`] (its name and type).
 type ParameterInits = BTreeMap<ValueId, ParameterInit>;
 
+/// Per-function table of recovered pointer-anchored structs that the
+/// B3.16 lowering promoted to a translation-unit-level typedef. Keyed
+/// by the base [`ValueId`] the recovery observed.
+type StructTypedefTable = BTreeMap<ValueId, StructTypedef>;
+
+/// One entry in [`StructTypedefTable`]: the synthesised typedef and the
+/// recovered layout it materialises. Keeping both around lets the
+/// per-access matcher resolve a field by `offset` against the original
+/// layout without re-walking the typedef's padded field list.
+#[derive(Debug, Clone)]
+struct StructTypedef {
+    decl: StructDecl,
+    layout: StructLayout,
+}
+
 /// Build the C parameter list from the convention's `int_args` slot.
 /// The N-th argument register becomes `argN`; its type comes from
 /// the [`TypeMap`] when available, falling back to the SSA variable's
 /// width.
-fn build_params(recovered: &Recovered<'_>) -> Vec<Param> {
+fn build_params(recovered: &Recovered<'_>, structs: &StructTypedefTable) -> Vec<Param> {
     let Some(sig) = recovered.signature else {
         return Vec::new();
     };
@@ -241,12 +333,15 @@ fn build_params(recovered: &Recovered<'_>) -> Vec<Param> {
         .iter()
         .map(|arg| Param {
             name: parameter_name(arg),
-            ty: parameter_type(arg, recovered.types),
+            ty: parameter_type(arg, recovered.types, structs),
         })
         .collect()
 }
 
-fn parameter_initialisers(recovered: &Recovered<'_>) -> ParameterInits {
+fn parameter_initialisers(
+    recovered: &Recovered<'_>,
+    structs: &StructTypedefTable,
+) -> ParameterInits {
     let mut m = ParameterInits::new();
     let Some(sig) = recovered.signature else {
         return m;
@@ -256,7 +351,7 @@ fn parameter_initialisers(recovered: &Recovered<'_>) -> ParameterInits {
             arg.value,
             ParameterInit {
                 arg_name: parameter_name(arg),
-                arg_type: parameter_type(arg, recovered.types),
+                arg_type: parameter_type(arg, recovered.types, structs),
             },
         );
     }
@@ -277,7 +372,14 @@ fn parameter_name(arg: &RegisterArg) -> String {
     format!("arg{}", arg.index)
 }
 
-fn parameter_type(arg: &RegisterArg, types: Option<&TypeMap>) -> CType {
+fn parameter_type(
+    arg: &RegisterArg,
+    types: Option<&TypeMap>,
+    structs: &StructTypedefTable,
+) -> CType {
+    if let Some(typedef) = structs.get(&arg.value) {
+        return CType::Ptr(Box::new(CType::Named(typedef.decl.name.clone())));
+    }
     let inferred = types
         .map(|t| t.value_type(arg.value))
         .unwrap_or(IrType::Unknown);
@@ -388,6 +490,11 @@ fn stmt_returns_value(stmt: &SemStmt) -> bool {
 /// [`TranslationUnit`] suitable for emission. `recovered` is indexed
 /// alongside `ssa_funcs` / `sem_funcs`; pass an empty `&[]` to fall
 /// back to the B2.8 behaviour (no recovery facts).
+///
+/// Translation-unit-level struct typedefs synthesised by
+/// [`lower_function_with_typedefs`] (B3.16) are deduplicated by name
+/// and prepended to the item list so each typedef is in scope at
+/// every function that references it.
 #[must_use]
 pub fn lower_unit(
     ssa_funcs: &[SsaFunction],
@@ -397,15 +504,18 @@ pub fn lower_unit(
 ) -> TranslationUnit {
     debug_assert_eq!(ssa_funcs.len(), sem_funcs.len());
     let default = Recovered::default();
-    let items = ssa_funcs
-        .iter()
-        .zip(sem_funcs.iter())
-        .enumerate()
-        .map(|(i, (s, sem))| {
-            let r = recovered.get(i).copied().unwrap_or(default);
-            Item::Function(lower_function(s, sem, resolver, &r))
-        })
-        .collect();
+    let mut typedefs: BTreeMap<String, StructDecl> = BTreeMap::new();
+    let mut function_items: Vec<Item> = Vec::with_capacity(ssa_funcs.len());
+    for (i, (s, sem)) in ssa_funcs.iter().zip(sem_funcs.iter()).enumerate() {
+        let r = recovered.get(i).copied().unwrap_or(default);
+        let lowered = lower_function_with_typedefs(s, sem, resolver, &r);
+        for decl in lowered.struct_decls {
+            typedefs.entry(decl.name.clone()).or_insert(decl);
+        }
+        function_items.push(Item::Function(lowered.function));
+    }
+    let mut items: Vec<Item> = typedefs.into_values().map(Item::StructDecl).collect();
+    items.extend(function_items);
     TranslationUnit {
         includes: default_includes(),
         items,
@@ -430,6 +540,11 @@ struct LowerCtx<'a> {
     /// indexed by [`ValueId`]; values absent from the SSA function
     /// fall through to `int64_t` (the B2.8 default).
     value_types: Vec<ValueTypePair>,
+    /// Pointer-anchored struct typedefs the lowering pass promoted for
+    /// this function (B3.16). Keyed by the base [`ValueId`]; used at
+    /// every `Load` / `Store` address site to rewrite the access into
+    /// `base->field_<hex>` form.
+    struct_typedefs: &'a StructTypedefTable,
 }
 
 /// The `(declared, width)` pair the lowering pass tracks per SSA value.
@@ -450,10 +565,11 @@ fn lower_locals(
     ssa: &SsaFunction,
     recovered: &Recovered<'_>,
     parameter_inits: &ParameterInits,
+    struct_typedefs: &StructTypedefTable,
 ) -> Vec<Local> {
     let mut locals = Vec::with_capacity(ssa.values.len());
     for def in &ssa.values {
-        let declared = declared_ctype(ssa, def, recovered);
+        let declared = declared_ctype(ssa, def, recovered, struct_typedefs);
         let zero_init = Expr::IntLit {
             value: 0,
             signed: true,
@@ -500,8 +616,20 @@ fn width_ctype(ssa: &SsaFunction, def: &ValueDef) -> CType {
 /// will be emitted with. Prefers the recovered lattice's mapping
 /// (B3.15); falls back to the width-based shape when the lattice has
 /// no concrete entry, returns [`None`] for that value, or yields a
-/// composite the C AST cannot represent yet.
-fn declared_ctype(ssa: &SsaFunction, def: &ValueDef, recovered: &Recovered<'_>) -> CType {
+/// composite the C AST cannot represent yet. When `def` is the base
+/// of a recovered pointer-anchored struct that the lowering pass
+/// promoted to a translation-unit-level typedef (B3.16), the declared
+/// type becomes `<typedef> *` — overriding any lattice mapping —
+/// so the body's `base->field_<hex>` accesses compile.
+fn declared_ctype(
+    ssa: &SsaFunction,
+    def: &ValueDef,
+    recovered: &Recovered<'_>,
+    structs: &StructTypedefTable,
+) -> CType {
+    if let Some(typedef) = structs.get(&def.id) {
+        return CType::Ptr(Box::new(CType::Named(typedef.decl.name.clone())));
+    }
     let width = width_ctype(ssa, def);
     let Some(types) = recovered.types else {
         return width;
@@ -510,14 +638,99 @@ fn declared_ctype(ssa: &SsaFunction, def: &ValueDef, recovered: &Recovered<'_>) 
     map_ir_type(&ty).unwrap_or(width)
 }
 
-fn build_value_types(ssa: &SsaFunction, recovered: &Recovered<'_>) -> Vec<ValueTypePair> {
+fn build_value_types(
+    ssa: &SsaFunction,
+    recovered: &Recovered<'_>,
+    structs: &StructTypedefTable,
+) -> Vec<ValueTypePair> {
     ssa.values
         .iter()
         .map(|def| ValueTypePair {
-            declared: declared_ctype(ssa, def, recovered),
+            declared: declared_ctype(ssa, def, recovered, structs),
             width: width_ctype(ssa, def),
         })
         .collect()
+}
+
+/// Build the per-function pointer-anchored struct typedef table. One
+/// entry per [`RecoveredStructs::pointer_structs`] layout whose
+/// `total_size` is within [`MAX_PROMOTED_STRUCT_SIZE`]; layouts above
+/// the cap are dropped so the B3.10 comment-only surface still covers
+/// them without breaking the round-trip compile gate.
+fn build_struct_typedef_table(
+    function_address: u64,
+    recovered: &Recovered<'_>,
+) -> StructTypedefTable {
+    let mut out = StructTypedefTable::new();
+    let Some(structs) = recovered.structs else {
+        return out;
+    };
+    for (base, layout) in &structs.pointer_structs {
+        if struct_effective_size(layout) > MAX_PROMOTED_STRUCT_SIZE {
+            continue;
+        }
+        let name = struct_typedef_name(function_address, *base);
+        let fields = build_struct_fields(layout);
+        let decl = StructDecl {
+            name: name.clone(),
+            fields,
+            leading_comment: Some(format!(
+                "dac-recovered struct\n\
+                 base: v{base}\n\
+                 total_size: {} bytes\n\
+                 confidence: {:.2} ({:?})",
+                layout.total_size,
+                layout.confidence.value(),
+                layout.confidence.source()
+            )),
+        };
+        out.insert(
+            *base,
+            StructTypedef {
+                decl,
+                layout: layout.clone(),
+            },
+        );
+    }
+    out
+}
+
+/// Synthesise a stable typedef name for a recovered pointer-anchored
+/// struct. The format `S_<funcaddr_hex>_v<base_id>_t` is per-function
+/// and per-base — two functions that share the same SSA `ValueId` for
+/// different bases land at different typedef names, and rerunning the
+/// pass on the same function produces the same name.
+fn struct_typedef_name(function_address: u64, base: ValueId) -> String {
+    format!("S_{function_address:x}_v{base}_t")
+}
+
+/// Lay the [`StructLayout`] out as a packed C struct's field list. A
+/// gap of `N` bytes between two adjacent fields (or between offset 0
+/// and the first field) becomes a `uint8_t __pad_<from>_<to>[N];`
+/// member so the field at offset `0xN` is rendered at byte `0xN`
+/// inside the typedef and a recovered `field_<hex>` reference resolves
+/// to the same byte position the recovery pass observed.
+fn build_struct_fields(layout: &StructLayout) -> Vec<StructField> {
+    let mut out = Vec::new();
+    let mut cursor: u64 = 0;
+    for f in &layout.fields {
+        if f.offset > cursor {
+            let gap = f.offset - cursor;
+            out.push(StructField {
+                name: format!("__pad_{:x}_{:x}", cursor, f.offset),
+                ty: CType::Array {
+                    element: Box::new(CType::u8()),
+                    count: gap,
+                },
+            });
+        }
+        out.push(StructField {
+            name: format!("field_{:x}", f.offset),
+            ty: int_type_for_width(f.width),
+        });
+        cursor = f.offset + u64::from(f.width.max(1));
+    }
+    out
 }
 
 /// Build `((target)(expr))` only when `source` differs from `target`.
@@ -722,6 +935,23 @@ impl<'a> LowerCtx<'a> {
                     width,
                 },
             ) => {
+                // B3.16: when the address decomposes to a recovered
+                // pointer-anchored struct field that was promoted to a
+                // translation-unit-level typedef, emit
+                // `base->field_<hex> = value;` directly. Otherwise
+                // keep the B3.10 comment-only marker on top of the
+                // bare `*((<ty> *)(address)) = value;` Store so the
+                // reader still sees where the field surface would
+                // land.
+                if let Some(field) = self.match_promoted_struct_field(address) {
+                    out.push(CStmt::FieldStore {
+                        base: Expr::Var(field.base_name),
+                        field: field.field_name,
+                        arrow: true,
+                        value: self.lower_operand_for_use(value),
+                    });
+                    return;
+                }
                 if let Some(field) = self.match_struct_field(address) {
                     out.push(CStmt::Comment(field_provenance_comment(&field)));
                 }
@@ -797,10 +1027,24 @@ impl<'a> LowerCtx<'a> {
                 lhs: Box::new(self.lower_operand_for_use(lhs)),
                 rhs: Box::new(self.lower_operand_for_use(rhs)),
             },
-            SsaOp::Load { address, width } => Expr::Load {
-                ty: int_type_for_width(*width),
-                address: Box::new(self.lower_operand_for_use(address)),
-            },
+            SsaOp::Load { address, width } => {
+                // B3.16: a load whose address decomposes to a
+                // promoted struct field renders as `base->field_<hex>`
+                // directly. Otherwise fall back to the B3.10
+                // `*((<ty> *)(address))` shape.
+                if let Some(field) = self.match_promoted_struct_field(address) {
+                    Expr::Field {
+                        base: Box::new(Expr::Var(field.base_name)),
+                        field: field.field_name,
+                        arrow: true,
+                    }
+                } else {
+                    Expr::Load {
+                        ty: int_type_for_width(*width),
+                        address: Box::new(self.lower_operand_for_use(address)),
+                    }
+                }
+            }
             SsaOp::Call { target, args } => self.lower_call(*target, args),
             SsaOp::Opaque { mnemonic, args } => self.lower_opaque(mnemonic, args),
             SsaOp::Store { .. } => {
@@ -864,6 +1108,27 @@ impl<'a> LowerCtx<'a> {
         let (base, offset) = decompose_add(self.ssa, addr_val)?;
         let layout = structs.pointer_structs.get(&base)?;
         let field_name = field_name_at(layout, offset)?;
+        Some(MatchedField {
+            base_name: value_name(base, self.recovered.names),
+            offset,
+            field_name,
+        })
+    }
+
+    /// Like [`match_struct_field`] but gated on the layout actually
+    /// having been promoted to a translation-unit-level typedef
+    /// (B3.16). Layouts larger than [`MAX_PROMOTED_STRUCT_SIZE`] keep
+    /// the comment-only surface even when the field-offset match
+    /// fires, so the round-trip compile gate does not see a
+    /// pseudo-typedef with gigabytes of padding.
+    fn match_promoted_struct_field(&self, address: &Operand) -> Option<MatchedField> {
+        let addr_val = match address {
+            Operand::Value(v) => *v,
+            _ => return None,
+        };
+        let (base, offset) = decompose_add(self.ssa, addr_val)?;
+        let typedef = self.struct_typedefs.get(&base)?;
+        let field_name = field_name_at(&typedef.layout, offset)?;
         Some(MatchedField {
             base_name: value_name(base, self.recovered.names),
             offset,
@@ -1737,5 +2002,253 @@ mod tests {
             }
             other => panic!("expected Cast(ptr, 0LL), got {other:?}"),
         }
+    }
+
+    // -----------------------------------------------------------------
+    // B3.16 — Pointer-anchored struct typedef surface.
+    //
+    // Pin the contract that the lowering pass synthesises a
+    // translation-unit-level struct typedef per recovered pointer-
+    // anchored layout (FR-17), that bases pointing into a promoted
+    // layout are declared with the matching `<typedef> *` C type, and
+    // that the per-access matcher rewrites the bare `*((<ty> *)…)`
+    // form into `base->field_<hex>`. Layouts whose effective upper
+    // bound exceeds [`MAX_PROMOTED_STRUCT_SIZE`] (the
+    // absolute-address false-positive case) keep the B3.10 comment-
+    // only surface so the round-trip compile gate is not broken by a
+    // multi-MB typedef.
+    // -----------------------------------------------------------------
+
+    use dac_recovery::structs::{
+        FieldCandidate, RecoveredStructs, StructLayout, POINTER_BASE_CONFIDENCE,
+    };
+
+    fn pointer_struct_at(base: ValueId, fields: Vec<(u64, u8)>) -> RecoveredStructs {
+        let conf = Confidence::new(POINTER_BASE_CONFIDENCE, Source::Derived);
+        let field_candidates: Vec<FieldCandidate> = fields
+            .iter()
+            .map(|(off, width)| FieldCandidate {
+                offset: *off,
+                width: *width,
+                ty: IrType::Unknown,
+                access_count: 1,
+                confidence: conf,
+            })
+            .collect();
+        let last = field_candidates.last().unwrap();
+        let first = field_candidates.first().unwrap();
+        let total_size = last.offset + u64::from(last.width.max(1)) - first.offset;
+        let layout = StructLayout {
+            fields: field_candidates,
+            total_size,
+            confidence: conf,
+        };
+        let mut out = RecoveredStructs::default();
+        out.pointer_structs.insert(base, layout);
+        out
+    }
+
+    /// SSA: `v0 = arg-shaped Move; addr = Add(v0, Const(8)); v1 = Load(addr, 8); return v1;`
+    fn ssa_pointer_field_access() -> SsaFunction {
+        SsaFunction {
+            function_address: 0x3000,
+            function_name: Some("struct_access".into()),
+            blocks: vec![SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![
+                    SsaInstruction {
+                        dst: Some(0),
+                        op: SsaOp::Move {
+                            src: Operand::Const(0x4000),
+                        },
+                    },
+                    SsaInstruction {
+                        dst: Some(1),
+                        op: SsaOp::Add {
+                            lhs: Operand::Value(0),
+                            rhs: Operand::Const(8),
+                        },
+                    },
+                    SsaInstruction {
+                        dst: Some(2),
+                        op: SsaOp::Load {
+                            address: Operand::Value(1),
+                            width: 8,
+                        },
+                    },
+                ],
+                terminator: SsaTerminator::Return {
+                    value: Some(Operand::Value(2)),
+                },
+            }],
+            entry: 0,
+            variables: vec![Variable {
+                id: 0,
+                name: "rdi".into(),
+                width_bits: 64,
+            }],
+            values: vec![
+                dac_ir::ssa::ValueDef {
+                    id: 0,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+                    variable: 0,
+                },
+                dac_ir::ssa::ValueDef {
+                    id: 1,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 1 },
+                    variable: 0,
+                },
+                dac_ir::ssa::ValueDef {
+                    id: 2,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 2 },
+                    variable: 0,
+                },
+            ],
+            evidence: ev(),
+        }
+    }
+
+    fn sem_pointer_field_access() -> SemFunction {
+        SemFunction {
+            function_address: 0x3000,
+            function_name: Some("struct_access".into()),
+            body: SemBlock {
+                stmts: vec![
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 0 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 1 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 2 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Return {
+                        value: Some(Operand::Value(2)),
+                        evidence: ev(),
+                    },
+                ],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        }
+    }
+
+    #[test]
+    fn b3_16_pointer_struct_promotes_to_typedef_and_field_access() {
+        let ssa = ssa_pointer_field_access();
+        let sem = sem_pointer_field_access();
+        let structs = pointer_struct_at(0, vec![(0, 8), (8, 8)]);
+        let recovered = Recovered {
+            structs: Some(&structs),
+            ..Recovered::default()
+        };
+        let lowered = lower_function_with_typedefs(&ssa, &sem, &NameResolver::new(), &recovered);
+
+        // The lowering pass synthesised a typedef for the recovered
+        // layout anchored on v0.
+        assert_eq!(lowered.struct_decls.len(), 1);
+        let typedef = &lowered.struct_decls[0];
+        assert_eq!(typedef.name, "S_3000_v0_t");
+        // Two fields, both 8 bytes; no leading padding because
+        // first.offset == 0.
+        assert_eq!(typedef.fields.len(), 2);
+        assert_eq!(typedef.fields[0].name, "field_0");
+        assert_eq!(typedef.fields[1].name, "field_8");
+
+        // The base local (`v0`) is declared as `S_3000_v0_t *`.
+        let f = lowered.function;
+        let expected_ty = CType::Ptr(Box::new(CType::Named("S_3000_v0_t".into())));
+        assert_eq!(f.locals[0].ty, expected_ty);
+
+        // The Load at v0+8 lowers to `v0->field_8` rather than
+        // `*((int64_t *)(...))`.
+        let load_assign = f
+            .body
+            .stmts
+            .iter()
+            .find_map(|s| match s {
+                CStmt::Assign { name, value } if name == "v2" => Some(value.clone()),
+                _ => None,
+            })
+            .expect("Assign for v2");
+        match load_assign {
+            Expr::Field { base, field, arrow } => {
+                assert_eq!(*base, Expr::Var("v0".into()));
+                assert_eq!(field, "field_8");
+                assert!(arrow);
+            }
+            other => panic!("expected Field(v0, field_8, ->), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn b3_16_oversized_struct_declines_to_typedef() {
+        // A recovered layout whose `last.offset + width` exceeds the
+        // cap is the absolute-address false-positive shape — keep the
+        // B3.10 comment-only surface and emit no typedef so the round-
+        // trip compile gate is not blown up.
+        let ssa = ssa_pointer_field_access();
+        let sem = sem_pointer_field_access();
+        // first.offset = MAX_PROMOTED_STRUCT_SIZE + 8 → effective_size
+        // is well above the 4 KiB cap.
+        let big = MAX_PROMOTED_STRUCT_SIZE + 8;
+        let structs = pointer_struct_at(0, vec![(big, 8), (big + 8, 8)]);
+        let recovered = Recovered {
+            structs: Some(&structs),
+            ..Recovered::default()
+        };
+        let lowered = lower_function_with_typedefs(&ssa, &sem, &NameResolver::new(), &recovered);
+        assert!(lowered.struct_decls.is_empty());
+        // The base local stays declared as `int64_t` (the width
+        // fallback) — no promotion happened.
+        assert_eq!(lowered.function.locals[0].ty, CType::i64());
+    }
+
+    #[test]
+    fn b3_16_no_typemap_no_structs_keeps_b3_10_surface() {
+        // With no RecoveredStructs at all the lowering pass emits no
+        // typedefs and the v0 local stays width-typed.
+        let ssa = ssa_pointer_field_access();
+        let sem = sem_pointer_field_access();
+        let lowered =
+            lower_function_with_typedefs(&ssa, &sem, &NameResolver::new(), &Recovered::default());
+        assert!(lowered.struct_decls.is_empty());
+        assert_eq!(lowered.function.locals[0].ty, CType::i64());
+    }
+
+    #[test]
+    fn b3_16_struct_field_padding_lays_out_to_observed_offset() {
+        // A layout whose first field is at offset 0x10 emits a 16-byte
+        // leading padding so `field_10` lives at byte 0x10 in the
+        // typedef — matching the recovery's observation.
+        let ssa = ssa_pointer_field_access();
+        let sem = sem_pointer_field_access();
+        let structs = pointer_struct_at(0, vec![(0x10, 8), (0x20, 4)]);
+        let recovered = Recovered {
+            structs: Some(&structs),
+            ..Recovered::default()
+        };
+        let lowered = lower_function_with_typedefs(&ssa, &sem, &NameResolver::new(), &recovered);
+        let typedef = &lowered.struct_decls[0];
+        // padding(0..0x10) then field_10 then padding(0x18..0x20) then field_20.
+        assert_eq!(typedef.fields.len(), 4);
+        assert_eq!(typedef.fields[0].name, "__pad_0_10");
+        match &typedef.fields[0].ty {
+            CType::Array { count, .. } => assert_eq!(*count, 0x10),
+            other => panic!("expected Array, got {other:?}"),
+        }
+        assert_eq!(typedef.fields[1].name, "field_10");
+        assert_eq!(typedef.fields[2].name, "__pad_18_20");
+        match &typedef.fields[2].ty {
+            CType::Array { count, .. } => assert_eq!(*count, 8),
+            other => panic!("expected Array, got {other:?}"),
+        }
+        assert_eq!(typedef.fields[3].name, "field_20");
     }
 }
