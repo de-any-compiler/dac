@@ -1,14 +1,16 @@
-//! Calling-convention table (B2.5, FR-13).
+//! Calling-convention table (B2.5 / B3.13, FR-13).
 //!
 //! Each [`CallingConvention`] is a deterministic description of how
 //! one ABI passes arguments, returns values, and partitions the
 //! register file into callee-saved and caller-saved sets. The table
-//! is curated and small — it covers the two x86-64 conventions that
-//! M2 cares about (SysV AMD64 and Microsoft x64) and nothing else
-//! yet. Architectures land alongside their decoder in `dac-arch-*`;
-//! conventions land here so the inference pass in
-//! [`dac_recovery`] can consult them without depending on an arch
-//! crate.
+//! is curated and small — it covers the three x86-64 conventions
+//! dac currently models: SysV AMD64 ([`SYSV_AMD64`]), Microsoft x64
+//! ([`MS_X64`]), and the Linux kernel's [`SYSV_AMD64_SYSCALL`]
+//! variant (B3.13 — `syscall` clobbers `rcx`, so the fourth integer
+//! argument moves from `rcx` to `r10`). Architectures land alongside
+//! their decoder in `dac-arch-*`; conventions land here so the
+//! inference pass in [`dac_recovery`] can consult them without
+//! depending on an arch crate.
 //!
 //! ## What this module does not do
 //!
@@ -17,11 +19,19 @@
 //!   B2.6's job.
 //! - **Cover float-only or vector-only calls.** The table records
 //!   the float and vector register order so [`dac_recovery`] can
-//!   surface them, but the M2 inference pass scores on integer
+//!   surface them, but the inference pass scores on integer
 //!   register usage only.
-//! - **Model variadic functions.** SysV's "rax = number of vector
-//!   args" convention for variadics lives in a follow-up batch
-//!   alongside symbol-driven signature import.
+//! - **Carry a separate "SysV variadic" convention entry.** A
+//!   variadic SysV call site is a SysV call site that *also*
+//!   sets `rax` to the count of vector arguments before the call;
+//!   the callee's register-passing layout is identical to a
+//!   non-variadic SysV callee, so the discriminator is a
+//!   call-site property, not a convention. The inference pass in
+//!   `dac_recovery::convention` reports the count of detected
+//!   variadic call sites via
+//!   `InferredSignature::variadic_call_sites` so downstream passes
+//!   can promote a hint or signature to its variadic shape without
+//!   a new convention entry.
 //!
 //! Register names are lowercase ASCII to match the
 //! [`dac_ir::ssa::Variable::name`] vocabulary the lifter emits, so a
@@ -77,6 +87,28 @@ pub struct CallingConvention {
     /// Inclusive of all home-space bytes; *not* inclusive of the
     /// return-address slot.
     pub shadow_space_bytes: u64,
+    /// What kind of call this convention models. The default,
+    /// [`ConventionKind::Normal`], covers user-space SysV / MsX64
+    /// calls. [`ConventionKind::Syscall`] flags the Linux kernel
+    /// `syscall` instruction's layout — the recovery pass uses this
+    /// to score a function containing a `syscall` opcode in favour
+    /// of this convention over the user-space sibling.
+    pub kind: ConventionKind,
+}
+
+/// Coarse classification used by [`dac_recovery::convention`] to
+/// pick between user-space and kernel conventions on functions that
+/// contain a `syscall` opcode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConventionKind {
+    /// Regular user-space call. The lifter sees a `Call` op at the
+    /// boundary and no `syscall` opcode in the body.
+    Normal,
+    /// Linux kernel `syscall` instruction convention. The function
+    /// body contains a `syscall` opcode; the fourth integer
+    /// argument lives in `r10` rather than `rcx` (which `syscall`
+    /// clobbers with the return RIP).
+    Syscall,
 }
 
 impl CallingConvention {
@@ -140,6 +172,7 @@ pub const SYSV_AMD64: CallingConvention = CallingConvention {
     first_stack_arg_offset: 8, // immediately above the return address
     stack_arg_alignment: 8,
     shadow_space_bytes: 0,
+    kind: ConventionKind::Normal,
 };
 
 /// The Microsoft x64 ABI (Windows on x86-64).
@@ -157,6 +190,34 @@ pub const MS_X64: CallingConvention = CallingConvention {
     first_stack_arg_offset: 40, // 8 ret addr + 32 home space
     stack_arg_alignment: 8,
     shadow_space_bytes: 32,
+    kind: ConventionKind::Normal,
+};
+
+/// Linux kernel `syscall` instruction convention on x86-64 (B3.13).
+///
+/// The fourth integer argument moves from `rcx` (SysV) to `r10`
+/// because the `syscall` instruction itself writes the return RIP
+/// into `rcx`. `rax` carries the syscall number on entry and the
+/// kernel's signed return value on exit; `rcx` and `r11` are
+/// always-clobbered by `syscall`. Everything else (return register,
+/// callee-saved set, stack-arg layout) matches [`SYSV_AMD64`], so a
+/// thin C wrapper around a syscall renders identically to a SysV
+/// callee apart from the argument-register prefix.
+pub const SYSV_AMD64_SYSCALL: CallingConvention = CallingConvention {
+    name: "sysv-amd64-syscall",
+    architecture: "x86-64",
+    int_arg_registers: &["rdi", "rsi", "rdx", "r10", "r8", "r9"],
+    float_arg_registers: &[],
+    int_return_register: "rax",
+    float_return_register: "xmm0",
+    callee_saved: &["rbx", "rbp", "r12", "r13", "r14", "r15"],
+    caller_saved: &["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"],
+    stack_pointer: "rsp",
+    frame_pointer: Some("rbp"),
+    first_stack_arg_offset: 8,
+    stack_arg_alignment: 8,
+    shadow_space_bytes: 0,
+    kind: ConventionKind::Syscall,
 };
 
 /// All x86-64 calling conventions known to dac, in lookup order.
@@ -164,7 +225,11 @@ pub const MS_X64: CallingConvention = CallingConvention {
 /// The order is the order [`dac_recovery`]'s inference pass scores
 /// them, so a tie at the top of the ranking breaks toward SysV
 /// (the more common default on the corpora dac currently targets).
-pub const X86_64_CONVENTIONS: &[&CallingConvention] = &[&SYSV_AMD64, &MS_X64];
+/// [`SYSV_AMD64_SYSCALL`] sits last so a function that does *not*
+/// contain a `syscall` opcode falls through to the user-space
+/// reading without further ranking work — the syscall convention's
+/// scoring rule applies a hard penalty when the opcode is absent.
+pub const X86_64_CONVENTIONS: &[&CallingConvention] = &[&SYSV_AMD64, &MS_X64, &SYSV_AMD64_SYSCALL];
 
 /// Look up an x86-64 convention by its stable `name`.
 #[must_use]
@@ -244,5 +309,57 @@ mod tests {
             assert!(SYSV_AMD64.is_int_arg_register(r));
             assert!(MS_X64.is_int_arg_register(r));
         }
+    }
+
+    #[test]
+    fn sysv_syscall_swaps_rcx_for_r10_and_keeps_everything_else() {
+        assert_eq!(SYSV_AMD64_SYSCALL.name, "sysv-amd64-syscall");
+        assert_eq!(SYSV_AMD64_SYSCALL.kind, ConventionKind::Syscall);
+        assert_eq!(
+            SYSV_AMD64_SYSCALL.int_arg_registers,
+            &["rdi", "rsi", "rdx", "r10", "r8", "r9"],
+        );
+        // rcx is NOT a syscall arg (the syscall instruction
+        // clobbers it with the return RIP).
+        assert!(!SYSV_AMD64_SYSCALL.is_int_arg_register("rcx"));
+        // r10 IS the syscall's 4th arg.
+        assert_eq!(SYSV_AMD64_SYSCALL.int_arg_index("r10"), Some(3));
+        // Return register, stack-arg layout, callee-saved set all
+        // match SysV; only the arg-prefix differs.
+        assert_eq!(
+            SYSV_AMD64_SYSCALL.int_return_register,
+            SYSV_AMD64.int_return_register,
+        );
+        assert_eq!(
+            SYSV_AMD64_SYSCALL.first_stack_arg_offset,
+            SYSV_AMD64.first_stack_arg_offset,
+        );
+        assert_eq!(SYSV_AMD64_SYSCALL.callee_saved, SYSV_AMD64.callee_saved);
+    }
+
+    #[test]
+    fn convention_kinds_default_to_normal_for_user_space_conventions() {
+        assert_eq!(SYSV_AMD64.kind, ConventionKind::Normal);
+        assert_eq!(MS_X64.kind, ConventionKind::Normal);
+    }
+
+    #[test]
+    fn x86_64_conventions_ordered_normal_first_then_syscall_last() {
+        // Order is load-bearing: normal SysV / MsX64 win ranking
+        // ties when no syscall opcode is observed, and the syscall
+        // entry sits last so the inference-pass slice traversal
+        // never hits it unless its scoring rule lifts it.
+        let names: Vec<_> = X86_64_CONVENTIONS.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["sysv-amd64", "ms-x64", "sysv-amd64-syscall"]);
+    }
+
+    #[test]
+    fn convention_by_name_finds_syscall_variant() {
+        assert_eq!(
+            x86_64_convention_by_name("sysv-amd64-syscall")
+                .unwrap()
+                .kind,
+            ConventionKind::Syscall,
+        );
     }
 }

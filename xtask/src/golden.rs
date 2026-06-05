@@ -187,6 +187,22 @@ const CASES: &[Case] = &[
         args: &["-O0"],
         outputs: &[OutputKind::Listing, OutputKind::Manifest],
     },
+    // B3.13: a small PIE that issues a `syscall` directly from
+    // user code. The convention pass should pick the
+    // `sysv-amd64-syscall` reading on the function holding the
+    // opcode; the manifest's `convention` field captures the
+    // winning candidate per function so the golden gates the
+    // signal against drift.
+    Case {
+        name: "syscall-hello-elf-o1-c",
+        fixture: "syscall-hello-x86_64",
+        args: &["-O1", "--target", "c"],
+        outputs: &[
+            OutputKind::Listing,
+            OutputKind::Manifest,
+            OutputKind::Source,
+        ],
+    },
     Case {
         name: "sample-dll-o0",
         fixture: "sample.dll",

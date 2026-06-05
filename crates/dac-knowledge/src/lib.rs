@@ -24,5 +24,6 @@ pub use api::{
     ApiSignature,
 };
 pub use convention::{
-    x86_64_convention_by_name, CallingConvention, MS_X64, SYSV_AMD64, X86_64_CONVENTIONS,
+    x86_64_convention_by_name, CallingConvention, ConventionKind, MS_X64, SYSV_AMD64,
+    SYSV_AMD64_SYSCALL, X86_64_CONVENTIONS,
 };

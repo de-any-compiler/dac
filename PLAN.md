@@ -50,22 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 and B3.12 — see [CHANGELOG.md](./CHANGELOG.md). The
-remaining 10 numbered follow-up batches (B3.13 – B3.22) below are
-pre-M4 work: each closes a specific deferral surfaced in a CHANGELOG
-entry and can land independently. Heavier residue items remain in
-the "B3 residue shelf" at the end of this section.
-
-### B3.13 — Variadic + syscall conventions (B2.5 deferral)
-- Extend `dac-knowledge::convention` with SysV's "rax = vector-arg
-  count" rule for variadic call sites, and the Linux `syscall`
-  argument layout `rdi, rsi, rdx, r10, r8, r9` (FR-13).
-- Update `dac-recovery::convention` scoring so a variadic / syscall
-  signature beats the misclassified non-variadic alternative on
-  matching call sites.
-- **Done when:** unit tests cover both layouts; an ELF corpus
-  fixture that exercises `syscall` decodes with the syscall
-  convention chosen.
+plus B3.11, B3.12, and B3.13 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 9 numbered follow-up batches (B3.14 – B3.22) below
+are pre-M4 work: each closes a specific deferral surfaced in a
+CHANGELOG entry and can land independently. Heavier residue items
+remain in the "B3 residue shelf" at the end of this section.
 
 ### B3.14 — Subreg-aliasing correctness in bridge (B3.8 follow-up)
 - Refine the lossy full-register-write rule in `dac-lift::bridge`

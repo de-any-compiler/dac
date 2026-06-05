@@ -638,6 +638,7 @@ mod tests {
             }],
             stack_args: vec![],
             return_register: None,
+            variadic_call_sites: 0,
         };
         let table = recover_names(&ssa, Some(&sig), &libc_resolver, &null_strings());
         assert!(table.lookup(rdi_param).is_none());

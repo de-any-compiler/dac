@@ -3339,6 +3339,94 @@ chain rather than flattening it into a comment).
 Touches: NFR-9 (emit stays pure / deterministic; no hashed
 containers added).
 
+### B3.13 — Variadic + syscall conventions (FR-13, I-3, NFR-9, I-6)
+
+**Third of the M3 shelf follow-ups.** `dac-knowledge::convention`
+gains a third x86-64 entry — `SYSV_AMD64_SYSCALL`, the Linux
+kernel's `syscall` instruction layout — and a `ConventionKind` enum
+that flags it as the syscall variant. The recovery pass picks the
+syscall reading on functions whose body contains a `syscall` opaque
+op, leaving the SysV / MsX64 rankings untouched on every existing
+fixture. SysV variadic call sites surface as an auxiliary counter
+on the inferred signature rather than as a fourth convention.
+
+- **`SYSV_AMD64_SYSCALL` (new constant).** `int_arg_registers =
+  [rdi, rsi, rdx, r10, r8, r9]`; everything else matches
+  `SYSV_AMD64` (return register, stack-arg layout, callee-saved
+  set). `kind: ConventionKind::Syscall` flags the entry; the
+  module's curated list `X86_64_CONVENTIONS` keeps SysV / MsX64
+  at the head so tie-breaks still resolve to user-space when no
+  syscall opcode is present.
+- **`ConventionKind` (new enum).** `Normal` covers regular
+  user-space calls; `Syscall` flags the kernel `syscall` ABI. The
+  enum is the discriminator the recovery pass's scoring rule
+  keys off — no name-string matching.
+- **Syscall scoring rule (recovery side).** `score_candidate`
+  counts `Opaque { mnemonic: "syscall" }` ops in the SSA:
+    - **+0.20** to a `Syscall`-kind candidate when at least one
+      `syscall` op is present (the prefix bonus alone, capped at
+      ~0.30 for a 6/6 prefix match, is not enough to flip the
+      rcx-vs-r10 explanation against SysV; this boost is).
+    - **-0.05** to `Normal` candidates when a `syscall` op is
+      present (the user-space reading is the less specific
+      explanation, but never out of the ranking).
+    - **-0.30** to a `Syscall`-kind candidate when no `syscall`
+      op is observed — ensures the kernel reading never outranks
+      SysV / MsX64 on a regular function.
+- **Variadic call-site detection.** `detect_variadic_call_sites`
+  walks each block and counts SSA `Call` ops whose immediately
+  preceding op is `Move { dst = rax, src = Const(_) }` — the
+  SysV variadic call-site shape. The count surfaces on
+  `InferredSignature::variadic_call_sites` so downstream
+  signature recovery can promote a hint or `ApiSignature` to its
+  variadic shape *without* introducing a separate convention.
+  The count populates only for `Normal` candidates whose
+  return register is `rax` (the same register that holds the
+  vector-arg count on SysV); other candidates report 0.
+- **New ELF corpus fixture.** `tests/fixtures/syscall-hello-x86_64`
+  is a small PIE that issues `sys_write(2)` from `main` via
+  inline asm — GCC at `-Os` inlines the wrapper, so the `syscall`
+  opcode lands inside `main` itself. The new golden
+  `syscall-hello-elf-o1-c` records the convention pass picking
+  `sysv-amd64-syscall` on `main` (score 0.75) while every other
+  function in the binary keeps a user-space reading.
+- **Tests.** Three new knowledge tests cover the `SYSV_AMD64_SYSCALL`
+  arg-register prefix, the `Normal` default for SysV / MsX64, and
+  the `X86_64_CONVENTIONS` ordering invariant. Four new recovery
+  tests cover: syscall-present picks the syscall convention;
+  syscall-absent drops it below SysV; the variadic counter fires
+  on the SysV-style `mov rax, const; call` pattern; and a bare
+  `call` (no rax-const preamble) doesn't.
+
+#### Limitations carried forward
+
+- **Variadic call-site detection is single-block.** A variadic
+  call whose `mov rax, <count>` is in a different basic block
+  than the matching `call` won't be picked up. Cross-block
+  detection needs the SSA value-numbering pass to surface
+  constant-folded `rax` reaching defs at the call site — a
+  follow-up once the SSA constant lattice is in place.
+- **Syscall convention picks per function only.** A single
+  function that mixes user-space `call`s and direct `syscall`
+  ops still gets the syscall reading on its parameters; the
+  alternative — modelling the syscall as a distinct call-site
+  property like variadic — is shelved alongside the cross-block
+  variadic work.
+- **No syscall-number → kernel-signature lookup.** The fixture's
+  `main` calls `sys_write(2)` but the recovery report only
+  surfaces "this function uses the syscall convention". Mapping
+  `rax = 1` to the `sys_write` signature lives behind the
+  symbol-driven hint catalogue that future B3 batches will
+  layer on top.
+
+Closes: B3.13, FR-13 (calling-convention recovery for the
+syscall and variadic call-site shapes).
+Touches: I-3 (every match still carries `Source::Derived`
+confidence), NFR-9 (scoring stays pure / deterministic;
+opaque-op count and variadic-call-site count are pure SSA
+iterations), I-6 (syscall convention drops to last when no
+`syscall` opcode is present rather than synthesise the layout).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

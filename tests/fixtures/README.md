@@ -12,6 +12,7 @@ Kept here at workspace root so multiple crates can share them via
 | `hello-x86_64-stripped`    | Same, with `-s` (no `.symtab` / `.strtab`)  | `strip -s hello-x86_64 -o hello-x86_64-stripped`                 |
 | `libsample.so`             | Shared library with three exports + a relo  | `gcc -Os -shared -fPIC sample.c -o libsample.so`                 |
 | `cpp-hierarchy-x86_64`     | PIE executable with a 3-class hierarchy (B3.5) | `g++ -Os -fno-exceptions hello_cpp.cpp -o cpp-hierarchy-x86_64` |
+| `syscall-hello-x86_64`     | PIE that issues a Linux `syscall` directly from user code (B3.13) | `gcc -Os -fno-stack-protector -fno-asynchronous-unwind-tables hello_syscall.c -o syscall-hello-x86_64` |
 
 The C sources are intentionally minimal so the binaries stay <20 KiB each
 and the round-trip tests stay focused on parser invariants, not on
@@ -26,6 +27,22 @@ int main(void) { write(1, "hello\n", 6); return 42; }
 int sample_value = 42;
 int sample_add(int a, int b) { return a + b; }
 const char* sample_greeting(void) { return "hello from libsample"; }
+```
+
+```c
+/* hello_syscall.c — fixture for dac-recovery B3.13. The inline
+   asm makes the SysV→syscall arg shuffle visible: SysV (rdi, rsi,
+   rdx) → syscall (rax=1, rdi, rsi, rdx) for sys_write(2). */
+#include <sys/types.h>
+static ssize_t do_write(int fd, const char *buf, size_t n) {
+    long ret;
+    __asm__ volatile("syscall"
+        : "=a"(ret)
+        : "0"(1L), "D"((long)fd), "S"(buf), "d"(n)
+        : "rcx", "r11", "memory");
+    return (ssize_t)ret;
+}
+int main(void) { do_write(1, "hello via syscall\n", 18); return 0; }
 ```
 
 ```cpp

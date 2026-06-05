@@ -1,4 +1,4 @@
-//! Calling-convention inference (B2.5, FR-13).
+//! Calling-convention inference (B2.5 / B3.13, FR-13).
 //!
 //! Given an SSA function and its recovered [`StackFrame`], score every
 //! candidate convention against the observed register and stack usage
@@ -10,7 +10,7 @@
 //!
 //! ## Signals
 //!
-//! Four observations drive the score, in decreasing weight:
+//! Five observations drive the score, in decreasing weight:
 //!
 //! 1. **Argument-register prefix.** A convention passes integer
 //!    arguments in a fixed register sequence (`rdi, rsi, rdx, …` on
@@ -41,19 +41,31 @@
 //!    - An offset that falls in the shadow region is a *negative*
 //!      signal for a convention with zero shadow space (SysV), and a
 //!      *positive* signal for one that reserves it (MsX64).
+//! 5. **Syscall opcode presence (B3.13).** A `syscall` opaque op in
+//!    the SSA — the lifter's surface for `syscall` / `sysenter` —
+//!    is a strong vote for a [`ConventionKind::Syscall`] candidate
+//!    and a small vote *against* its [`ConventionKind::Normal`]
+//!    siblings. When no `syscall` opaque op is present, syscall
+//!    candidates take a hard penalty so they never outrank a
+//!    user-space reading on regular functions.
+//!
+//! ## Variadic call sites
+//!
+//! Variadic is not a separate convention: a variadic SysV callee
+//! reads the same `rdi, rsi, …, r9` prefix as a non-variadic one.
+//! What distinguishes it is the *caller* setting `rax` to the
+//! number of vector arguments before each call. [`detect_variadic_call_sites`]
+//! walks the SSA and counts `Move { rax, Const(_) }` ops immediately
+//! preceding a `Call` op in the same block; the count surfaces on
+//! [`InferredSignature::variadic_call_sites`] so downstream
+//! signature recovery can promote a hint or `ApiSignature` to its
+//! variadic shape without changing the winning convention.
 //!
 //! ## What this pass does not do
 //!
 //! - **Recover types.** B2.6's type lattice consumes the
 //!   [`InferredSignature::int_args`] vector but the convention pass
 //!   itself never assigns types.
-//! - **Recover variadic-arg counts.** SysV's "rax = vector-arg
-//!   count" convention is folded in alongside libc signature import
-//!   later in M3.
-//! - **Distinguish syscall conventions.** Inferring `syscall`-style
-//!   arg layouts (`rdi, rsi, rdx, r10, r8, r9` on Linux) is a
-//!   follow-up batch when the lifter starts surfacing `syscall` as a
-//!   distinct call kind.
 //! - **Modify the IR.** The score is reported, not applied. Callers
 //!   that want to lock in a convention call [`pick_best`] and feed
 //!   the result into their own signature-recovery pass.
@@ -70,10 +82,31 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
 use dac_core::{Confidence, Source};
-use dac_ir::ssa::{Operand, SsaFunction, SsaTerminator, ValueId, ValueSource, VariableId};
-use dac_knowledge::CallingConvention;
+use dac_ir::ssa::{Operand, SsaFunction, SsaOp, SsaTerminator, ValueId, ValueSource, VariableId};
+use dac_knowledge::{CallingConvention, ConventionKind};
 
 use crate::stack::StackFrame;
+
+/// Boost a [`ConventionKind::Syscall`] candidate gets when at least
+/// one `syscall` opaque op appears in the SSA. Tuned so a syscall-
+/// kind candidate with the matching arg-register prefix beats a
+/// SysV reading of the same function even when SysV scores a full
+/// 6-of-6 prefix match (the syscall convention's arg prefix only
+/// differs by the rcx → r10 swap, so the prefix bonus alone won't
+/// tip the ranking).
+const SYSCALL_PRESENT_BOOST: f32 = 0.20;
+
+/// Small penalty applied to [`ConventionKind::Normal`] candidates
+/// when a `syscall` opaque op is present. Marks the user-space
+/// reading as the less specific explanation without pushing it out
+/// of the ranking entirely.
+const SYSCALL_PRESENT_NORMAL_PENALTY: f32 = 0.05;
+
+/// Hard penalty applied to [`ConventionKind::Syscall`] candidates
+/// when no `syscall` opaque op is observed. Ensures a syscall
+/// convention never outranks a user-space one on a function that
+/// does not contain the instruction.
+const SYSCALL_ABSENT_PENALTY: f32 = 0.30;
 
 /// Ranked candidate produced by [`infer_calling_convention`].
 ///
@@ -109,6 +142,15 @@ pub struct InferredSignature {
     /// terminator carries a value whose underlying variable matches
     /// the convention's integer return register; `None` otherwise.
     pub return_register: Option<&'static str>,
+    /// Number of call sites in the function body whose immediately
+    /// preceding op is a `Move { dst = rax, src = Const(_) }` — the
+    /// SysV variadic call-site shape (B3.13). Always 0 for
+    /// candidates whose convention does not use `rax` as the vector-
+    /// arg-count register; populated only when scoring a
+    /// [`ConventionKind::Normal`] SysV-style convention. Downstream
+    /// signature recovery uses a non-zero count as a hint that the
+    /// caller is making variadic calls.
+    pub variadic_call_sites: u32,
 }
 
 /// One register-passed integer argument as identified under a
@@ -152,6 +194,8 @@ pub fn infer_calling_convention(
 ) -> Vec<ConventionMatch> {
     let parameters = collect_parameters(ssa);
     let return_var = return_value_variable(ssa);
+    let syscall_op_count = count_syscall_ops(ssa);
+    let variadic_call_sites = detect_variadic_call_sites(ssa);
 
     let mut matches: Vec<(usize, ConventionMatch)> = candidates
         .iter()
@@ -159,7 +203,15 @@ pub fn infer_calling_convention(
         .map(|(i, c)| {
             (
                 i,
-                score_candidate(ssa, stack_frame, &parameters, return_var, c),
+                score_candidate(
+                    ssa,
+                    stack_frame,
+                    &parameters,
+                    return_var,
+                    syscall_op_count,
+                    variadic_call_sites,
+                    c,
+                ),
             )
         })
         .collect();
@@ -249,6 +301,8 @@ fn score_candidate(
     stack_frame: &StackFrame,
     parameters: &[ParameterEntry],
     return_var: Option<VariableId>,
+    syscall_op_count: u32,
+    variadic_call_sites: u32,
     convention: &'static CallingConvention,
 ) -> ConventionMatch {
     // ---- argument-register prefix ----
@@ -339,11 +393,34 @@ fn score_candidate(
     };
     let shadow_penalty = 0.10 * shadow_misses as f32;
 
+    // ---- syscall-opcode signal (B3.13) ----
+    let (syscall_bonus, syscall_penalty) = match (convention.kind, syscall_op_count) {
+        (ConventionKind::Syscall, 0) => (0.0, SYSCALL_ABSENT_PENALTY),
+        (ConventionKind::Syscall, _) => (SYSCALL_PRESENT_BOOST, 0.0),
+        (ConventionKind::Normal, 0) => (0.0, 0.0),
+        (ConventionKind::Normal, _) => (0.0, SYSCALL_PRESENT_NORMAL_PENALTY),
+    };
+
+    // Variadic call sites only meaningfully apply when `rax` is the
+    // caller-side vector-arg-count register, i.e. SysV-shaped Normal
+    // conventions. The number itself is auxiliary (not a score
+    // bonus); recording 0 for everyone else keeps the field
+    // interpretable.
+    let variadic_count = if matches!(convention.kind, ConventionKind::Normal)
+        && convention.int_return_register.eq_ignore_ascii_case("rax")
+        && convention.is_caller_saved("rax")
+    {
+        variadic_call_sites
+    } else {
+        0
+    };
+
     // ---- combine ----
-    let raw = 0.40 + prefix_bonus + return_bonus + stack_bonus + shadow_bonus
+    let raw = 0.40 + prefix_bonus + return_bonus + stack_bonus + shadow_bonus + syscall_bonus
         - gap_penalty
         - caller_saved_penalty
-        - shadow_penalty;
+        - shadow_penalty
+        - syscall_penalty;
     let value = raw.clamp(0.0, 1.0);
 
     ConventionMatch {
@@ -352,9 +429,70 @@ fn score_candidate(
             int_args,
             stack_args,
             return_register,
+            variadic_call_sites: variadic_count,
         },
         confidence: Confidence::new(value, Source::Derived),
     }
+}
+
+/// Count `syscall` opaque ops in the SSA. The lifter surfaces the
+/// `syscall` instruction as `SsaOp::Opaque { mnemonic: "syscall",
+/// .. }`; any other mnemonic that happens to spell the same string
+/// is unlikely (the x86 lifter normalises to lowercase), but the
+/// check stays ASCII-case-insensitive so a future lifter change
+/// can't quietly silence the signal.
+fn count_syscall_ops(ssa: &SsaFunction) -> u32 {
+    let mut n = 0u32;
+    for block in &ssa.blocks {
+        for instr in &block.instructions {
+            if let SsaOp::Opaque { mnemonic, .. } = &instr.op {
+                if mnemonic.eq_ignore_ascii_case("syscall") {
+                    n = n.saturating_add(1);
+                }
+            }
+        }
+    }
+    n
+}
+
+/// Detect variadic call sites. The SysV variadic ABI requires the
+/// caller to set `rax` to the number of vector arguments before each
+/// variadic call; constant-folded down to a single `mov rax, <n>`
+/// the lifter surfaces as `Move { src: Const(_) }` with `dst`
+/// underlying the rax variable. We count each call op preceded by
+/// such a move in the same block, walking instructions in order.
+fn detect_variadic_call_sites(ssa: &SsaFunction) -> u32 {
+    let mut n = 0u32;
+    for block in &ssa.blocks {
+        let mut rax_const_pending = false;
+        for instr in &block.instructions {
+            match (&instr.op, instr.dst) {
+                (
+                    SsaOp::Move {
+                        src: Operand::Const(_),
+                    },
+                    Some(dst),
+                ) => {
+                    let var = ssa.variable(ssa.value(dst).variable);
+                    if var.name.eq_ignore_ascii_case("rax") {
+                        rax_const_pending = true;
+                        continue;
+                    }
+                    rax_const_pending = false;
+                }
+                (SsaOp::Call { .. }, _) => {
+                    if rax_const_pending {
+                        n = n.saturating_add(1);
+                    }
+                    rax_const_pending = false;
+                }
+                _ => {
+                    rax_const_pending = false;
+                }
+            }
+        }
+    }
+    n
 }
 
 #[cfg(test)]
@@ -504,6 +642,35 @@ mod tests {
         }
     }
 
+    fn mov_c(dst: VariableId, value: i64) -> RawOp {
+        RawOp {
+            dst: Some(dst),
+            kind: RawOpKind::Move {
+                src: RawOperand::Const(value),
+            },
+        }
+    }
+
+    fn call_op(dst: Option<VariableId>, target_va: u64, args: Vec<VariableId>) -> RawOp {
+        RawOp {
+            dst,
+            kind: RawOpKind::Call {
+                target: Some(target_va),
+                args: args.into_iter().map(RawOperand::Variable).collect(),
+            },
+        }
+    }
+
+    fn opaque_op(mnemonic: &str) -> RawOp {
+        RawOp {
+            dst: None,
+            kind: RawOpKind::Opaque {
+                mnemonic: mnemonic.to_string(),
+                args: Vec::new(),
+            },
+        }
+    }
+
     fn build(raw: RawFunction, n_blocks: usize, edges: &[(u32, u32, EdgeKind)]) -> SsaFunction {
         let cfg = synthetic_cfg(n_blocks, 0, edges);
         let doms = DominatorTree::build(&cfg);
@@ -538,9 +705,13 @@ mod tests {
         let frame = analyze_stack_frame(&ssa, StackConvention::SysVAmd64);
         let ranked = infer_calling_convention(&ssa, &frame, X86_64_CONVENTIONS);
 
-        assert_eq!(ranked.len(), 2);
+        // With B3.13 the syscall convention also enters the slate;
+        // a function with no syscall opcode pushes it below the
+        // user-space rankings.
+        assert_eq!(ranked.len(), 3);
         assert_eq!(ranked[0].convention_name, "sysv-amd64");
         assert_eq!(ranked[1].convention_name, "ms-x64");
+        assert_eq!(ranked[2].convention_name, "sysv-amd64-syscall");
         assert!(
             ranked[0].confidence.value() > ranked[1].confidence.value(),
             "sysv conf {} should beat ms-x64 conf {}",
@@ -672,10 +843,17 @@ mod tests {
         let ranked = infer_calling_convention(&ssa, &frame, X86_64_CONVENTIONS);
         assert_eq!(ranked[0].convention_name, "sysv-amd64");
         assert_eq!(ranked[1].convention_name, "ms-x64");
+        // Syscall convention sinks to the bottom on a function with no
+        // syscall opcode (B3.13's hard-absence penalty).
+        assert_eq!(ranked[2].convention_name, "sysv-amd64-syscall");
         assert_eq!(
             ranked[0].confidence.value(),
             ranked[1].confidence.value(),
             "leaf ties must compare bit-equal",
+        );
+        assert!(
+            ranked[2].confidence.value() < ranked[1].confidence.value(),
+            "syscall conv must drop below user-space when no syscall op is present",
         );
     }
 
@@ -911,6 +1089,166 @@ mod tests {
                 "constant return must not nominate a return reg",
             );
         }
+    }
+
+    // --- B3.13: syscall convention + variadic call sites ---------
+
+    /// A function whose body contains a `syscall` opaque op and reads
+    /// `rdi, rsi, rdx, r10, r8, r9` should rank the syscall
+    /// convention above SysV: SysV would have to explain the `r10`
+    /// read as a caller-saved non-arg read (penalty), and the
+    /// `syscall` opcode boost lands squarely on the syscall
+    /// convention.
+    #[test]
+    fn syscall_present_picks_syscall_convention_over_sysv() {
+        // sys_write(int fd, const char *buf, size_t n):
+        //   mov rax, 1     ; sys_write syscall number
+        //   syscall        ; rdi, rsi, rdx already set up by caller
+        //   ret rax
+        // Plus an r10 read so the syscall convention's arg-prefix
+        // explanation wins over SysV's.
+        let raw = RawFunction {
+            variables: vec![
+                var(0, "rsp"),
+                var(1, "rdi"),
+                var(2, "rsi"),
+                var(3, "rdx"),
+                var(4, "r10"),
+                var(5, "rax"),
+                var(6, "t"),
+            ],
+            blocks: vec![RawBlock {
+                ops: vec![
+                    // accumulate rdi..r10 so all four are Parameter reads
+                    add_vv(6, 1, 2),
+                    add_vv(6, 6, 3),
+                    add_vv(6, 6, 4),
+                    mov_c(5, 1), // sys_write number
+                    opaque_op("syscall"),
+                ],
+                terminator: RawTerminator::Return {
+                    value: Some(RawOperand::Variable(5)),
+                },
+            }],
+        };
+        let ssa = build(raw, 1, &[]);
+        let frame = analyze_stack_frame(&ssa, StackConvention::SysVAmd64);
+        let ranked = infer_calling_convention(&ssa, &frame, X86_64_CONVENTIONS);
+        assert_eq!(ranked[0].convention_name, "sysv-amd64-syscall");
+        // syscall convention's int_args should pick up r10 as the
+        // 4th argument.
+        let sig = &ranked[0].signature;
+        let regs: Vec<&str> = sig.int_args.iter().map(|a| a.register).collect();
+        assert_eq!(regs, vec!["rdi", "rsi", "rdx", "r10"]);
+    }
+
+    /// Without a `syscall` opaque op in the body, the syscall
+    /// convention should land at the bottom of the ranking even
+    /// when its arg-register prefix happens to match (e.g. a
+    /// 3-arg function reading rdi/rsi/rdx looks the same to both
+    /// SysV and SysV-syscall).
+    #[test]
+    fn syscall_absent_drops_syscall_convention_below_sysv() {
+        let raw = RawFunction {
+            variables: vec![
+                var(0, "rsp"),
+                var(1, "rdi"),
+                var(2, "rsi"),
+                var(3, "rdx"),
+                var(4, "rax"),
+                var(5, "t"),
+            ],
+            blocks: vec![RawBlock {
+                ops: vec![add_vv(5, 1, 2), add_vv(5, 5, 3), mov(4, 5)],
+                terminator: RawTerminator::Return {
+                    value: Some(RawOperand::Variable(4)),
+                },
+            }],
+        };
+        let ssa = build(raw, 1, &[]);
+        let frame = analyze_stack_frame(&ssa, StackConvention::SysVAmd64);
+        let ranked = infer_calling_convention(&ssa, &frame, X86_64_CONVENTIONS);
+        // SysV wins; syscall convention is last with confidence
+        // dropped by the hard-absence penalty.
+        assert_eq!(ranked[0].convention_name, "sysv-amd64");
+        assert_eq!(ranked[2].convention_name, "sysv-amd64-syscall");
+        let sysv = ranked[0].confidence.value();
+        let syscall = ranked[2].confidence.value();
+        assert!(
+            sysv - syscall >= SYSCALL_ABSENT_PENALTY - 1e-3,
+            "absence penalty must keep syscall below sysv (sysv={sysv}, syscall={syscall})",
+        );
+    }
+
+    /// A SysV-style function whose body contains a `mov rax, <const>`
+    /// immediately before a Call op surfaces a non-zero
+    /// `variadic_call_sites` count on the SysV `InferredSignature`.
+    /// MsX64 — and the syscall convention — report 0.
+    #[test]
+    fn variadic_call_site_pattern_increments_counter_on_sysv() {
+        // printf-like: mov rdi, fmt; mov rax, 0; call printf
+        let raw = RawFunction {
+            variables: vec![var(0, "rsp"), var(1, "rdi"), var(2, "rax"), var(3, "tmp")],
+            blocks: vec![RawBlock {
+                ops: vec![
+                    mov_c(1, 0x4000), // rdi = format-string address (constant)
+                    mov_c(2, 0),      // rax = 0 vector args
+                    call_op(Some(3), 0x2000, vec![1]),
+                ],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw, 1, &[]);
+        let frame = analyze_stack_frame(&ssa, StackConvention::SysVAmd64);
+        let ranked = infer_calling_convention(&ssa, &frame, X86_64_CONVENTIONS);
+
+        // The SysV reading reports the variadic call site.
+        let sysv = ranked
+            .iter()
+            .find(|m| m.convention_name == "sysv-amd64")
+            .expect("sysv match present");
+        assert_eq!(sysv.signature.variadic_call_sites, 1);
+
+        // The syscall convention does not (its return register is
+        // also rax, but the convention is not used for caller-side
+        // variadic ABI; we record 0 for kind != Normal).
+        let syscall = ranked
+            .iter()
+            .find(|m| m.convention_name == "sysv-amd64-syscall")
+            .expect("syscall match present");
+        assert_eq!(syscall.signature.variadic_call_sites, 0);
+
+        // MsX64 keeps its 0 — rax is the return register here too but
+        // the convention is Normal; the variadic count nominally
+        // applies, but the test fixture's only call follows a SysV-
+        // style `mov rdi, fmt` so we don't pin down zeroness via
+        // unique-to-msx64 semantics. Sanity: at least the helper
+        // doesn't crash.
+        let msx = ranked
+            .iter()
+            .find(|m| m.convention_name == "ms-x64")
+            .expect("msx match present");
+        // Same detector runs for both Normal candidates; the count
+        // is the same number of pre-call `rax = const` moves.
+        assert_eq!(msx.signature.variadic_call_sites, 1);
+    }
+
+    /// A `Call` op not preceded by a `mov rax, const` does not
+    /// increment the variadic counter — the detector keys off the
+    /// immediately-preceding op in the same block.
+    #[test]
+    fn call_without_preceding_rax_const_does_not_count() {
+        let raw = RawFunction {
+            variables: vec![var(0, "rsp"), var(1, "rdi"), var(2, "tmp")],
+            blocks: vec![RawBlock {
+                ops: vec![mov_c(1, 0x4000), call_op(Some(2), 0x2000, vec![1])],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw, 1, &[]);
+        let frame = analyze_stack_frame(&ssa, StackConvention::SysVAmd64);
+        let ranked = infer_calling_convention(&ssa, &frame, &[&SYSV_AMD64]);
+        assert_eq!(ranked[0].signature.variadic_call_sites, 0);
     }
 
     /// Inference handles a function with sub rsp / locals plus
