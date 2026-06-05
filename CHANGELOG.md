@@ -3516,6 +3516,195 @@ I-6 (unknown widths and AT&T high-byte registers degrade to a
 plain Move rather than panicking or emitting a mis-aligned
 mask).
 
+#### B3.15 — Typed-local refinement (2026-06-05)
+
+The B3.10 lowering pass declared every pre-declared C local
+with the SSA variable's width-based shape (`int<bits>_t`) and
+only consulted `dac_recovery::TypeMap` for the function's
+parameters and return type. As a consequence, locals that the
+lattice promoted to a pointer landed as `int64_t` and the
+pointer / int boundary was invisible in the recovered source.
+B3.15 retypes locals from the lattice directly while pairing
+the declaration with explicit define / use casts so the
+round-trip compile gate stays clean even though the lifter's
+sub-register arithmetic still mixes pointer- and int-typed
+values.
+
+##### Declared local types
+
+`dac-backend-c::lower::declared_ctype` is the new entry point.
+For every `ValueDef` in the SSA function it asks the
+[`Recovered`] view for a `TypeMap` entry; when one exists and
+`map_ir_type` can render it, the local is declared with the
+mapped C type. When no lattice entry exists, or the mapping
+yields a composite the C AST cannot represent (`Struct`,
+`Array`, conflicting widths), the width-based shape from
+B3.10 is used as the fallback. `width_ctype` is the renamed,
+unchanged width-fallback helper; `LowerCtx` now tracks a
+`Vec<ValueTypePair>` of `(declared, width)` indexed by
+`ValueId` so every cast site reads both shapes in O(1).
+
+##### Define-side casts (`ptr_cast_if_needed`)
+
+A new `ptr_cast_if_needed(source, target, expr)` helper fires
+only at the *int ↔ pointer* boundary. Same-kind conversions
+(int → int of any width, ptr → ptr of the same pointee) emit
+no cast wrapper, which keeps the surface free of the
+`(int8_t)(0LL)` noise that the equivalent `cast_if_needed`
+would have produced for width-typed narrow-int locals.
+
+Define sites that switched to the new helper:
+
+- `lower_locals`: the zero initialiser of every non-parameter
+  local. Pointer-typed locals render as `void * v = ((void
+  *)(0LL));`; width-typed integer locals stay as `int<w>_t v
+  = 0LL;`, byte-for-byte identical to B3.10.
+- `lower_instr` Assign arm: the value of every `Stmt::Assign`
+  is wrapped in `ptr_cast_if_needed(width, declared, expr)`
+  so an arithmetic RHS lands cleanly in a pointer-typed
+  local (`v3 = ((void *)((v2 + 16336LL)));`) but a
+  width-typed local takes the RHS verbatim
+  (`v3 = (v2 + 16336LL);`).
+- `lower_value_op::Move`: the source operand is projected to
+  the destination's width-typed shape, again at the int ↔ ptr
+  boundary only. Identity moves (`v9 = v6;` where both are
+  width-typed) stay raw.
+
+Parameter init and `Stmt::Return` keep the existing B3.10
+`cast_if_needed` shape so the int-width-narrowing surface the
+hint pipeline depends on (`int64_t v8 = ((int64_t)(arg0));`,
+`return ((int32_t)(v12));`) survives unchanged. The B3.15
+helper is additive — it does *not* widen B3.10's cast surface,
+only adds pointer-aware casts at the new sites.
+
+##### Use-side casts
+
+`LowerCtx::lower_operand_for_use` casts every `Value` operand
+back from `declared` to `width` (via `ptr_cast_if_needed`)
+before it composes against another expression. Concretely:
+
+- Arithmetic and comparison operators (`Add`, `Sub`, `Mul`,
+  `And`, `Or`, `Xor`, `Shl`, `Shr`, `Compare`) read each
+  operand through `lower_operand_for_use`, so a pointer-typed
+  local in a byte-arithmetic context renders as
+  `(((int64_t)(v4)) + 8LL)` — byte arithmetic stays byte
+  arithmetic even though the local is declared `void *`,
+  preserving the binary's actual semantics rather than
+  silently switching to C pointer-element scaling.
+- Unary operators (`Neg`, `Not`) read their source through the
+  same helper.
+- `SsaOp::Load` / `SsaOp::Store` read their address through
+  the helper, so the existing `(int64_t *)(...)` cast in the
+  emitter sees the width-typed shape and does not double up.
+- `Call` arguments and `If` / `While` / `DoWhile` / `Switch`
+  conditions are also routed through the helper, so a
+  pointer-typed scrutinee or call argument decays to its
+  width-typed shape at the use site.
+
+`Stmt::Return` uses a parallel `lower_operand_with_type`
+helper that returns `(expr, operand_declared_type)`. The
+returned operand is then cast through the B3.10
+`cast_if_needed(operand_declared, return_type, ...)` shape —
+the B3.10 contract is preserved, but the cast source is the
+operand's *declared* type instead of the hard-coded
+`int64_t`. A pointer-typed return operand against a
+pointer-typed `return_type` is rendered without a cast
+wrapper; the B3.10 narrowing surface remains intact.
+
+##### Width fallback path
+
+When `Recovered::types` is `None` (orchestrator stub paths,
+hand-built fixtures, the B2.8 round-trip tests) every value's
+declared type equals its width-typed shape, so every cast
+helper returns the raw expression and the rendered output is
+byte-for-byte identical to B3.14. The 12-fixture round-trip
+test corpus continues to pass without any golden refresh.
+
+##### Tests
+
+Seven new unit tests in `dac-backend-c::lower::tests` cover
+the contract:
+
+- `b3_15_pointer_local_declared_with_pointer_ctype` — a
+  TypeMap with `v0: Ptr(Unknown)` promotes the matching local
+  to `void *`; values absent from the TypeMap keep the
+  width-based `int64_t`.
+- `b3_15_pointer_local_zero_init_gets_cast` — pointer-typed
+  locals get `((void *)(0LL))`; width-typed locals keep the
+  raw `0LL` literal.
+- `b3_15_pointer_assignment_rhs_gets_cast` — `v0 = (2LL +
+  16336LL);` against a pointer-typed `v0` becomes `v0 =
+  ((void *)(...));`.
+- `b3_15_pointer_operand_use_gets_cast_back` — reading a
+  pointer-typed operand in a Load address yields
+  `((int64_t)(v0))` so byte arithmetic stays correct.
+- `b3_15_no_typemap_keeps_width_based_shape` — backward
+  compatibility: without a TypeMap the B2.8 / B3.10 output
+  shape is preserved exactly.
+- `b3_15_return_pointer_local_matches_pointer_return_type` —
+  identity-cast pair: declared == return_type → no wrapper.
+- `b3_15_move_with_pointer_dst_wraps_const_init` — the Move
+  op preserves the lattice surface even when the source is a
+  constant.
+
+The `dac-backend-c` round-trip gate continues to pass (12 / 12
+fixtures compile through the system C compiler). The corpus
+golden set picked up four refreshed sources where the lattice
+genuinely promotes a local to pointer:
+`hello-elf-o1-c/source.c`, `hello-elf-o1-c-hints/source.c`,
+`hello-pe-o1-c/source.c`, `syscall-hello-elf-o1-c/source.c`.
+Each refreshed golden shows the same pattern: locals the
+lattice flags as `Ptr(Unknown)` now declare as `void *`,
+their initialisers and define sites carry `((void *)(...))`,
+and their use sites carry `((int64_t)(...))` for the
+arithmetic paths. The eight remaining goldens (`hello-elf-o1-ir`
+and the unaffected fixtures that did not exercise the
+lattice's pointer rule) remain byte-for-byte identical.
+
+572 workspace tests pass (+7 vs B3.14's 565); 32 goldens
+across 12 cases match; fmt + clippy clean.
+
+##### Limitations carried forward
+
+- **Pointer pointee detail.** The C AST renders `Ptr(Unknown)`
+  as `void *`. When the lattice has a concrete pointee
+  (`Ptr(Int { 32, Signed })` etc.) the emitter would render
+  `int32_t *`, but the seeding rules in
+  `dac_recovery::types` currently never produce a non-
+  `Unknown` pointee on the corpus. Refining the pointee
+  inside the recovery pass is its own follow-up; the C
+  backend already supports the round-trip.
+- **Read-side `bridge` width imprecision.** The B3.14
+  follow-up note still applies — the bridge reads parent
+  registers at full width before sub-register operations
+  consume them. B3.15 only touches the C lowering pass; the
+  sub-register *read* model is unchanged.
+- **Stack-anchored structs (B3.10 deferral) still surface as
+  raw `*(int*)(rsp + k)` accesses.** B3.16 will lower these
+  through a proper `Stmt::Decl` for composite locals.
+
+Touches:
+`crates/dac-backend-c/src/lower.rs`,
+`tests/golden/hello-elf-o1-c/source.c`,
+`tests/golden/hello-elf-o1-c-hints/source.c`,
+`tests/golden/hello-pe-o1-c/source.c`,
+`tests/golden/syscall-hello-elf-o1-c/source.c`,
+`CHANGELOG.md`,
+`PLAN.md`.
+
+Closes: B3.15.
+Touches: FR-13 (parameter / return-type cast pair now reads
+the operand's *declared* lattice type rather than the
+hard-coded `int64_t`), FR-14 (lattice-driven C type spelling
+is visible at every pre-declared local, not only at the
+signature), I-2 (each cast wraps an `Expr` whose underlying
+operand still resolves through the SSA value's evidence node;
+no provenance is dropped), NFR-9 (the new helpers are pure
+data-driven functions over the SSA value index — same input
+still produces the same C AST byte-for-byte), I-6 (composite
+or unrepresentable lattice types degrade to the width-based
+shape rather than producing an invalid C type spelling).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

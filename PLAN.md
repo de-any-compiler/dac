@@ -50,21 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.14 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 8 numbered follow-up batches (B3.15 – B3.22) below
+plus B3.11 – B3.15 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 7 numbered follow-up batches (B3.16 – B3.22) below
 are pre-M4 work: each closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.15 — Typed-local refinement (B3.10 follow-up)
-- Retype SSA locals from `dac-recovery::TypeMap` directly (B3.10
-  retyped only parameters and return types). Surfaces the
-  pointer / int mixes the lifter's sub-register arithmetic
-  produces; pair with per-use casts where the lattice diverges
-  from the variable's `width_bits`.
-- **Done when:** a corpus function with a recovered pointer
-  parameter shows typed locals downstream instead of every
-  local landing as `int64_t`.
 
 ### B3.16 — Struct typedef surface (B3.10 follow-up, FR-17)
 - Grow the C AST a translation-unit-level `struct` typedef node

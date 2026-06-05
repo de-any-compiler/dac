@@ -11,13 +11,31 @@
 //!
 //! 1. **Every non-parameter SSA value becomes a pre-declared C
 //!    local.** Naming is `v<id>`. Locals are declared at the top of
-//!    the function with zero initialisers. Locals stay typed by the
-//!    SSA variable's `width_bits` (the B2.8 fallback); we deliberately
-//!    do **not** retype them from the [`TypeMap`] because the lifter's
-//!    sub-register arithmetic mixes pointer-typed and int-typed values
-//!    in ways the round-trip `cc` gate would reject under
-//!    `-Wint-conversion`. Refining local types is a B3 follow-up
-//!    shelf entry.
+//!    the function with zero initialisers. The declared type comes
+//!    from the recovered [`TypeMap`] when [`Recovered::types`] is
+//!    present and the lattice has a concrete entry (B3.15); the
+//!    width-based `int<bits>_t` shape from the SSA variable's
+//!    `width_bits` is the B2.8 fallback when no lattice entry exists.
+//!    Lattice-typed locals (e.g. `int64_t *`, `int32_t`) are bridged
+//!    with explicit casts at every define and every use so the
+//!    round-trip `cc` gate stays clean under `-Wint-conversion` even
+//!    though the lifter's sub-register arithmetic mixes pointer-typed
+//!    and int-typed values:
+//!    - **At the define site** (`Stmt::Assign`) the RHS is computed in
+//!      the width-typed shape (the SSA op's natural result type) and
+//!      cast into the local's declared type with
+//!      `((<declared>)(<rhs>))`.
+//!    - **At every use site** (operand in a binary/unary op, the
+//!      address of a `Load`, the return value, …) the local's value
+//!      is cast back from declared to the width-typed shape with
+//!      `((<width>)(<local>))` so arithmetic and pointer arithmetic
+//!      do not accidentally re-interpret each other (e.g. a pointer
+//!      `+ 8LL` byte-add stays a byte add, not a 64-byte-stride
+//!      pointer-element add).
+//!
+//!    When declared == width (no lattice entry, or lattice matches
+//!    width) `cast_if_needed` is a no-op so the B2.8 output shape is
+//!    preserved byte-for-byte.
 //! 2. **The convention's parameter list materialises as named C
 //!    parameters** (B3.10): each `RegisterArg` becomes `arg<index>`
 //!    whose type comes from [`TypeMap::value_type`]. The pre-declared
@@ -175,11 +193,13 @@ pub fn lower_function(
     let parameter_inits = parameter_initialisers(recovered);
     let locals = lower_locals(ssa, recovered, &parameter_inits);
     let return_type = pick_return_type(&sem.body, ssa, recovered);
+    let value_types = build_value_types(ssa, recovered);
     let ctx = LowerCtx {
         ssa,
         resolver,
         recovered,
         return_type: return_type.clone(),
+        value_types,
     };
     let body = ctx.lower_block(&sem.body);
     let leading_comment = Some(format!(
@@ -404,6 +424,26 @@ struct LowerCtx<'a> {
     /// between the integer-typed locals and a pointer-typed return is
     /// explicit (B3.10).
     return_type: CType,
+    /// Per-value `(declared, width)` C-type pair (B3.15). `declared`
+    /// is the C type the pre-declared local was emitted with;
+    /// `width` is the SSA variable's width-based shape. Both are
+    /// indexed by [`ValueId`]; values absent from the SSA function
+    /// fall through to `int64_t` (the B2.8 default).
+    value_types: Vec<ValueTypePair>,
+}
+
+/// The `(declared, width)` pair the lowering pass tracks per SSA value.
+///
+/// `declared` is the C type the pre-declared local was rendered with —
+/// either the recovered lattice's mapping (B3.15) or the width-based
+/// fallback. `width` is always the width-based shape; we keep both so
+/// the per-define / per-use cast pair stays consistent even when the
+/// lattice promotes the local to a pointer or to a non-default integer
+/// width.
+#[derive(Debug, Clone)]
+struct ValueTypePair {
+    declared: CType,
+    width: CType,
 }
 
 fn lower_locals(
@@ -413,28 +453,39 @@ fn lower_locals(
 ) -> Vec<Local> {
     let mut locals = Vec::with_capacity(ssa.values.len());
     for def in &ssa.values {
-        let ty = local_type(ssa, def);
+        let declared = declared_ctype(ssa, def, recovered);
+        let zero_init = Expr::IntLit {
+            value: 0,
+            signed: true,
+        };
         let init = match parameter_inits.get(&def.id) {
+            // Parameter init keeps the B3.10 cast surface — any
+            // change in declared shape (narrow int from a hint, ptr
+            // from the lattice) is bridged explicitly so the type
+            // shift is visible at the call boundary.
             Some(p) => Some(cast_if_needed(
                 &p.arg_type,
-                &ty,
+                &declared,
                 Expr::Var(p.arg_name.clone()),
             )),
-            None => Some(Expr::IntLit {
-                value: 0,
-                signed: true,
-            }),
+            // Zero init: only cast when the declared type genuinely
+            // disagrees with the `0LL` literal at the int↔ptr
+            // boundary (B3.15). `int8_t = 0LL` etc. stays implicit.
+            None => Some(ptr_cast_if_needed(&CType::i64(), &declared, zero_init)),
         };
         locals.push(Local {
             name: value_name(def.id, recovered.names),
-            ty,
+            ty: declared,
             init,
         });
     }
     locals
 }
 
-fn local_type(ssa: &SsaFunction, def: &ValueDef) -> CType {
+/// The width-based C type for `def` — the B2.8 fallback shape. Used
+/// at every SSA-op result site (arithmetic, loads, calls) as the type
+/// the op naturally produces before any lattice-driven cast.
+fn width_ctype(ssa: &SsaFunction, def: &ValueDef) -> CType {
     let var = ssa.variable(def.variable);
     match var.width_bits {
         0 => CType::i64(),
@@ -443,6 +494,30 @@ fn local_type(ssa: &SsaFunction, def: &ValueDef) -> CType {
             signed: true,
         },
     }
+}
+
+/// The declared C type for `def` — the type the pre-declared local
+/// will be emitted with. Prefers the recovered lattice's mapping
+/// (B3.15); falls back to the width-based shape when the lattice has
+/// no concrete entry, returns [`None`] for that value, or yields a
+/// composite the C AST cannot represent yet.
+fn declared_ctype(ssa: &SsaFunction, def: &ValueDef, recovered: &Recovered<'_>) -> CType {
+    let width = width_ctype(ssa, def);
+    let Some(types) = recovered.types else {
+        return width;
+    };
+    let ty = types.value_type(def.id);
+    map_ir_type(&ty).unwrap_or(width)
+}
+
+fn build_value_types(ssa: &SsaFunction, recovered: &Recovered<'_>) -> Vec<ValueTypePair> {
+    ssa.values
+        .iter()
+        .map(|def| ValueTypePair {
+            declared: declared_ctype(ssa, def, recovered),
+            width: width_ctype(ssa, def),
+        })
+        .collect()
 }
 
 /// Build `((target)(expr))` only when `source` differs from `target`.
@@ -460,7 +535,81 @@ fn cast_if_needed(source: &CType, target: &CType, expr: Expr) -> Expr {
     }
 }
 
+/// Build `((target)(expr))` only at the *int ↔ pointer* boundary
+/// between `source` and `target`. Int → int and ptr → ptr-same-pointee
+/// conversions are skipped because they are implicit in C and would
+/// only add visual noise to the recovered output. Used by the B3.15
+/// lattice-typed local code paths to avoid emitting redundant
+/// `(int8_t)(0LL)` shapes for width-typed locals while still threading
+/// `(void *)(...)` casts through pointer-typed locals.
+fn ptr_cast_if_needed(source: &CType, target: &CType, expr: Expr) -> Expr {
+    if source == target {
+        return expr;
+    }
+    let is_ptr = |t: &CType| matches!(t, CType::Ptr(_));
+    if is_ptr(source) == is_ptr(target) {
+        // Same kind (int↔int or ptr↔ptr-same-shape). The C compiler
+        // handles this implicitly; keep the surface readable.
+        expr
+    } else {
+        Expr::Cast {
+            ty: target.clone(),
+            expr: Box::new(expr),
+        }
+    }
+}
+
 impl<'a> LowerCtx<'a> {
+    /// Declared (= local-decl) C type for `v`. Falls back to
+    /// [`CType::i64`] when the value is out of range (defensive — the
+    /// SSA constructor produces a contiguous `ValueId` index space).
+    fn declared(&self, v: ValueId) -> CType {
+        self.value_types
+            .get(v as usize)
+            .map(|p| p.declared.clone())
+            .unwrap_or_else(CType::i64)
+    }
+
+    /// Width-based C type for `v` — what the SSA op's natural result
+    /// shape is before any lattice-driven cast.
+    fn width(&self, v: ValueId) -> CType {
+        self.value_types
+            .get(v as usize)
+            .map(|p| p.width.clone())
+            .unwrap_or_else(CType::i64)
+    }
+
+    /// Lower an operand for use *as a value of the width-typed shape*.
+    /// `Operand::Value(v)` whose declared type differs from its
+    /// width-typed shape is wrapped in `((<width>)v)` so arithmetic
+    /// and pointer arithmetic stay consistent (B3.15).
+    fn lower_operand_for_use(&self, op: &Operand) -> Expr {
+        let raw = lower_operand(op, self.recovered.names);
+        match op {
+            Operand::Value(v) => {
+                let declared = self.declared(*v);
+                let width = self.width(*v);
+                ptr_cast_if_needed(&declared, &width, raw)
+            }
+            Operand::Const(_) | Operand::Undef => raw,
+        }
+    }
+
+    /// Lower an operand and report its declared C type. Used at sites
+    /// that compose against a different target shape (return values,
+    /// for instance). For non-value operands (constants, undef) the
+    /// declared type is the width-typed shape — `int64_t` — so the
+    /// resulting cast pair is identity when the target is also
+    /// `int64_t`.
+    fn lower_operand_with_type(&self, op: &Operand) -> (Expr, CType) {
+        let raw = lower_operand(op, self.recovered.names);
+        let ty = match op {
+            Operand::Value(v) => self.declared(*v),
+            Operand::Const(_) | Operand::Undef => CType::i64(),
+        };
+        (raw, ty)
+    }
+
     fn lower_block(&self, block: &SemBlock) -> CBlock {
         let mut stmts = Vec::with_capacity(block.stmts.len());
         for stmt in &block.stmts {
@@ -488,21 +637,21 @@ impl<'a> LowerCtx<'a> {
                 ..
             } => {
                 out.push(CStmt::If {
-                    cond: lower_operand(cond, self.recovered.names),
+                    cond: self.lower_operand_for_use(cond),
                     then_body: self.lower_block(then_body),
                     else_body: else_body.as_ref().map(|b| self.lower_block(b)),
                 });
             }
             SemStmt::While { cond, body, .. } => {
                 out.push(CStmt::While {
-                    cond: lower_operand(cond, self.recovered.names),
+                    cond: self.lower_operand_for_use(cond),
                     body: self.lower_block(body),
                 });
             }
             SemStmt::DoWhile { cond, body, .. } => {
                 out.push(CStmt::DoWhile {
                     body: self.lower_block(body),
-                    cond: lower_operand(cond, self.recovered.names),
+                    cond: self.lower_operand_for_use(cond),
                 });
             }
             SemStmt::Loop { body, .. } => {
@@ -529,7 +678,7 @@ impl<'a> LowerCtx<'a> {
                     "recovered switch table at block {source_block} (arm resolution pending)"
                 )));
                 out.push(CStmt::Switch {
-                    scrutinee: lower_operand(scrutinee, self.recovered.names),
+                    scrutinee: self.lower_operand_for_use(scrutinee),
                     arms: arms_c,
                     default: default_c,
                 });
@@ -538,8 +687,8 @@ impl<'a> LowerCtx<'a> {
             SemStmt::Continue { .. } => out.push(CStmt::Continue),
             SemStmt::Return { value, .. } => {
                 let v = value.as_ref().map(|op| {
-                    let raw = lower_operand(op, self.recovered.names);
-                    cast_if_needed(&CType::i64(), &self.return_type, raw)
+                    let (raw, source_ty) = self.lower_operand_with_type(op);
+                    cast_if_needed(&source_ty, &self.return_type, raw)
                 });
                 out.push(CStmt::Return(v));
             }
@@ -578,24 +727,15 @@ impl<'a> LowerCtx<'a> {
                 }
                 out.push(CStmt::Store {
                     ty: int_type_for_width(*width),
-                    address: lower_operand(address, self.recovered.names),
-                    value: lower_operand(value, self.recovered.names),
+                    address: self.lower_operand_for_use(address),
+                    value: self.lower_operand_for_use(value),
                 });
             }
             (None, SsaOp::Call { target, args }) => {
-                out.push(CStmt::ExprStmt(call_expr(
-                    *target,
-                    args,
-                    self.resolver,
-                    self.recovered.names,
-                )));
+                out.push(CStmt::ExprStmt(self.lower_call(*target, args)));
             }
             (None, SsaOp::Opaque { mnemonic, args }) => {
-                out.push(CStmt::ExprStmt(opaque_expr(
-                    mnemonic,
-                    args,
-                    self.recovered.names,
-                )));
+                out.push(CStmt::ExprStmt(self.lower_opaque(mnemonic, args)));
             }
             (None, _) => {
                 // Value-producing op with no destination — should not
@@ -608,45 +748,61 @@ impl<'a> LowerCtx<'a> {
             }
             (Some(dst), op) => {
                 let expr = self.lower_value_op(*dst, op);
+                let value = ptr_cast_if_needed(&self.width(*dst), &self.declared(*dst), expr);
                 out.push(CStmt::Assign {
                     name: value_name(*dst, self.recovered.names),
-                    value: expr,
+                    value,
                 });
             }
         }
     }
 
-    fn lower_value_op(&self, _dst: ValueId, op: &SsaOp) -> Expr {
-        let names = self.recovered.names;
+    fn lower_value_op(&self, dst: ValueId, op: &SsaOp) -> Expr {
         match op {
-            SsaOp::Move { src } => lower_operand(src, names),
-            SsaOp::Add { lhs, rhs } => binary(BinaryOp::Add, lhs, rhs, names),
-            SsaOp::Sub { lhs, rhs } => binary(BinaryOp::Sub, lhs, rhs, names),
-            SsaOp::Mul { lhs, rhs } => binary(BinaryOp::Mul, lhs, rhs, names),
-            SsaOp::And { lhs, rhs } => binary(BinaryOp::BitAnd, lhs, rhs, names),
-            SsaOp::Or { lhs, rhs } => binary(BinaryOp::BitOr, lhs, rhs, names),
-            SsaOp::Xor { lhs, rhs } => binary(BinaryOp::BitXor, lhs, rhs, names),
-            SsaOp::Shl { lhs, rhs } => binary(BinaryOp::Shl, lhs, rhs, names),
-            SsaOp::Shr { lhs, rhs } => binary(BinaryOp::Shr, lhs, rhs, names),
+            SsaOp::Move { src } => {
+                // A `Move` is the one op whose RHS isn't naturally
+                // width-typed: it preserves the source operand's
+                // value. Project the source into the *destination's*
+                // width-typed shape — but only when the boundary
+                // crosses int↔ptr, so the common Move of one
+                // width-typed value into another stays free of
+                // identity casts. The outer Assign re-adds the
+                // declared cast on the LHS if the lattice promoted
+                // the dst (B3.15).
+                let raw = lower_operand(src, self.recovered.names);
+                let source_ty = match src {
+                    Operand::Value(v) => self.declared(*v),
+                    Operand::Const(_) | Operand::Undef => CType::i64(),
+                };
+                ptr_cast_if_needed(&source_ty, &self.width(dst), raw)
+            }
+            SsaOp::Add { lhs, rhs } => self.binary(BinaryOp::Add, lhs, rhs),
+            SsaOp::Sub { lhs, rhs } => self.binary(BinaryOp::Sub, lhs, rhs),
+            SsaOp::Mul { lhs, rhs } => self.binary(BinaryOp::Mul, lhs, rhs),
+            SsaOp::And { lhs, rhs } => self.binary(BinaryOp::BitAnd, lhs, rhs),
+            SsaOp::Or { lhs, rhs } => self.binary(BinaryOp::BitOr, lhs, rhs),
+            SsaOp::Xor { lhs, rhs } => self.binary(BinaryOp::BitXor, lhs, rhs),
+            SsaOp::Shl { lhs, rhs } => self.binary(BinaryOp::Shl, lhs, rhs),
+            SsaOp::Shr { lhs, rhs } => self.binary(BinaryOp::Shr, lhs, rhs),
             SsaOp::Neg { src } => Expr::Unary {
                 op: UnaryOp::Neg,
-                expr: Box::new(lower_operand(src, names)),
+                expr: Box::new(self.lower_operand_for_use(src)),
             },
             SsaOp::Not { src } => Expr::Unary {
                 op: UnaryOp::BitNot,
-                expr: Box::new(lower_operand(src, names)),
+                expr: Box::new(self.lower_operand_for_use(src)),
             },
             SsaOp::Compare { kind, lhs, rhs } => Expr::Binary {
                 op: compare_to_binary_op(*kind),
-                lhs: Box::new(lower_operand(lhs, names)),
-                rhs: Box::new(lower_operand(rhs, names)),
+                lhs: Box::new(self.lower_operand_for_use(lhs)),
+                rhs: Box::new(self.lower_operand_for_use(rhs)),
             },
             SsaOp::Load { address, width } => Expr::Load {
                 ty: int_type_for_width(*width),
-                address: Box::new(lower_operand(address, names)),
+                address: Box::new(self.lower_operand_for_use(address)),
             },
-            SsaOp::Call { target, args } => call_expr(*target, args, self.resolver, names),
-            SsaOp::Opaque { mnemonic, args } => opaque_expr(mnemonic, args, names),
+            SsaOp::Call { target, args } => self.lower_call(*target, args),
+            SsaOp::Opaque { mnemonic, args } => self.lower_opaque(mnemonic, args),
             SsaOp::Store { .. } => {
                 // Stores have no `dst`, handled in the caller. If we get
                 // here the IR is inconsistent — render an Opaque so the
@@ -654,6 +810,43 @@ impl<'a> LowerCtx<'a> {
                 Expr::Opaque("store-with-dst".to_string())
             }
         }
+    }
+
+    fn binary(&self, op: BinaryOp, lhs: &Operand, rhs: &Operand) -> Expr {
+        Expr::Binary {
+            op,
+            lhs: Box::new(self.lower_operand_for_use(lhs)),
+            rhs: Box::new(self.lower_operand_for_use(rhs)),
+        }
+    }
+
+    fn lower_call(&self, target: Option<u64>, args: &[Operand]) -> Expr {
+        let target_expr = match target {
+            Some(addr) => match self.resolver.get(&addr) {
+                Some(name) => Expr::Var(name.clone()),
+                None => Expr::AddrLit(addr),
+            },
+            None => Expr::Opaque("indirect-call".into()),
+        };
+        Expr::Call {
+            target: Box::new(target_expr),
+            args: args.iter().map(|a| self.lower_operand_for_use(a)).collect(),
+        }
+    }
+
+    fn lower_opaque(&self, mnemonic: &str, args: &[Operand]) -> Expr {
+        // Opaque ops carry their args verbatim — by definition the
+        // backend cannot represent the operation faithfully, so it
+        // does not know what type each arg should land at. Use the
+        // raw operand form (no per-use cast) so the rendered text
+        // still reads as `mnemonic <name> <name>` and the
+        // `format_operand` round-trip stays well-formed.
+        let mut body = String::from(mnemonic);
+        for arg in args {
+            body.push(' ');
+            body.push_str(&format_operand(arg, self.recovered.names));
+        }
+        Expr::Opaque(body)
     }
 
     /// Recognise a `Load` / `Store` address operand as a recovered
@@ -761,42 +954,6 @@ fn lower_operand(op: &Operand, names: Option<&NameTable>) -> Expr {
         },
         Operand::Undef => Expr::Undef,
     }
-}
-
-fn binary(op: BinaryOp, lhs: &Operand, rhs: &Operand, names: Option<&NameTable>) -> Expr {
-    Expr::Binary {
-        op,
-        lhs: Box::new(lower_operand(lhs, names)),
-        rhs: Box::new(lower_operand(rhs, names)),
-    }
-}
-
-fn call_expr(
-    target: Option<u64>,
-    args: &[Operand],
-    resolver: &NameResolver,
-    names: Option<&NameTable>,
-) -> Expr {
-    let target_expr = match target {
-        Some(addr) => match resolver.get(&addr) {
-            Some(name) => Expr::Var(name.clone()),
-            None => Expr::AddrLit(addr),
-        },
-        None => Expr::Opaque("indirect-call".into()),
-    };
-    Expr::Call {
-        target: Box::new(target_expr),
-        args: args.iter().map(|a| lower_operand(a, names)).collect(),
-    }
-}
-
-fn opaque_expr(mnemonic: &str, args: &[Operand], names: Option<&NameTable>) -> Expr {
-    let mut body = String::from(mnemonic);
-    for arg in args {
-        body.push(' ');
-        body.push_str(&format_operand(arg, names));
-    }
-    Expr::Opaque(body)
 }
 
 fn format_operand(op: &Operand, names: Option<&NameTable>) -> String {
@@ -1175,5 +1332,410 @@ mod tests {
         let a = lower_function(&ssa, &sem, &NameResolver::new(), &Recovered::default());
         let b = lower_function(&ssa, &sem, &NameResolver::new(), &Recovered::default());
         assert_eq!(a, b);
+    }
+
+    // -----------------------------------------------------------------
+    // B3.15 — Lattice-typed local refinement.
+    //
+    // These tests pin the contract that the TypeMap is read at *every*
+    // SSA value's declaration (not just at parameter / return type
+    // sites the way B3.10 did), and that the define / use cast pair
+    // bridges the declared / width-based shapes so the round-trip
+    // compile gate stays clean even when the lattice flags a pointer.
+    // -----------------------------------------------------------------
+
+    use dac_core::{Confidence, Source};
+    use dac_ir::ty::Type as IrType;
+    use dac_recovery::{TypeMap, ValueType};
+
+    /// Build a minimal SSA function with two values:
+    ///   v0 = (Const(2) + Const(16336LL))   // address-style arithmetic
+    ///   v1 = Load { address: v0, width: 8 }
+    ///   return v1;
+    /// Both values are backed by a single 64-bit variable so width
+    /// stays `int64_t`. The caller injects whatever lattice it wants
+    /// to test against the values.
+    fn ssa_load_address_chain() -> SsaFunction {
+        SsaFunction {
+            function_address: 0x2000,
+            function_name: Some("typed_locals".into()),
+            blocks: vec![SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![
+                    SsaInstruction {
+                        dst: Some(0),
+                        op: SsaOp::Add {
+                            lhs: Operand::Const(2),
+                            rhs: Operand::Const(16336),
+                        },
+                    },
+                    SsaInstruction {
+                        dst: Some(1),
+                        op: SsaOp::Load {
+                            address: Operand::Value(0),
+                            width: 8,
+                        },
+                    },
+                ],
+                terminator: SsaTerminator::Return {
+                    value: Some(Operand::Value(1)),
+                },
+            }],
+            entry: 0,
+            variables: vec![Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            }],
+            values: vec![
+                dac_ir::ssa::ValueDef {
+                    id: 0,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+                    variable: 0,
+                },
+                dac_ir::ssa::ValueDef {
+                    id: 1,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 1 },
+                    variable: 0,
+                },
+            ],
+            evidence: ev(),
+        }
+    }
+
+    fn sem_load_address_chain() -> SemFunction {
+        SemFunction {
+            function_address: 0x2000,
+            function_name: Some("typed_locals".into()),
+            body: SemBlock {
+                stmts: vec![
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 0 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 1 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Return {
+                        value: Some(Operand::Value(1)),
+                        evidence: ev(),
+                    },
+                ],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        }
+    }
+
+    fn typemap_pointing_v0_to_ptr() -> TypeMap {
+        // v0 is the Load's address — TypeMap::propagate_types seeds it
+        // as Ptr(Unknown) via the load address rule. We mirror that
+        // here without dragging the propagation pass in.
+        let mut t = TypeMap::default();
+        t.values.insert(
+            0,
+            ValueType {
+                ty: IrType::ptr_to(IrType::Unknown),
+                confidence: Confidence::new(0.80, Source::Derived),
+            },
+        );
+        t.values.insert(
+            1,
+            ValueType {
+                ty: IrType::int_of_width(64),
+                confidence: Confidence::new(0.80, Source::Derived),
+            },
+        );
+        t
+    }
+
+    #[test]
+    fn b3_15_pointer_local_declared_with_pointer_ctype() {
+        // Without a TypeMap, the existing B3.10 behaviour: v0 declared
+        // as `int64_t` because the SSA variable is 64-bit.
+        let ssa = ssa_load_address_chain();
+        let sem = sem_load_address_chain();
+        let baseline = lower_function(&ssa, &sem, &NameResolver::new(), &Recovered::default());
+        assert_eq!(baseline.locals[0].ty, CType::i64());
+
+        // With a TypeMap that flags v0 as pointer, the local's
+        // declared type becomes `int64_t *` while the SSA-variable's
+        // width-typed shape stays `int64_t` (the width fallback).
+        let types = typemap_pointing_v0_to_ptr();
+        let recovered = Recovered {
+            types: Some(&types),
+            ..Recovered::default()
+        };
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        assert_eq!(f.locals[0].ty, CType::Ptr(Box::new(CType::Void)));
+        assert_eq!(f.locals[1].ty, CType::i64());
+    }
+
+    #[test]
+    fn b3_15_pointer_local_zero_init_gets_cast() {
+        // The `0LL` initialiser is `int64_t`; a pointer-typed local
+        // needs an explicit `(int64_t *)` cast or the round-trip
+        // compile gate would reject it.
+        let ssa = ssa_load_address_chain();
+        let sem = sem_load_address_chain();
+        let types = typemap_pointing_v0_to_ptr();
+        let recovered = Recovered {
+            types: Some(&types),
+            ..Recovered::default()
+        };
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        match &f.locals[0].init {
+            Some(Expr::Cast { ty, expr }) => {
+                assert_eq!(*ty, CType::Ptr(Box::new(CType::Void)));
+                assert_eq!(
+                    **expr,
+                    Expr::IntLit {
+                        value: 0,
+                        signed: true
+                    }
+                );
+            }
+            other => panic!("expected Cast(ptr, 0LL), got {other:?}"),
+        }
+        // Width-typed local: no cast (declared == width).
+        assert_eq!(
+            f.locals[1].init,
+            Some(Expr::IntLit {
+                value: 0,
+                signed: true
+            })
+        );
+    }
+
+    #[test]
+    fn b3_15_pointer_assignment_rhs_gets_cast() {
+        // v0 = (2LL + 16336LL); — the Add RHS is `int64_t`-typed but
+        // the local is `int64_t *`, so the Assign must cast the RHS.
+        let ssa = ssa_load_address_chain();
+        let sem = sem_load_address_chain();
+        let types = typemap_pointing_v0_to_ptr();
+        let recovered = Recovered {
+            types: Some(&types),
+            ..Recovered::default()
+        };
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        let CStmt::Assign { name, value } = &f.body.stmts[0] else {
+            panic!("expected Assign, got {:?}", f.body.stmts[0]);
+        };
+        assert_eq!(name, "v0");
+        match value {
+            Expr::Cast { ty, expr } => {
+                assert_eq!(*ty, CType::Ptr(Box::new(CType::Void)));
+                // The wrapped expression is the Add RHS unchanged.
+                assert_eq!(
+                    **expr,
+                    Expr::Binary {
+                        op: BinaryOp::Add,
+                        lhs: Box::new(Expr::IntLit {
+                            value: 2,
+                            signed: true
+                        }),
+                        rhs: Box::new(Expr::IntLit {
+                            value: 16336,
+                            signed: true
+                        }),
+                    }
+                );
+            }
+            other => panic!("expected Cast(ptr, add), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn b3_15_pointer_operand_use_gets_cast_back() {
+        // v1 = *((int64_t *)(v0));
+        //
+        // The Load address is `v0` whose declared type is `int64_t *`,
+        // but the Load's address operand is read through the
+        // width-typed shape (`int64_t`) so subsequent pointer-style
+        // casts in the emitter don't double up. We assert the read
+        // wraps v0 in `((int64_t)v0)`.
+        let ssa = ssa_load_address_chain();
+        let sem = sem_load_address_chain();
+        let types = typemap_pointing_v0_to_ptr();
+        let recovered = Recovered {
+            types: Some(&types),
+            ..Recovered::default()
+        };
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        let CStmt::Assign { value, .. } = &f.body.stmts[1] else {
+            panic!("expected Assign for v1, got {:?}", f.body.stmts[1]);
+        };
+        let Expr::Load { address, .. } = value else {
+            panic!("expected Load, got {value:?}");
+        };
+        match &**address {
+            Expr::Cast { ty, expr } => {
+                assert_eq!(*ty, CType::i64());
+                assert_eq!(**expr, Expr::Var("v0".into()));
+            }
+            other => panic!("expected Cast(int64_t, v0), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn b3_15_no_typemap_keeps_width_based_shape() {
+        // The B2.8 / B3.10 path: no TypeMap, locals declared with
+        // width-based types, no extra casts injected.
+        let ssa = ssa_load_address_chain();
+        let sem = sem_load_address_chain();
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &Recovered::default());
+        // Local 0 is declared as `int64_t` (the width fallback).
+        assert_eq!(f.locals[0].ty, CType::i64());
+        // Local 0's init is the plain `0LL` literal (no cast).
+        assert_eq!(
+            f.locals[0].init,
+            Some(Expr::IntLit {
+                value: 0,
+                signed: true
+            })
+        );
+        // The Add assigns directly with no surrounding cast.
+        let CStmt::Assign { value, .. } = &f.body.stmts[0] else {
+            panic!("expected Assign");
+        };
+        assert!(
+            !matches!(value, Expr::Cast { .. }),
+            "expected width-based Assign with no cast, got {value:?}"
+        );
+        // The Load address is the bare Var(v0).
+        let CStmt::Assign { value, .. } = &f.body.stmts[1] else {
+            panic!("expected Assign for v1");
+        };
+        let Expr::Load { address, .. } = value else {
+            panic!("expected Load");
+        };
+        assert_eq!(**address, Expr::Var("v0".into()));
+    }
+
+    #[test]
+    fn b3_15_return_pointer_local_matches_pointer_return_type() {
+        // Return v1 where v1 is declared as `int64_t *` and the
+        // convention says the function returns `int64_t *`. The cast
+        // pair at the return site bridges (declared, return_type),
+        // which is identity here, so `return v1;` renders without a
+        // surrounding cast.
+        use dac_recovery::InferredSignature;
+
+        let ssa = ssa_load_address_chain();
+        let sem = sem_load_address_chain();
+        let mut types = TypeMap::default();
+        types.values.insert(
+            1,
+            ValueType {
+                ty: IrType::ptr_to(IrType::Unknown),
+                confidence: Confidence::new(0.80, Source::Derived),
+            },
+        );
+        let signature = InferredSignature {
+            int_args: vec![],
+            stack_args: vec![],
+            return_register: Some("rax"),
+            variadic_call_sites: 0,
+        };
+        let recovered = Recovered {
+            signature: Some(&signature),
+            types: Some(&types),
+            ..Recovered::default()
+        };
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        assert_eq!(f.return_type, CType::Ptr(Box::new(CType::Void)));
+        let CStmt::Return(Some(expr)) = &f.body.stmts[2] else {
+            panic!("expected Return with value");
+        };
+        // v1 declared == return_type → no cast wrapper.
+        assert_eq!(*expr, Expr::Var("v1".into()));
+    }
+
+    #[test]
+    fn b3_15_move_with_pointer_dst_wraps_const_init() {
+        // `Move { src: Const(0) }` into a pointer-typed local. The
+        // assignment cast must lift the int-typed RHS to the local's
+        // declared pointer shape so the round-trip compile gate stays
+        // clean.
+        let ssa = SsaFunction {
+            function_address: 0x4000,
+            function_name: Some("move_ptr".into()),
+            blocks: vec![SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![SsaInstruction {
+                    dst: Some(0),
+                    op: SsaOp::Move {
+                        src: Operand::Const(0),
+                    },
+                }],
+                terminator: SsaTerminator::Return { value: None },
+            }],
+            entry: 0,
+            variables: vec![Variable {
+                id: 0,
+                name: "rdi".into(),
+                width_bits: 64,
+            }],
+            values: vec![dac_ir::ssa::ValueDef {
+                id: 0,
+                source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+                variable: 0,
+            }],
+            evidence: ev(),
+        };
+        let sem = SemFunction {
+            function_address: 0x4000,
+            function_name: Some("move_ptr".into()),
+            body: SemBlock {
+                stmts: vec![
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 0 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Return {
+                        value: None,
+                        evidence: ev(),
+                    },
+                ],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        };
+        let mut types = TypeMap::default();
+        types.values.insert(
+            0,
+            ValueType {
+                ty: IrType::ptr_to(IrType::Unknown),
+                confidence: Confidence::new(0.80, Source::Derived),
+            },
+        );
+        let recovered = Recovered {
+            types: Some(&types),
+            ..Recovered::default()
+        };
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        assert_eq!(f.locals[0].ty, CType::Ptr(Box::new(CType::Void)));
+        let CStmt::Assign { value, .. } = &f.body.stmts[0] else {
+            panic!("expected Assign");
+        };
+        match value {
+            Expr::Cast { ty, expr } => {
+                assert_eq!(*ty, CType::Ptr(Box::new(CType::Void)));
+                assert_eq!(
+                    **expr,
+                    Expr::IntLit {
+                        value: 0,
+                        signed: true
+                    }
+                );
+            }
+            other => panic!("expected Cast(ptr, 0LL), got {other:?}"),
+        }
     }
 }
