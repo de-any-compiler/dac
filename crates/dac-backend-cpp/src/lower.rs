@@ -30,13 +30,12 @@
 //!    [`Item::FreeFunction`]; `main` always gets `int` return so the
 //!    round-trip compile gate accepts the unit. Everything else
 //!    defaults to `void` until B3.6 plumbs real signatures in.
-//! 5. **No `namespace` lowering at B3.5.** When a class's scope chain
-//!    is non-empty the qualified name is emitted as
-//!    `using <Scope>__<Name> = …` — actually no: scope_chain is empty
-//!    for everything the symbol-driven recovery handles today (C++
-//!    binaries from CLI tests put classes at global scope), so we
-//!    assert empty and degrade with a leading comment for any
-//!    non-empty chain.
+//! 5. **Namespace lowering (B3.12).** Each recovered class's
+//!    `scope_chain` is passed through to the AST verbatim; emit wraps
+//!    the class declaration in nested `namespace S1 { … }` blocks
+//!    matching the chain. The leading provenance comment keeps the
+//!    `qualified: Foo::Bar::Baz` line so the lifted scope can be
+//!    cross-checked against the emitted nesting.
 //!
 //! ## Determinism
 //!

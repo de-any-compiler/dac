@@ -10,11 +10,14 @@
 //! - Free function definitions with a stub body returning a default-
 //!   initialised value of the return type for non-`void` returns.
 //! - Pointer / reference / const type spellings.
+//! - `namespace S1 { … }` blocks wrapping any class whose
+//!   `scope_chain` is non-empty (one block per segment, nested in
+//!   chain order). Each class opens and closes its own blocks —
+//!   the merge-consecutive-prefix optimisation is intentionally
+//!   left out so emit stays a pure per-item walk.
 //!
 //! Things that intentionally never appear in the output:
 //!
-//! - `namespace` blocks. Scope chains are flattened into the class
-//!   leading comment until B3.6's signature recovery can ground them.
 //! - `template`, `enum class`, `using` declarations, exception specs.
 //!   None of them are needed by the symbol-driven class recovery
 //!   B3.5 ships, so they would only be unused vocabulary.
@@ -77,6 +80,10 @@ fn emit_item(p: &mut Printer<'_>, item: &Item) {
 }
 
 fn emit_class_into(p: &mut Printer<'_>, c: &Class) {
+    for seg in &c.scope_chain {
+        p.write_line(&format!("namespace {seg} {{"));
+        p.indent();
+    }
     if let Some(comment) = &c.leading_comment {
         for line in comment.lines() {
             p.write_line(&format!("// {line}"));
@@ -104,6 +111,10 @@ fn emit_class_into(p: &mut Printer<'_>, c: &Class) {
     }
     p.dedent();
     p.write_line("};");
+    for seg in c.scope_chain.iter().rev() {
+        p.dedent();
+        p.write_line(&format!("}} // namespace {seg}"));
+    }
 }
 
 fn render_base(b: &BaseSpec) -> String {
@@ -428,6 +439,44 @@ std::int32_t main() {
         assert_eq!(render_int_type(48, true), "std::int64_t");
         assert_eq!(render_int_type(64, false), "std::uint64_t");
         assert_eq!(render_int_type(128, true), "std::int64_t");
+    }
+
+    #[test]
+    fn class_with_single_scope_segment_wraps_in_one_namespace_block() {
+        let mut c = animal_class();
+        c.name = "Bar".into();
+        c.scope_chain = vec!["Foo".into()];
+        c.members.clear();
+        c.has_vtable = false;
+        let s = emit_class(&c);
+        let want = "\
+namespace Foo {
+    class Bar {
+    public:
+    };
+} // namespace Foo
+";
+        assert_eq!(s, want);
+    }
+
+    #[test]
+    fn class_with_two_scope_segments_nests_namespaces_in_chain_order() {
+        let mut c = animal_class();
+        c.name = "Baz".into();
+        c.scope_chain = vec!["Outer".into(), "Inner".into()];
+        c.members.clear();
+        c.has_vtable = false;
+        let s = emit_class(&c);
+        let want = "\
+namespace Outer {
+    namespace Inner {
+        class Baz {
+        public:
+        };
+    } // namespace Inner
+} // namespace Outer
+";
+        assert_eq!(s, want);
     }
 
     #[test]

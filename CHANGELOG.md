@@ -3287,6 +3287,58 @@ I-6 (bases drop visibly rather than synthesise an unrecovered
 parent), FR-25 (per-class leading comment surfaces the
 recovered chain).
 
+### B3.12 — Namespace lowering (FR-21, I-6, NFR-9)
+
+**Second of the M3 shelf follow-ups.** `dac-backend-cpp::emit` now
+wraps every recovered class whose `scope_chain` is non-empty in
+nested `namespace S1 { … }` blocks; the chain segments are emitted
+in order, opened with `namespace <seg> {` and closed with
+`} // namespace <seg>` so the matching block is greppable in the
+output. The lowering pass already carried `scope_chain` through to
+the AST — only the printer changed.
+
+- **`emit_class_into` wraps in nested namespaces.** One `namespace
+  <seg> {` open per segment in chain order, one `} // namespace
+  <seg>` close in reverse order, with the class declaration (and
+  its leading provenance comment) emitted at the innermost
+  indent level. The merge-consecutive-prefix optimisation is
+  intentionally not done: emit stays a pure per-item walk, so the
+  same class always renders to the same block shape regardless of
+  its position in `RecoveredClasses::classes`.
+- **`cpp-hierarchy-o1-cpp` golden.** The two `__cxxabiv1::*`
+  synthetic ABI classes (the C++ ABI's typeinfo bases recovered
+  from vtable imports) now emit inside `namespace __cxxabiv1 { …
+  } // namespace __cxxabiv1` blocks; the user-defined Animal /
+  Dog / Cat classes still emit at global scope because their
+  recovered `scope_chain` is empty.
+- **Lower-pass docstring** updated: the old "no `namespace`
+  lowering at B3.5" caveat (which had grown out of date by B3.5
+  itself) is replaced by the B3.12 contract — `scope_chain`
+  passes through to the AST verbatim and emit owns the
+  wrapping.
+- **Tests.** Two new emit unit tests cover length-1 and length-2
+  scope chains, exercising the open / inner-indent / close
+  walk and asserting the exact rendered shape.
+
+#### Limitations carried forward
+
+- **Cross-class namespace merge.** Two consecutive classes sharing
+  the same scope chain each open and close their own namespace
+  block. A future printer pass could collapse them into one
+  combined block; the current shape is C++-legal but slightly
+  noisier than hand-written code.
+- **`namespace` recovery for free functions.** `RecoveredFreeFunction`
+  has no `scope_chain` yet — Itanium-mangled `_ZN<scope>…E`
+  free functions parse the chain on the class-recovery side, but
+  the free-function pile only retains the demangled leaf name.
+  Lands when free-function-side mangling exposes the chain.
+
+Closes: B3.12, FR-21 (C++ surface fidelity for namespaced
+classes), I-6 (emit reproduces the binary's recovered scope
+chain rather than flattening it into a comment).
+Touches: NFR-9 (emit stays pure / deterministic; no hashed
+containers added).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

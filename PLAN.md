@@ -50,20 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 — see [CHANGELOG.md](./CHANGELOG.md). The remaining 11
-numbered follow-up batches (B3.12 – B3.22) below are pre-M4 work:
-each closes a specific deferral surfaced in a CHANGELOG entry and
-can land independently. Heavier residue items remain in the "B3
-residue shelf" at the end of this section.
-
-### B3.12 — Namespace lowering (B3.5 deferral)
-- Emit `namespace foo { namespace bar { … } }` from the already-
-  recovered `Class::scope_chain` instead of flattening it into the
-  leading comment.
-- Touches `dac-backend-cpp::emit` only; class recovery is unchanged.
-- **Done when:** a C++ corpus class with a `scope_chain` of two or
-  more segments emits with the matching nested `namespace` block,
-  and the golden round-trips through the C++ probe.
+plus B3.11 and B3.12 — see [CHANGELOG.md](./CHANGELOG.md). The
+remaining 10 numbered follow-up batches (B3.13 – B3.22) below are
+pre-M4 work: each closes a specific deferral surfaced in a CHANGELOG
+entry and can land independently. Heavier residue items remain in
+the "B3 residue shelf" at the end of this section.
 
 ### B3.13 — Variadic + syscall conventions (B2.5 deferral)
 - Extend `dac-knowledge::convention` with SysV's "rax = vector-arg

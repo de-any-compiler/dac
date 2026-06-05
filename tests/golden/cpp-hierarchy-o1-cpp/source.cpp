@@ -69,33 +69,37 @@ public:
     }
 };
 
-// dac-recovered class
-// qualified: __cxxabiv1::__class_type_info
-// vtable: true
-// typeinfo: false
-// bases: (none)
-// confidence: 1.00 (Observed)
-class __class_type_info {
-public:
-    // synthesised by dac: vtable present, dtor not in symbol table
-    virtual ~__class_type_info() {
-        // dac C++ stub: lifter→SSA bridge pending; body intentionally empty
-    }
-};
+namespace __cxxabiv1 {
+    // dac-recovered class
+    // qualified: __cxxabiv1::__class_type_info
+    // vtable: true
+    // typeinfo: false
+    // bases: (none)
+    // confidence: 1.00 (Observed)
+    class __class_type_info {
+    public:
+        // synthesised by dac: vtable present, dtor not in symbol table
+        virtual ~__class_type_info() {
+            // dac C++ stub: lifter→SSA bridge pending; body intentionally empty
+        }
+    };
+} // namespace __cxxabiv1
 
-// dac-recovered class
-// qualified: __cxxabiv1::__si_class_type_info
-// vtable: true
-// typeinfo: false
-// bases: (none)
-// confidence: 1.00 (Observed)
-class __si_class_type_info {
-public:
-    // synthesised by dac: vtable present, dtor not in symbol table
-    virtual ~__si_class_type_info() {
-        // dac C++ stub: lifter→SSA bridge pending; body intentionally empty
-    }
-};
+namespace __cxxabiv1 {
+    // dac-recovered class
+    // qualified: __cxxabiv1::__si_class_type_info
+    // vtable: true
+    // typeinfo: false
+    // bases: (none)
+    // confidence: 1.00 (Observed)
+    class __si_class_type_info {
+    public:
+        // synthesised by dac: vtable present, dtor not in symbol table
+        virtual ~__si_class_type_info() {
+            // dac C++ stub: lifter→SSA bridge pending; body intentionally empty
+        }
+    };
+} // namespace __cxxabiv1
 
 // dac-recovered free function
 // address: 0x1000
