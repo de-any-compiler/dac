@@ -4241,6 +4241,138 @@ SsaFunction in ⇒ same SsaFunction out), I-6 (the
 loud in dev while preserving the B3.10 graceful-degrade
 shape in release).
 
+#### B3.19 — Hint provenance in annotations (2026-06-05)
+
+B3.6 landed user-hint application — `[[function]]`
+entries retype arguments and the return slot in the
+recovered TypeMap, and `rename` overrides the emitted
+identifier. The hint's `EvidenceNode::UserHint` ID was
+already minted into the same `EvidenceGraph` the
+annotation channel walks (the CLI's `register_hints`
+runs before `AnnotationDoc::build`), but the
+`.annot.json` sidecar's `name` and `return_type` facts
+ignored it: an applied rename was reported with
+`Source::Observed` and a "symbol-table entry" chain that
+described the *pre-hint* state, and an applied return
+override silently kept the
+"default void / B3.6 pending" annotation.
+
+B3.19 closes that loop. When `Hints::find_function`
+matches a recovered function, the annotators reach into
+the matched [`FunctionHint`] and override:
+
+- **`annotate_name`**: if the hint has `rename = Some(_)`,
+  the `FactAnnotation` reports the hinted identifier
+  with `Source::UserHint` confidence at
+  `USER_HINT_CONFIDENCE` (the same constant the
+  TypeMap overlay uses, now `pub(crate)` so both call
+  sites read from one place), an explanation citing
+  the hint's source-file line, and an evidence chain
+  anchored on the hint's `EvidenceNode::UserHint`
+  node. The pre-hint symbol-table chain is not
+  appended underneath — the hint *replaces* the
+  observation; the annotation reflects that
+  faithfully so a reader inspecting the sidecar sees
+  the hint as the sole supporting evidence.
+- **`annotate_return_type`**: if the hint has
+  `return_ty = Some(_)`, the annotation reports the
+  hinted type's `Display` form (e.g. `int32_t`) with
+  `Source::UserHint` confidence, an explanation
+  citing the hint's line, and the same single-node
+  chain rooted at the hint's evidence ID.
+
+When the matched hint has *no* override active (a hint
+that only fired for `args`, or a registered-but-passive
+entry), neither annotation changes — the name still
+renders as the observed symbol and the return type
+still renders as the B3.4 / B3.6 "void / pending"
+placeholder. The match is consulted; the override is
+gated.
+
+The plumbing is one new `&Hints` parameter on
+`AnnotationDoc::build` (and on the CLI's
+`build_annotations_doc` wrapper). The CLI passes the
+already-registered catalogue on the supported-arch
+path and an empty `Hints::new()` on the
+unsupported-arch path, mirroring how the latter handles
+the `FunctionSet` and `EvidenceGraph`.
+
+A small helper, `hint_evidence_chain`, falls back to a
+synthesised single-entry `EvidenceRef` when the hint
+was not registered against the graph — the test
+harness exercises this corner so a regression in
+`register_hints` would not silently strip the hint
+citation from the sidecar.
+
+### Tests added
+
+- `function_hint_rename_pins_name_with_user_hint_source`
+  asserts that a `[[function]]` rename hint at address
+  `0x1000` produces `name.value == "user_main"`,
+  `Source::UserHint`, confidence
+  `USER_HINT_CONFIDENCE`, an explanation mentioning
+  the hint, and an evidence chain that contains the
+  hint's `UserHint` node and *no* `Bytes` / `IrNode`
+  refs from the discarded symbol-table chain.
+- `function_hint_return_pins_return_type_with_user_hint_source`
+  asserts that a `return = "int32"` hint produces
+  `return_type.value == "int32_t"`, `Source::UserHint`,
+  the matching confidence, and a chain rooted on the
+  `UserHint` evidence ref.
+- `function_hint_without_overrides_does_not_alter_annotations`
+  asserts that a registered hint with neither
+  `rename` nor `return` set leaves both annotations
+  on the deterministic-pipeline path (Observed name,
+  Derived void return). Guards against a regression
+  where the match itself would be mistaken for an
+  override.
+- `rendered_json_cites_user_hint_id_under_name`
+  asserts that the rendered JSON sidecar carries
+  `"kind": "user_hint"` and `"hint_id": 99` inside
+  the name fact's evidence list so a tool consuming
+  the `.annot.json` can cross-reference back to the
+  hint catalogue without re-walking the evidence
+  graph.
+
+### Limitations
+
+- **Return-type annotation only fires under a hint.**
+  The non-hinted return annotation still reports
+  `void / Derived` regardless of what the convention
+  pass inferred. Wiring the inferred return into
+  `annotate_return_type` is a separate concern (the
+  `RecoveryFacts.convention.signature.return_register`
+  + `types.values` lookup would need to flow through
+  the annotation builder, which it currently does
+  not). B3.19 is scoped to the *hint* side of the
+  fact; the convention side stays on its
+  pre-existing trajectory.
+- **No retroactive citation of the `args` overlay.**
+  A hint whose only effect is `args` (no `rename`,
+  no `return`) currently leaves the annotation
+  channel unchanged because the channel surfaces
+  name and return-type per-function but does not yet
+  surface argument lists. That arrives with the
+  per-parameter annotation slot, which the B3.4
+  module docstring already flags as pending.
+- **Single per-function hint.** `find_function`
+  returns the first match in source order; if a user
+  file contains two hints that both match, only the
+  first is cited. The hint loader does not flag
+  duplicates today, so this is consistent with the
+  rest of the hint pipeline.
+
+Closes: B3.19.
+Touches: I-2 (every name / return annotation that was
+overridden by a hint now carries the hint's evidence
+ID — the `.annot.json` sidecar's provenance closes the
+loop from the emitted source back to the hint file),
+I-3 (the `Confidence::Source` reported in the sidecar
+matches the lattice the TypeMap overlay records, so
+the annotation channel and the recovered-fact lattice
+agree on which facts came from a user hint), FR-19,
+FR-20.
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

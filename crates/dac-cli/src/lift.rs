@@ -452,7 +452,10 @@ fn apply_function_hint(
 }
 
 /// Confidence value `Source::UserHint` overlay entries carry.
-const USER_HINT_CONFIDENCE: f32 = 0.95;
+///
+/// Shared with the annotation channel (B3.19) so the `.annot.json`
+/// sidecar reports the same value the lift overlay attached.
+pub(crate) const USER_HINT_CONFIDENCE: f32 = 0.95;
 
 /// Pick the convention's canonical integer return register so a
 /// hint with a `return` override can activate the C backend's

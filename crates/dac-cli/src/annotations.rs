@@ -62,7 +62,10 @@ use std::fmt::Write as _;
 
 use dac_binfmt::BinaryModel;
 use dac_core::{Confidence, EdgeKind, EvidenceGraph, EvidenceId, EvidenceNode, IrLayer, Source};
+use dac_hints::{FunctionHint, Hints};
 use dac_recovery::{FunctionSet, SourceMask, SYMBOL_CONFIDENCE};
+
+use crate::lift::USER_HINT_CONFIDENCE;
 
 /// Top-level annotation document.
 #[derive(Debug, Clone)]
@@ -176,18 +179,25 @@ impl AnnotationDoc {
         model: &BinaryModel,
         functions: &FunctionSet,
         graph: &EvidenceGraph,
+        hints: &Hints,
     ) -> Self {
         let preds = predecessor_index(graph);
         let evidence = summarize_graph(graph);
         let format_label = model.format.name();
         let mut function_annotations = Vec::with_capacity(functions.functions.len());
         for f in &functions.functions {
+            // B3.19: surface the matched `[[function]]` hint in the
+            // sidecar so a reader can see *which* hint pinned the name
+            // / return type. The hint catalogue's `evidence` field is
+            // populated by `register_hints` (lift.rs) before
+            // `AnnotationDoc::build` runs.
+            let hint = hints.find_function(f.address, f.name.as_deref());
             function_annotations.push(FunctionAnnotation {
                 address: f.address,
                 end: f.end,
                 signals: f.sources,
-                name: annotate_name(f, format_label, graph, &preds),
-                return_type: annotate_return_type(),
+                name: annotate_name(f, format_label, graph, &preds, hint),
+                return_type: annotate_return_type(hint),
             });
         }
         let mut notes = Vec::new();
@@ -212,7 +222,30 @@ fn annotate_name(
     format_label: &str,
     graph: &EvidenceGraph,
     preds: &BTreeMap<u32, Vec<EvidenceId>>,
+    hint: Option<&FunctionHint>,
 ) -> FactAnnotation {
+    // B3.19: a `[[function]]` hint with `rename` set wins over the
+    // observed symbol — the C backend's `lower_one_c_function` puts
+    // the hint's name on the emitted symbol, so the annotation has
+    // to agree. The evidence chain anchors on the hint's
+    // `EvidenceNode::UserHint` node so a reader can trace the
+    // override straight to the hint catalogue.
+    if let Some(h) = hint {
+        if let Some(rename) = &h.rename {
+            let conf = Confidence::new(USER_HINT_CONFIDENCE, Source::UserHint);
+            let why = format!(
+                "user hint at line {line} renamed function at {addr:#018x} to '{rename}'",
+                line = h.line,
+                addr = f.address,
+            );
+            return FactAnnotation {
+                value: rename.clone(),
+                confidence: conf,
+                explanation: why,
+                evidence: hint_evidence_chain(graph, preds, h),
+            };
+        }
+    }
     let has_symbol = f.sources.contains(SourceMask::SYMBOL);
     let (value, confidence, explanation) = if let (true, Some(name)) = (has_symbol, &f.name) {
         let conf = Confidence::new(SYMBOL_CONFIDENCE, Source::Observed);
@@ -239,7 +272,24 @@ fn annotate_name(
     }
 }
 
-fn annotate_return_type() -> FactAnnotation {
+fn annotate_return_type(hint: Option<&FunctionHint>) -> FactAnnotation {
+    // B3.19: when a `[[function]]` hint pinned `return`, the C
+    // backend's `pick_return_type` consults the hint-seeded TypeMap
+    // entry, so the annotation surfaces the hinted type with
+    // `Source::UserHint` and cites the hint node.
+    if let Some(h) = hint {
+        if let Some(ret_ty) = &h.return_ty {
+            return FactAnnotation {
+                value: format!("{ret_ty}"),
+                confidence: Confidence::new(USER_HINT_CONFIDENCE, Source::UserHint),
+                explanation: format!(
+                    "user hint at line {line} pinned the return type to {ret_ty}",
+                    line = h.line,
+                ),
+                evidence: hint_evidence_refs(h),
+            };
+        }
+    }
     FactAnnotation {
         value: "void".to_string(),
         confidence: Confidence::new(0.0, Source::Derived),
@@ -248,6 +298,36 @@ fn annotate_return_type() -> FactAnnotation {
                 .to_string(),
         evidence: Vec::new(),
     }
+}
+
+/// Resolve the evidence chain rooted at the hint's
+/// [`EvidenceNode::UserHint`] node. Falls back to a single
+/// synthesised `UserHint` ref when the hint catalogue was not
+/// registered against the graph (test paths). Hints have no
+/// `Supports`-predecessors today, so the BFS terminates at the
+/// hint node itself; the helper exists so a later batch can add
+/// supporting edges (e.g. citing the bytes of the hint file) and
+/// the annotation channel will pick them up automatically.
+fn hint_evidence_chain(
+    graph: &EvidenceGraph,
+    preds: &BTreeMap<u32, Vec<EvidenceId>>,
+    hint: &FunctionHint,
+) -> Vec<EvidenceRef> {
+    match hint.evidence {
+        Some(id) => evidence_chain(graph, preds, id),
+        None => hint_evidence_refs(hint),
+    }
+}
+
+/// Fallback evidence list used when the hint was not registered
+/// against the [`EvidenceGraph`] — the `id` field still tracks the
+/// hint's [`dac_hints::HintId`] so the sidecar carries the same
+/// payload the report's `user_hint` summary cites.
+fn hint_evidence_refs(hint: &FunctionHint) -> Vec<EvidenceRef> {
+    vec![EvidenceRef {
+        id: hint.evidence.map(|e| e.as_u32()).unwrap_or(0),
+        kind: EvidenceRefKind::UserHint { id: hint.id },
+    }]
 }
 
 /// Walk the [`EvidenceGraph`] once and build a reverse index of
@@ -748,11 +828,42 @@ mod tests {
     }
 
     fn build_doc(model: &BinaryModel) -> AnnotationDoc {
+        build_doc_with_hints(model, Hints::new())
+    }
+
+    fn build_doc_with_hints(model: &BinaryModel, hints: Hints) -> AnnotationDoc {
         let bytes = vec![0u8; 0x100];
         let mut graph = EvidenceGraph::new();
         let set = discover_functions(model, &bytes, &NullDecoder, &mut graph);
+        // Mirror the CLI's `register_hints`: every hint gets a
+        // `EvidenceNode::UserHint` minted in the same graph so the
+        // annotation channel can cite the exact node.
+        let mut hints = hints;
+        for h in hints.functions.iter_mut() {
+            h.evidence = Some(graph.add_node(EvidenceNode::UserHint(h.id)));
+        }
+        for h in hints.structs.iter_mut() {
+            h.evidence = Some(graph.add_node(EvidenceNode::UserHint(h.id)));
+        }
         let (tool, input, settings) = stamp_pair();
-        AnnotationDoc::build(tool, input, settings, model, &set, &graph)
+        AnnotationDoc::build(tool, input, settings, model, &set, &graph, &hints)
+    }
+
+    fn function_hint(
+        id: u64,
+        matcher: dac_hints::HintMatcher,
+        rename: Option<&str>,
+        return_ty: Option<dac_hints::HintType>,
+    ) -> FunctionHint {
+        FunctionHint {
+            id,
+            line: 7,
+            matcher,
+            rename: rename.map(str::to_string),
+            return_ty,
+            args: None,
+            evidence: None,
+        }
     }
 
     #[test]
@@ -930,5 +1041,141 @@ mod tests {
         let chain = evidence_chain(&g, &preds, a);
         // a (root) + b (predecessor) — exactly two entries, no cycle.
         assert_eq!(chain.len(), 2);
+    }
+
+    // B3.19: a `[[function]]` rename hint shows up in the
+    // annotation channel as the overriding name with
+    // `Source::UserHint` confidence, an explanation citing the
+    // hint's source line, and an evidence chain anchored on the
+    // hint's `EvidenceNode::UserHint` node.
+    #[test]
+    fn function_hint_rename_pins_name_with_user_hint_source() {
+        let mut model = base_model();
+        model.symbols.push(text_symbol("main", 0x1000, 0x10));
+        let mut hints = Hints::new();
+        hints.functions.push(function_hint(
+            42,
+            dac_hints::HintMatcher::Address(0x1000),
+            Some("user_main"),
+            None,
+        ));
+        let doc = build_doc_with_hints(&model, hints);
+        let f = doc
+            .functions
+            .iter()
+            .find(|f| f.address == 0x1000)
+            .expect("function discovered");
+        assert_eq!(f.name.value, "user_main", "hint rename must win");
+        assert_eq!(f.name.confidence.source(), Source::UserHint);
+        assert!((f.name.confidence.value() - USER_HINT_CONFIDENCE).abs() < f32::EPSILON);
+        assert!(
+            f.name.explanation.contains("user hint"),
+            "explanation must cite the hint, got: {}",
+            f.name.explanation,
+        );
+        // Chain rooted at the hint's UserHint node — no
+        // symbol-table evidence appears because the hint *replaces*
+        // the symbol-table observation.
+        let has_user_hint = f
+            .name
+            .evidence
+            .iter()
+            .any(|e| matches!(e.kind, EvidenceRefKind::UserHint { .. }));
+        assert!(has_user_hint, "evidence chain must cite the user hint");
+        let has_symbol_chain = f.name.evidence.iter().any(|e| {
+            matches!(
+                e.kind,
+                EvidenceRefKind::Bytes { .. } | EvidenceRefKind::IrNode { .. }
+            )
+        });
+        assert!(
+            !has_symbol_chain,
+            "hint-cited name must not carry the symbol-table chain underneath",
+        );
+    }
+
+    // B3.19: a `[[function]]` `return` hint shows up in the
+    // annotation channel as the overriding return type with
+    // `Source::UserHint` confidence and an evidence chain rooted
+    // on the hint node.
+    #[test]
+    fn function_hint_return_pins_return_type_with_user_hint_source() {
+        let mut model = base_model();
+        model.symbols.push(text_symbol("main", 0x1000, 0x10));
+        let mut hints = Hints::new();
+        hints.functions.push(function_hint(
+            7,
+            dac_hints::HintMatcher::Address(0x1000),
+            None,
+            Some(dac_hints::HintType::Int {
+                width_bits: 32,
+                signed: Some(true),
+            }),
+        ));
+        let doc = build_doc_with_hints(&model, hints);
+        let f = doc
+            .functions
+            .iter()
+            .find(|f| f.address == 0x1000)
+            .expect("function discovered");
+        assert_eq!(f.return_type.value, "int32_t");
+        assert_eq!(f.return_type.confidence.source(), Source::UserHint);
+        assert!((f.return_type.confidence.value() - USER_HINT_CONFIDENCE).abs() < f32::EPSILON);
+        assert!(f.return_type.explanation.contains("user hint"));
+        assert!(matches!(
+            f.return_type
+                .evidence
+                .first()
+                .expect("hint evidence ref")
+                .kind,
+            EvidenceRefKind::UserHint { .. }
+        ));
+    }
+
+    // B3.19: a hint without `rename` / `return` overrides leaves
+    // both fact annotations on the deterministic-pipeline path.
+    // The catch is the matched-but-passive hint must not be
+    // accidentally cited.
+    #[test]
+    fn function_hint_without_overrides_does_not_alter_annotations() {
+        let mut model = base_model();
+        model.symbols.push(text_symbol("main", 0x1000, 0x10));
+        let mut hints = Hints::new();
+        hints.functions.push(function_hint(
+            1,
+            dac_hints::HintMatcher::Address(0x1000),
+            None,
+            None,
+        ));
+        let doc = build_doc_with_hints(&model, hints);
+        let f = doc
+            .functions
+            .iter()
+            .find(|f| f.address == 0x1000)
+            .expect("function discovered");
+        assert_eq!(f.name.value, "main");
+        assert_eq!(f.name.confidence.source(), Source::Observed);
+        assert_eq!(f.return_type.value, "void");
+        assert_eq!(f.return_type.confidence.source(), Source::Derived);
+    }
+
+    // B3.19: the JSON sidecar must carry the hint's UserHint
+    // evidence ref under the name fact when a rename applies.
+    #[test]
+    fn rendered_json_cites_user_hint_id_under_name() {
+        let mut model = base_model();
+        model.symbols.push(text_symbol("main", 0x1000, 0x10));
+        let mut hints = Hints::new();
+        hints.functions.push(function_hint(
+            99,
+            dac_hints::HintMatcher::Address(0x1000),
+            Some("user_main"),
+            None,
+        ));
+        let doc = build_doc_with_hints(&model, hints);
+        let json = render_annotations_json(&doc);
+        assert!(json.contains("\"kind\": \"user_hint\""));
+        assert!(json.contains("\"hint_id\": 99"));
+        assert!(json.contains("\"value\": \"user_main\""));
     }
 }

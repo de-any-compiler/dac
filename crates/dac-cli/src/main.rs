@@ -242,7 +242,8 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
-            annotations_doc = build_annotations_doc(&input_label, &model, args, &functions, &graph);
+            annotations_doc =
+                build_annotations_doc(&input_label, &model, args, &functions, &graph, &hints);
             source_text = render_source_text(
                 args,
                 &input_label,
@@ -293,8 +294,15 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 stats: Default::default(),
             };
             let mut empty_graph = EvidenceGraph::new();
-            annotations_doc =
-                build_annotations_doc(&input_label, &model, args, &empty_set, &empty_graph);
+            let empty_hints = Hints::new();
+            annotations_doc = build_annotations_doc(
+                &input_label,
+                &model,
+                args,
+                &empty_set,
+                &empty_graph,
+                &empty_hints,
+            );
             source_text = render_source_text(
                 args,
                 &input_label,
@@ -347,6 +355,7 @@ fn build_annotations_doc(
     args: &Args,
     functions: &FunctionSet,
     graph: &EvidenceGraph,
+    hints: &Hints,
 ) -> AnnotationDoc {
     AnnotationDoc::build(
         ToolStamp {
@@ -368,6 +377,7 @@ fn build_annotations_doc(
         model,
         functions,
         graph,
+        hints,
     )
 }
 

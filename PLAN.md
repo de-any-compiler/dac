@@ -50,21 +50,11 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.18 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 4 numbered follow-up batches (B3.19 – B3.22) below
+plus B3.11 – B3.19 — see [CHANGELOG.md](./CHANGELOG.md).
+The remaining 3 numbered follow-up batches (B3.20 – B3.22) below
 are pre-M4 work: each closes a specific deferral surfaced in a
 CHANGELOG entry and can land independently. Heavier residue items
 remain in the "B3 residue shelf" at the end of this section.
-
-### B3.19 — Hint provenance in annotations (B3.6 follow-up, FR-19 / FR-20)
-- Thread the matched `EvidenceNode::UserHint` ID into
-  `annotate_name` / `annotate_return_type` in
-  `dac-cli/src/annotations.rs` so the `.annot.json` sidecar
-  names the hint that pinned the type.
-- **Done when:** running with a `[[function]]` rename hint
-  produces an annotations sidecar whose `name` block cites the
-  hint's evidence ID instead of the deterministic pipeline's
-  classification.
 
 ### B3.20 — Loop-induction & counter naming (B3.7 follow-up, spec §11.1)
 - Layer per-function dataflow naming on top of
