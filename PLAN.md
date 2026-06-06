@@ -49,11 +49,127 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.22 — see [CHANGELOG.md](./CHANGELOG.md). The
-"B3 residue shelf" below tracks heavier residue items that stay
-deferred past M3 and are sized as separate milestones rather than
-numbered batches.
+B3.1 – B3.22 are complete — see [CHANGELOG.md](./CHANGELOG.md).
+B3.23 – B3.31 are the M3 "real decompiler" follow-on, queued to
+close the readability and signature-correctness gaps surfaced in
+review (PLT/import naming, ABI gating, dead-store DCE, canonical
+`main`, return-width inference, CRT classification, etc.). The
+"B3 residue shelf" further down tracks heavier residue items that
+stay deferred past M3 and are sized as separate milestones rather
+than numbered batches.
+
+### B3.23 — PLT/GOT stub recognition + import naming
+- `dac-recovery`: x86-64 PLT stub detector
+  (`jmp [GOT+rel]; push N; jmp PLT0` and `.plt.sec` / IFUNC variants).
+- Cross-reference GOT entry → `BinaryModel.relocations[*].symbol` to
+  bind a stub VA to its imported symbol name.
+- New `FunctionKind::PltStub { import: String }` on `Function`.
+- `FunctionSet` discoverer sets `Function.name` to the import with
+  `Confidence::Observed`; call sites into the stub render the import
+  name in the C backend.
+- C backend: PLT stubs emit a forward declaration
+  (`extern <sig> write(...);`) instead of a body — entries vanish from
+  the per-function body section but stay in callgraph + annotations.
+- **Done when:** `0x1030` in the `hello-x86_64` fixture resolves to
+  `write` across the function list, callgraph, annotation JSON, and
+  the call expression inside `main`; `named_values` ratio rises
+  (FR-9, FR-19, FR-21, I-3).
+
+### B3.24 — ABI candidate set gated by binary format
+- `dac-recovery::convention::candidates_for(format, arch)` — drops
+  `ms-x64` from the candidate slice on ELF and SysV on PE.
+- The CLI `lift_one` consults that helper instead of passing
+  `X86_64_CONVENTIONS` raw.
+- **Done when:** every function in `hello-x86_64` reports
+  `convention: sysv-amd64`; PE goldens still pass with `ms-x64`
+  (FR-12, I-3).
+
+### B3.25 — Tail-call recognition for forwarding thunks
+- Detector for `endbr64? ; jmp <known function>` as the entire
+  function body.
+- `FunctionKind::Thunk { target: u64 }`.
+- C backend renders as `return <target>(...);` (or `<target>();` for
+  `void`) instead of `__builtin_unreachable()`.
+- **Done when:** `frame_dummy` reads as a one-line tail call; no
+  `__builtin_unreachable` for thunk-shaped functions (FR-21).
+
+### B3.26 — Pre-emit dead-store / zero-init / copy folding
+- A `Determinism::Pure` SSA simplifier: drop dead `= 0` definitions,
+  substitute single-use pure constants, fold `(c op c)` identities
+  (`c ^ c` → `0`, `c - c` → `0`, `c & c` → `c`).
+- Runs after `propagate_types`, before `structure`.
+- Declares its `Determinism` class so NFR-9 is enforced.
+- **Done when:** `main` body has no leading `v_k = 0LL` block; corpus
+  goldens refresh and stay byte-stable across two runs
+  (FR-21, NFR-9, I-1).
+
+### B3.27 — Suppress structurally-unreachable bodies in non-debug emit
+- C backend gates `__builtin_unreachable()` and
+  `/* structurally unreachable: block N */` lines behind `--debug`.
+- Default emit replaces those with a single
+  `/* dac: structuring fallback */` line, or omits the block when no
+  edge remains after B3.26.
+- Recovery report grows a `structuring_fallbacks: N` counter.
+- **Done when:** `frame_dummy`, `register_tm_clones`,
+  `__do_global_dtors_aux` no longer print `__builtin_unreachable()` by
+  default; `--debug` still does (FR-21, FR-25).
+
+### B3.28 — `main` canonical signature + hint-arity follow-up
+- Knowledge: canonical entry-point signatures (`main`, `wmain`,
+  `WinMain`) keyed by symbol.
+- `apply_function_hint` matches canonical entries; `rdi`/`rsi`
+  liveness gates argc/argv presence. The same mechanism lets
+  `[[function]]` hints declare unused parameter slots past the
+  inferred prefix (absorbs the residue-shelf
+  "hint argument synthesis" item).
+- Backend prints `void` when arity = 0, C-canonical types (`int`,
+  `char **`) instead of `int64_t`.
+- **Done when:** `int main(void)` for the current hello fixture;
+  `int main(int argc, char **argv)` when those registers are live;
+  a hint listing more slots than the inferred prefix mints the extra
+  `RegisterArg` entries (FR-12, FR-20, FR-21).
+
+### B3.29 — Return-type inference from observed write width
+- Per-function pass: observe the widest write to the return register.
+  Promote return type accordingly (`int` for 32-bit-only writes,
+  `long` for 64-bit, `void` for none).
+- Annotation channel and the C backend's `pick_return_type` consume
+  the same single source — the stale `"default void return; ... lands
+  with B3.6"` explanation is retired.
+- **Done when:** C output and annotation JSON agree on every
+  function's return type; `main` returns `int` (FR-18, FR-21, I-3).
+
+### B3.30 — CRT/startup taxonomy + annotation banner
+- `dac-knowledge::crt`: curated symbol → CRT-role table; `hlt` in
+  `_start` annotated as "process-termination after
+  `__libc_start_main` returns".
+- `FunctionTaxonomy::{ User, CrtSupport, Thunk, Imported }` on
+  `Function`.
+- Backend prints a one-line banner
+  `/* runtime support (glibc startup) — not user code */` on matched
+  functions.
+- Report adds `crt_support=N`.
+- New flag `--hide-crt` collapses CRT bodies to forward declarations.
+- **Done when:** all 7 CRT helpers in `hello-x86_64` are tagged;
+  report shows `crt_support=7`; `--hide-crt` reduces output by ~70%
+  (FR-21, FR-25).
+
+### B3.31 — Header honors `-O<level>` and corpus refresh
+- `crates/dac-cli/src/main.rs:485` and `:740`: replace the hardcoded
+  `-O1` header string with the active `opt` setting.
+- Refresh `crates/dac-cli/tests/o1_target_*.rs` to assert the level
+  matches the run instead of asserting `-O1`.
+- **Done when:** invocation at `-O3` prints `-O3` in the header
+  (FR-21).
+
+### Sequencing
+
+B3.23 and B3.24 are independent and can land in either order.
+B3.26 is the largest single readability lever and is independent
+of the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG →
+fewer fallback blocks to suppress). B3.28 depends on B3.24 (ABI
+gate stabilises the signature input) and B3.29 (return width feeds
+the canonical `main` shape). B3.31 can land at any point.
 
 ### B3 residue shelf
 
@@ -79,14 +195,6 @@ above.
   emit / lowering rules) lets the C-side `SsaFunction → SemFunction`
   shape feed the C++ printer the same way it now feeds the C
   printer.
-- **Hint argument synthesis past the inferred prefix** (B3.6
-  follow-up, FR-20). `apply_function_hint` retypes positional
-  arguments the convention pass already inferred, but a hint
-  whose `args` lists more slots than `int_args` cannot mint
-  additional `RegisterArg` entries — the extra slots have no
-  SSA-side value to bind. Synthesising them needs the C
-  backend to learn a "declared but unused" parameter shape so
-  the printed signature can carry the full hinted arity.
 - **Struct hint application** (B3.6 follow-up, FR-17 / FR-20).
   `[[struct]]` hints parse and enter the evidence graph, but
   `apply_struct_hint` still has no path to retype recovered
