@@ -49,31 +49,14 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22 are complete — see [CHANGELOG.md](./CHANGELOG.md).
-B3.23 – B3.31 are the M3 "real decompiler" follow-on, queued to
-close the readability and signature-correctness gaps surfaced in
-review (PLT/import naming, ABI gating, dead-store DCE, canonical
-`main`, return-width inference, CRT classification, etc.). The
-"B3 residue shelf" further down tracks heavier residue items that
-stay deferred past M3 and are sized as separate milestones rather
-than numbered batches.
-
-### B3.23 — PLT/GOT stub recognition + import naming
-- `dac-recovery`: x86-64 PLT stub detector
-  (`jmp [GOT+rel]; push N; jmp PLT0` and `.plt.sec` / IFUNC variants).
-- Cross-reference GOT entry → `BinaryModel.relocations[*].symbol` to
-  bind a stub VA to its imported symbol name.
-- New `FunctionKind::PltStub { import: String }` on `Function`.
-- `FunctionSet` discoverer sets `Function.name` to the import with
-  `Confidence::Observed`; call sites into the stub render the import
-  name in the C backend.
-- C backend: PLT stubs emit a forward declaration
-  (`extern <sig> write(...);`) instead of a body — entries vanish from
-  the per-function body section but stay in callgraph + annotations.
-- **Done when:** `0x1030` in the `hello-x86_64` fixture resolves to
-  `write` across the function list, callgraph, annotation JSON, and
-  the call expression inside `main`; `named_values` ratio rises
-  (FR-9, FR-19, FR-21, I-3).
+B3.1 – B3.22, B3.26, B3.27, and B3.23 are complete — see
+[CHANGELOG.md](./CHANGELOG.md). B3.24, B3.25, B3.28 – B3.31 are the
+M3 "real decompiler" follow-on still queued, closing the remaining
+readability and signature-correctness gaps surfaced in review (ABI
+gating, tail-call thunks, canonical `main`, return-width inference,
+CRT classification, etc.). The "B3 residue shelf" further down tracks
+heavier residue items that stay deferred past M3 and are sized as
+separate milestones rather than numbered batches.
 
 ### B3.24 — ABI candidate set gated by binary format
 - `dac-recovery::convention::candidates_for(format, arch)` — drops
@@ -143,12 +126,13 @@ than numbered batches.
 
 ### Sequencing
 
-B3.23 and B3.24 are independent and can land in either order.
-B3.26 is the largest single readability lever and is independent
-of the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG →
-fewer fallback blocks to suppress). B3.28 depends on B3.24 (ABI
-gate stabilises the signature input) and B3.29 (return width feeds
-the canonical `main` shape). B3.31 can land at any point.
+B3.24 is independent of the rest of the queued M3 follow-on and can
+land in either order with B3.25. B3.26 is the largest single
+readability lever and is independent of the format/ABI batches.
+B3.27 depends on B3.26 (cleaner CFG → fewer fallback blocks to
+suppress). B3.28 depends on B3.24 (ABI gate stabilises the signature
+input) and B3.29 (return width feeds the canonical `main` shape).
+B3.31 can land at any point.
 
 ### B3 residue shelf
 

@@ -63,7 +63,7 @@ use std::fmt::Write as _;
 use dac_binfmt::BinaryModel;
 use dac_core::{Confidence, EdgeKind, EvidenceGraph, EvidenceId, EvidenceNode, IrLayer, Source};
 use dac_hints::{FunctionHint, Hints};
-use dac_recovery::{FunctionSet, SourceMask, SYMBOL_CONFIDENCE};
+use dac_recovery::{FunctionSet, SourceMask, PLT_BINDING_CONFIDENCE, SYMBOL_CONFIDENCE};
 
 use crate::lift::USER_HINT_CONFIDENCE;
 
@@ -245,6 +245,24 @@ fn annotate_name(
                 evidence: hint_evidence_chain(graph, preds, h),
             };
         }
+    }
+    // B3.23: a PLT-stub trampoline whose `JUMP_SLOT` relocation
+    // bound it to an imported symbol gets the import name with an
+    // `Observed` confidence — the relocation table is binary-
+    // grounded, so the binding is at least as authoritative as a
+    // symbol-table entry.
+    if let (true, Some(name)) = (f.sources.contains(SourceMask::PLT), &f.name) {
+        let conf = Confidence::new(PLT_BINDING_CONFIDENCE, Source::Observed);
+        let why = format!(
+            "{format_label} PLT trampoline at {addr:#018x} resolves to imported symbol '{name}' via JUMP_SLOT relocation",
+            addr = f.address,
+        );
+        return FactAnnotation {
+            value: name.clone(),
+            confidence: conf,
+            explanation: why,
+            evidence: evidence_chain(graph, preds, f.evidence),
+        };
     }
     let has_symbol = f.sources.contains(SourceMask::SYMBOL);
     let (value, confidence, explanation) = if let (true, Some(name)) = (has_symbol, &f.name) {
@@ -899,6 +917,64 @@ mod tests {
             .iter()
             .any(|e| matches!(e.kind, EvidenceRefKind::IrNode { .. }));
         assert!(has_bytes && has_ir);
+    }
+
+    #[test]
+    fn b3_23_plt_stub_name_renders_as_observed_with_import_explanation() {
+        // Build a `.plt`-bearing model whose PLT trampoline at
+        // `0x1000` resolves to `write`. The annotation channel must
+        // surface the import name with `Observed` confidence and the
+        // "PLT trampoline ... JUMP_SLOT relocation" rationale.
+        use dac_binfmt::{Relocation, RelocationKind};
+        let mut model = base_model();
+        model.sections[0].name = ".plt".to_string();
+        // Replace the unused dynamic-symbol slot with a `write`
+        // entry the JUMP_SLOT relocation points at.
+        model.symbols.push(Symbol {
+            name: "write".to_string(),
+            address: 0,
+            size: 0,
+            kind: SymbolKind::Text,
+            binding: SymbolBinding::Global,
+            section: None,
+            source: SymbolSource::Dynsym,
+            undefined: true,
+        });
+        model.relocations.push(Relocation {
+            section: None,
+            offset: 0x4000,
+            kind: RelocationKind::Glob,
+            symbol: Some(0),
+            addend: 0,
+        });
+        // Encode `jmp qword ptr [rip + disp32]` at file offset 0 such
+        // that the effective address resolves to the JUMP_SLOT VA
+        // (0x4000) when decoded at the `.plt` section's start (0x1000).
+        let stub_va: u64 = 0x1000;
+        let got_va: u64 = 0x4000;
+        let rip = stub_va + 6;
+        let disp = (got_va as i64 - rip as i64) as i32;
+        let mut bytes = vec![0x90u8; 0x100];
+        bytes[0] = 0xff;
+        bytes[1] = 0x25;
+        bytes[2..6].copy_from_slice(&disp.to_le_bytes());
+        let mut graph = EvidenceGraph::new();
+        let set = discover_functions(&model, &bytes, &NullDecoder, &mut graph);
+        let (tool, input, settings) = stamp_pair();
+        let doc = AnnotationDoc::build(tool, input, settings, &model, &set, &graph, &Hints::new());
+        let f = doc
+            .functions
+            .iter()
+            .find(|f| f.address == stub_va)
+            .expect("PLT stub at 0x1000 surfaced in annotations");
+        assert_eq!(f.name.value, "write");
+        assert_eq!(f.name.confidence.source(), Source::Observed);
+        assert!(
+            f.name.explanation.contains("PLT trampoline"),
+            "expected PLT-trampoline explanation, got: {}",
+            f.name.explanation
+        );
+        assert!(f.name.explanation.contains("JUMP_SLOT"));
     }
 
     #[test]

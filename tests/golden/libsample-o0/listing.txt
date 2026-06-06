@@ -5,7 +5,7 @@
 ;; entry:     (none)
 ;; size:      15296 bytes
 ;; functions: 8
-;; signals:   symbol=8 entry=0 call=1 prologue=2
+;; signals:   symbol=8 entry=0 call=1 prologue=2 plt=0
 
 ;; ============================================================
 ;; function _init [0x0000000000001000..0x000000000000101b) (27 bytes)

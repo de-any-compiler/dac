@@ -65,6 +65,36 @@ pub enum Item {
     /// to C: a `field_<hex>` reference resolves to the same byte
     /// position the recovery observed at the SSA layer.
     StructDecl(StructDecl),
+    /// `extern <return> <name>(<params>);` — forward declaration for
+    /// an imported function bound to a PLT trampoline (B3.23,
+    /// FR-19). The body lives in the dynamic loader / shared
+    /// library; the source file just states the signature so call
+    /// sites can reference the import by identifier rather than an
+    /// integer-VA cast. The emitter renders one line per declaration
+    /// and no `{ … }` body.
+    ExternDecl(ExternDecl),
+}
+
+/// `extern <return> <name>(<params>);` — a forward declaration for
+/// a function the deterministic pipeline bound to an imported
+/// symbol through a recognised PLT trampoline (B3.23). Carries a
+/// `leading_comment` so the rendered translation unit can still
+/// cite the trampoline VA the binding came from (FR-21).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternDecl {
+    /// The imported symbol's source name (e.g. `write`, `malloc`).
+    pub name: String,
+    /// Return type. Flows in from the `dac-knowledge` API catalogue
+    /// when available; falls back to `int64_t` so the declaration is
+    /// always unambiguous.
+    pub return_type: CType,
+    /// Positional parameters. Empty list renders as `(void)`.
+    pub params: Vec<Param>,
+    /// `true` when the import is variadic (`printf`, `execlp`, …).
+    /// Renders a trailing `, ...` after the positional list.
+    pub is_variadic: bool,
+    /// Optional `/* … */` comment rendered above the declaration.
+    pub leading_comment: Option<String>,
 }
 
 /// A `typedef struct { … } NAME;` declaration emitted at translation-
@@ -474,7 +504,7 @@ mod tests {
             leading_comment: None,
         });
         match i {
-            Item::Function(_) | Item::StructDecl(_) => {}
+            Item::Function(_) | Item::StructDecl(_) | Item::ExternDecl(_) => {}
         }
     }
 

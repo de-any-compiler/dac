@@ -116,8 +116,12 @@ fn render_preamble(out: &mut String, input_name: &str, model: &BinaryModel, fns:
     let _ = writeln!(out, ";; functions: {}", fns.functions.len());
     let _ = writeln!(
         out,
-        ";; signals:   symbol={} entry={} call={} prologue={}",
-        fns.stats.from_symbol, fns.stats.from_entry, fns.stats.from_call, fns.stats.from_prologue,
+        ";; signals:   symbol={} entry={} call={} prologue={} plt={}",
+        fns.stats.from_symbol,
+        fns.stats.from_entry,
+        fns.stats.from_call,
+        fns.stats.from_prologue,
+        fns.stats.from_plt,
     );
     out.push('\n');
 }
@@ -160,6 +164,9 @@ fn format_sources(mask: SourceMask) -> String {
     }
     if mask.contains(SourceMask::PROLOGUE) {
         parts.push("prologue");
+    }
+    if mask.contains(SourceMask::PLT) {
+        parts.push("plt");
     }
     if parts.is_empty() {
         "(none)".to_string()

@@ -5,7 +5,7 @@
 ;; entry:     0x0000000000001060
 ;; size:      14472 bytes
 ;; functions: 5
-;; signals:   symbol=0 entry=1 call=2 prologue=2
+;; signals:   symbol=0 entry=1 call=2 prologue=2 plt=1
 
 ;; ============================================================
 ;; function <unnamed> [0x0000000000001000..0x000000000000101b) (27 bytes)
@@ -22,9 +22,9 @@
 0x000000000000101a  c3                            ret        ; ret
 
 ;; ============================================================
-;; function <unnamed> [0x0000000000001030..0x0000000000001040) (16 bytes)
-;;   confidence: derived 0.850
-;;   sources:   call
+;; function write [0x0000000000001030..0x0000000000001040) (16 bytes)
+;;   confidence: observed 1.000
+;;   sources:   call, plt
 ;; ============================================================
 0x0000000000001030  ff 25 ca 2f 00 00             jmp        qword ptr [4000h] ; jmp(ds:[16384]:64)
 0x0000000000001036  68 00 00 00 00                push       0 ; push(0#64)

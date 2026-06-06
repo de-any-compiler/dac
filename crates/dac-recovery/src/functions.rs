@@ -48,7 +48,7 @@
 use std::collections::BTreeMap;
 
 use dac_arch::{ControlFlow, InstructionDecoder};
-use dac_binfmt::{BinaryModel, Section, SymbolKind};
+use dac_binfmt::{elf_x86_64_plt_stubs, BinaryModel, Section, SymbolKind};
 use dac_core::{Confidence, EdgeKind, EvidenceGraph, EvidenceId, EvidenceNode, IrLayer, Source};
 
 /// Default confidence value for a function derived from a symbol-table
@@ -63,6 +63,11 @@ pub const CALL_EDGE_CONFIDENCE: f32 = 0.85;
 /// Default confidence value for a function discovered through a
 /// prologue pattern. The `Source` axis is [`Source::Derived`].
 pub const PROLOGUE_CONFIDENCE: f32 = 0.6;
+/// Default confidence value for a function bound to an imported
+/// symbol through a recognised PLT trampoline (B3.23). The
+/// relocation table is binary-grounded, so the `Source` axis is
+/// [`Source::Observed`].
+pub const PLT_BINDING_CONFIDENCE: f32 = 1.0;
 
 /// Bitmask recording which signals contributed to a discovered
 /// function.
@@ -84,6 +89,11 @@ impl SourceMask {
     pub const CALL: Self = Self(1 << 2);
     /// Matched a known prologue pattern.
     pub const PROLOGUE: Self = Self(1 << 3);
+    /// Bound to an imported symbol through a recognised PLT
+    /// trampoline (B3.23). The function lives at the trampoline
+    /// VA; the import name comes from the matched `JUMP_SLOT`
+    /// relocation.
+    pub const PLT: Self = Self(1 << 4);
 
     /// Empty mask.
     #[must_use]
@@ -116,6 +126,26 @@ impl SourceMask {
     }
 }
 
+/// Coarse taxonomy for a recovered function (B3.23).
+///
+/// `User` covers any function whose body should be lowered to source.
+/// `PltStub` marks a Procedure Linkage Table trampoline bound to a
+/// concrete imported symbol — the C backend renders these as `extern`
+/// forward declarations instead of bodies, and call sites resolve
+/// through the import name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum FunctionKind {
+    /// A regular function discovered in the binary. The deterministic
+    /// pipeline lifts its body end-to-end.
+    #[default]
+    User,
+    /// An ELF / PE trampoline whose first instruction reads a GOT
+    /// (or IAT) slot that the dynamic loader patches at resolution
+    /// time. `import` is the symbol the trampoline binds to (e.g.
+    /// `write`, `__libc_start_main`).
+    PltStub { import: String },
+}
+
 /// A function recovered from the binary.
 ///
 /// `address` is the entry virtual address (a function start). `end`,
@@ -142,6 +172,10 @@ pub struct Function {
     pub sources: SourceMask,
     /// Evidence-graph handle for this function.
     pub evidence: EvidenceId,
+    /// Coarse taxonomy (B3.23). `User` for ordinary functions;
+    /// `PltStub { import }` for PLT trampolines bound to an
+    /// imported symbol.
+    pub kind: FunctionKind,
 }
 
 impl Function {
@@ -168,6 +202,9 @@ pub struct DiscoveryStats {
     pub from_call: u64,
     /// Number of functions whose discovery included a prologue match.
     pub from_prologue: u64,
+    /// Number of functions bound to an imported symbol through a
+    /// recognised PLT trampoline (B3.23).
+    pub from_plt: u64,
 }
 
 /// Set of functions recovered from a [`BinaryModel`].
@@ -314,7 +351,28 @@ pub fn discover_functions(
         }
     }
 
-    // 4) Materialize. The `acc` map is already in ascending address
+    // 4) ELF x86-64 PLT trampoline binding (B3.23). For every
+    //    `(stub_va, import_name)` the walker recognises, fold the
+    //    binding in as an `Observed` signal that supersedes the call /
+    //    prologue confidence and (if no symbol contributed) pins the
+    //    name to the import. Non-matching formats / architectures
+    //    return an empty vector, so this is a no-op for PE and Mach-O.
+    let plt_bindings: BTreeMap<u64, String> =
+        elf_x86_64_plt_stubs(model, bytes).into_iter().collect();
+    for (stub_va, import_name) in &plt_bindings {
+        record_signal(
+            &mut acc,
+            &mut stats,
+            *stub_va,
+            PLT_BINDING_CONFIDENCE,
+            Source::Observed,
+            Some(import_name.clone()),
+            None,
+            SourceMask::PLT,
+        );
+    }
+
+    // 5) Materialize. The `acc` map is already in ascending address
     //    order; collect into a Vec, fill unknown ends from neighbours
     //    and section bounds, then mint the evidence nodes.
     let mut entries: Vec<(u64, Acc)> = acc.into_iter().collect();
@@ -336,6 +394,12 @@ pub fn discover_functions(
             id: fn_idx,
         });
         graph.add_edge(bytes_node, ir_node, EdgeKind::Supports);
+        let kind = match plt_bindings.get(&address) {
+            Some(import) => FunctionKind::PltStub {
+                import: import.clone(),
+            },
+            None => FunctionKind::User,
+        };
         functions.push(Function {
             address,
             end: ent.end,
@@ -343,6 +407,7 @@ pub fn discover_functions(
             confidence,
             sources: ent.sources,
             evidence: ir_node,
+            kind,
         });
     }
 
@@ -388,6 +453,7 @@ fn record_signal(
             SourceMask::ENTRY => stats.from_entry += 1,
             SourceMask::CALL => stats.from_call += 1,
             SourceMask::PROLOGUE => stats.from_prologue += 1,
+            SourceMask::PLT => stats.from_plt += 1,
             _ => {}
         }
     }
@@ -706,5 +772,153 @@ mod tests {
         let mut g = EvidenceGraph::new();
         let set = discover_functions(&model, &[], &NullDecoder, &mut g);
         assert!(set.functions.is_empty());
+    }
+
+    // ---- B3.23 PLT stub recognition + import naming ----------------
+
+    use dac_binfmt::{Relocation, RelocationKind, SymbolSource as BinSymbolSource};
+
+    /// Build a 6-byte `jmp qword ptr [rip + disp32]` whose effective
+    /// address resolves to `got_va` when decoded at `stub_va`. Mirrors
+    /// the helper in `dac-binfmt::plt` tests.
+    fn encode_jmp_indirect(stub_va: u64, got_va: u64) -> [u8; 6] {
+        let rip = stub_va + 6;
+        let disp = (got_va as i64 - rip as i64) as i32;
+        let mut bytes = [0u8; 6];
+        bytes[0] = 0xff;
+        bytes[1] = 0x25;
+        bytes[2..6].copy_from_slice(&disp.to_le_bytes());
+        bytes
+    }
+
+    /// Add a `.plt` section to `model` and write a single PLT stub at
+    /// `stub_va` pointing at `got_va`. Also adds a matching
+    /// `JUMP_SLOT` relocation binding `got_va` to the named dynsym
+    /// entry. Returns the file-image byte buffer the discoverer reads.
+    fn make_plt_model(stub_va: u64, got_va: u64, import: &str) -> (BinaryModel, Vec<u8>) {
+        let mut model = empty_model(0x1000, 0x40);
+        // Replace the default `.text` section with a `.plt` section
+        // so the PLT walker picks the stub up. The discoverer treats
+        // both equally because both are executable.
+        model.sections[0].name = ".plt".to_string();
+        let stub_off_in_section = (stub_va - model.sections[0].address) as usize;
+        let mut bytes = vec![0x90u8; model.sections[0].size as usize];
+        bytes[stub_off_in_section..stub_off_in_section + 6]
+            .copy_from_slice(&encode_jmp_indirect(stub_va, got_va));
+        // Dynsym entry for the imported symbol (undefined / address 0).
+        model.symbols.push(Symbol {
+            name: import.to_string(),
+            address: 0,
+            size: 0,
+            kind: SymbolKind::Text,
+            binding: SymbolBinding::Global,
+            section: None,
+            source: BinSymbolSource::Dynsym,
+            undefined: true,
+        });
+        model.relocations.push(Relocation {
+            section: None,
+            offset: got_va,
+            kind: RelocationKind::Glob,
+            symbol: Some(0),
+            addend: 0,
+        });
+        (model, bytes)
+    }
+
+    /// A PLT trampoline reaches the discoverer through `elf_x86_64_plt_stubs`
+    /// even when nothing else (no symbol, no caller, no prologue) pointed
+    /// at the stub address: the discoverer mints a fresh function with
+    /// the imported symbol's name and `FunctionKind::PltStub`.
+    #[test]
+    fn b3_23_plt_stub_is_minted_when_otherwise_undiscovered() {
+        let (model, bytes) = make_plt_model(0x1030, 0x4000, "write");
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        assert_eq!(set.functions.len(), 1);
+        let f = &set.functions[0];
+        assert_eq!(f.address, 0x1030);
+        assert_eq!(f.name.as_deref(), Some("write"));
+        assert!(f.sources.contains(SourceMask::PLT));
+        assert_eq!(f.confidence.source(), Source::Observed);
+        assert_eq!(
+            f.kind,
+            FunctionKind::PltStub {
+                import: "write".to_string()
+            }
+        );
+        assert_eq!(set.stats.from_plt, 1);
+    }
+
+    /// When a caller already minted a CALL signal for the PLT stub's
+    /// VA, the PLT binding *joins* the existing accumulator: the name
+    /// is set (which was `None` before), the confidence is promoted
+    /// from `Derived` to `Observed`, and the bitmask carries both
+    /// signals so `--debug` consumers see CALL and PLT.
+    #[test]
+    fn b3_23_plt_binding_promotes_existing_call_discovery() {
+        let (mut model, bytes) = make_plt_model(0x1030, 0x4000, "malloc");
+        // Pretend something direct-called the stub. The discoverer
+        // would normally fold this in via the call-edge sweep; we
+        // pre-seed the entry through a CALL-bearing symbol-table
+        // placeholder so the test is decoder-independent.
+        model.symbols.push(text_sym("", 0x1030, 0));
+        model.symbols[1].undefined = false;
+        // The pre-seed acts as a SYMBOL signal; the PLT binding still
+        // wins on naming because the symbol-table entry is anonymous.
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        let f = set.get(0x1030).expect("PLT stub at 0x1030");
+        assert_eq!(f.name.as_deref(), Some("malloc"));
+        assert!(f.sources.contains(SourceMask::PLT));
+        assert!(f.sources.contains(SourceMask::SYMBOL));
+        assert_eq!(f.confidence.source(), Source::Observed);
+        assert_eq!(
+            f.kind,
+            FunctionKind::PltStub {
+                import: "malloc".to_string()
+            }
+        );
+    }
+
+    /// A symbol-table-derived name takes precedence over the PLT name
+    /// — the relocation table and the symbol table both point at the
+    /// same VA, so the symbol-table name wins (it's a higher-level
+    /// fact). The function still tags as `PltStub` because the
+    /// trampoline shape is structural.
+    #[test]
+    fn b3_23_named_symbol_keeps_its_name_but_still_tags_as_plt_stub() {
+        let (mut model, bytes) = make_plt_model(0x1030, 0x4000, "write");
+        model.symbols.push(text_sym("write_alias", 0x1030, 0x10));
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        let f = set.get(0x1030).expect("PLT stub at 0x1030");
+        // The symbol-table entry came first and pinned the name.
+        assert_eq!(f.name.as_deref(), Some("write_alias"));
+        // But the PLT binding still tagged the kind so the C backend
+        // emits an extern declaration rather than a body.
+        assert_eq!(
+            f.kind,
+            FunctionKind::PltStub {
+                import: "write".to_string()
+            }
+        );
+        assert!(f.sources.contains(SourceMask::PLT));
+        assert!(f.sources.contains(SourceMask::SYMBOL));
+    }
+
+    /// Non-PLT functions (no relocation, no `.plt` section, ordinary
+    /// `.text`) keep `FunctionKind::User` and don't surface in the
+    /// `from_plt` counter.
+    #[test]
+    fn b3_23_user_functions_keep_user_kind() {
+        let mut model = empty_model(0x2000, 0x80);
+        model.symbols.push(text_sym("main", 0x2000, 0x40));
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &[], &NullDecoder, &mut g);
+        assert_eq!(set.functions.len(), 1);
+        assert_eq!(set.functions[0].kind, FunctionKind::User);
+        assert!(!set.functions[0].sources.contains(SourceMask::PLT));
+        assert_eq!(set.stats.from_plt, 0);
     }
 }

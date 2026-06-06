@@ -4,6 +4,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* dac-recovered PLT stub */
+/* address: 0x1030 */
+/* end: 0x1040 */
+/* confidence: 1.00 (Observed) */
+/* import: write (signature: dac-knowledge) */
+extern int64_t write(int32_t fd, void * buf, uint64_t n);
+
 /* dac-recovered function */
 /* address: 0x1000 */
 /* end: 0x101b */
@@ -42,24 +49,6 @@ int64_t _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t ar
 }
 
 /* dac-recovered function */
-/* address: 0x1030 */
-/* end: 0x1040 */
-/* confidence: 0.85 (Derived) */
-/* source_blocks: 1 */
-/* goto_count: 0 */
-/* label_count: 0 */
-/* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
-/* args: (no register args) */
-/* return_reg: none */
-/* stack_locals: 0 */
-/* struct_layouts: pointer=0 stack=0 */
-/* switch_tables: 0 */
-void fn_1030(void) {
-    /* dac: structuring fallback */
-}
-
-/* dac-recovered function */
 /* address: 0x1040 */
 /* end: 0x105e */
 /* confidence: 1.00 (Observed) */
@@ -85,7 +74,7 @@ int64_t main(int64_t arg0) {
 
     v1 = ((void *)((v0 - 8LL)));
     *((int64_t *)(((int64_t)(v1)))) = v2;
-    v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))fn_1030)(1LL, 8196LL, 6LL, v6, v7, v8);
+    v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))write)(1LL, 8196LL, 6LL, v6, v7, v8);
     v11 = (*((int64_t *)(((int64_t)(v1)))));
     return 42LL;
 }

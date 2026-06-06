@@ -5,7 +5,7 @@
 ;; entry:     0x0000000140001440
 ;; size:      40941 bytes
 ;; functions: 76
-;; signals:   symbol=75 entry=1 call=48 prologue=1
+;; signals:   symbol=75 entry=1 call=48 prologue=1 plt=0
 
 ;; ============================================================
 ;; function __mingw_invalidParameterHandler [0x0000000140001000..0x0000000140001010) (16 bytes)

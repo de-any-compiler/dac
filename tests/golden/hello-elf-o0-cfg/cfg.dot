@@ -9,7 +9,7 @@ digraph "fn__init_1000" {
     BB1 -> BB2 [label="fall"];
 }
 
-digraph "fn_1030" {
+digraph "fn_write_1030" {
     rankdir=TB;
     node [shape=box, fontname="monospace"];
     BB0 [label="BB0 @ 0x1030\l0x1030: jmp qword ptr [4000h]\l", style=filled, fillcolor="#e0e0e0"];

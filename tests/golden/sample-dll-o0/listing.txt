@@ -5,7 +5,7 @@
 ;; entry:     0x00000002630811f0
 ;; size:      29619 bytes
 ;; functions: 51
-;; signals:   symbol=50 entry=1 call=29 prologue=1
+;; signals:   symbol=50 entry=1 call=29 prologue=1 plt=0
 
 ;; ============================================================
 ;; function _CRT_INIT [0x0000000263081000..0x00000002630811f0) (496 bytes)

@@ -718,6 +718,7 @@ mod tests {
             confidence: Confidence::new(1.0, Source::Observed),
             sources: SourceMask::SYMBOL,
             evidence: ev,
+            kind: Default::default(),
         };
         (f, g)
     }

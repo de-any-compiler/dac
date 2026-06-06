@@ -1267,7 +1267,7 @@ fn field_name_at(layout: &StructLayout, offset: u64) -> Option<String> {
 /// require a kind of type the C AST does not model yet (composite,
 /// arrays, conflicting widths); callers fall back to a width-based
 /// integer.
-fn map_ir_type(ty: &IrType) -> Option<CType> {
+pub fn map_ir_type(ty: &IrType) -> Option<CType> {
     match ty {
         IrType::Unknown | IrType::Top => None,
         IrType::Int(i) => {

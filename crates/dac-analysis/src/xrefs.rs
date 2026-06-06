@@ -980,6 +980,7 @@ mod tests {
                 confidence: Confidence::new(1.0, Source::Observed),
                 sources: Default::default(),
                 evidence: caller_evidence,
+                kind: Default::default(),
             }],
             stats: Default::default(),
         };

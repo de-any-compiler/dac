@@ -46,6 +46,9 @@ pub(crate) struct Report {
     pub from_entry: u64,
     pub from_call: u64,
     pub from_prologue: u64,
+    /// Functions bound to an imported symbol through a recognised
+    /// PLT trampoline (B3.23).
+    pub from_plt: u64,
     pub coverage: Coverage,
     pub lift: LiftStats,
     pub functions: Vec<FunctionSummary>,
@@ -80,6 +83,7 @@ impl Report {
             from_entry: functions.stats.from_entry,
             from_call: functions.stats.from_call,
             from_prologue: functions.stats.from_prologue,
+            from_plt: functions.stats.from_plt,
             coverage,
             lift,
             functions: summaries,
@@ -154,8 +158,8 @@ pub(crate) fn render_report_text(r: &Report) -> String {
     let _ = writeln!(out, ";; functions:   {}", r.function_count);
     let _ = writeln!(
         out,
-        ";; signals:     symbol={} entry={} call={} prologue={}",
-        r.from_symbol, r.from_entry, r.from_call, r.from_prologue,
+        ";; signals:     symbol={} entry={} call={} prologue={} plt={}",
+        r.from_symbol, r.from_entry, r.from_call, r.from_prologue, r.from_plt,
     );
     let cov = &r.coverage;
     let pct = cov.lifted_fraction() * 100.0;
@@ -237,6 +241,9 @@ fn sources_str(mask: SourceMask) -> String {
     }
     if mask.contains(SourceMask::PROLOGUE) {
         parts.push("prologue");
+    }
+    if mask.contains(SourceMask::PLT) {
+        parts.push("plt");
     }
     if parts.is_empty() {
         "(none)".to_string()
@@ -352,6 +359,29 @@ mod tests {
         assert!(s.contains(";; functions:   1"));
         assert!(s.contains("0x0000000000001000"));
         assert!(s.contains("entry"));
+    }
+
+    #[test]
+    fn b3_23_report_text_includes_plt_signal_column() {
+        // B3.23: the `signals:` row carries a `plt=N` column so the
+        // discovery-side counter is grep-able even when no PLT was
+        // recognised in the run.
+        let model = empty_model();
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
+        let s = render_report_text(&r);
+        assert!(
+            s.contains(";; signals:     symbol=0 entry=1 call=0 prologue=0 plt=0"),
+            "expected plt= column in signals row of:\n{s}",
+        );
     }
 
     #[test]

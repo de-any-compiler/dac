@@ -5332,6 +5332,163 @@ binary the structurer reduced versus stopped at a recognised
 fallback), I-6 (degrade visibly — the fallback comment keeps the
 "structurer hit a fallback here" signal alive, just compactly).
 
+#### B3.23 — PLT/GOT stub recognition + import naming (2026-06-06)
+
+ChatGPT's review of dac's `-O3` C output called out the
+`void fn_1030(void) { /* dac: structuring fallback */ }` body for
+the `hello-x86_64` fixture's `write@plt` trampoline as the loudest
+remaining "decompiler stopped" signal in the rendered source. The
+function is an ELF Procedure Linkage Table stub — six bytes of
+`jmp qword ptr [rip + disp32]` plus the fallback `push imm32; jmp
+PLT[0]` epilogue — that the dynamic loader patches to the real
+`write` import at process start. The previous rendering missed both
+halves of the binding: the trampoline's role (an imported function,
+not a user function) and its concrete identity (`write`, traceable
+to the `.rela.plt` JUMP_SLOT relocation).
+
+The B3.21 PLT walker (`dac-binfmt::elf_x86_64_plt_stubs`) already
+returned the `(stub_va → import_name)` pairs needed to close that
+gap; what was missing was the function-level `kind` tag, the name
+promotion in `discover_functions`, and the C backend rendering that
+treats imports as `extern` forward declarations rather than bodies.
+
+**Behaviour change.** On the `hello-x86_64` fixture:
+
+- Default emit no longer contains `void fn_1030(void) { /* dac:
+  structuring fallback */ }`. Instead, the translation unit opens
+  with `extern int64_t write(int32_t fd, void * buf, uint64_t n);`
+  — the recovered libc signature lifted from the `dac-knowledge`
+  API catalogue. The function body section starts with `_init` and
+  user functions; PLT trampolines occupy a separate import section
+  ahead of the typedefs and bodies.
+- The call site in `main` now reads
+  `((long long (*)(...))write)(1LL, 8196LL, 6LL, ...)` instead of
+  the synthesised `fn_1030`. The arity-matching cast remains
+  (that's the existing call-rendering shape, scheduled for collapse
+  once the recovered convention reaches the emitter); the identifier
+  is the import.
+- The `--emit-report` `;; signals:` row gains a `plt=N` column so
+  the discovery-side counter is grep-able even when no PLT was
+  recognised in the run. On `hello-x86_64` it shows `plt=1`.
+- The CFG dot graph for the trampoline is now
+  `digraph "fn_write_1030" { … }` (was `digraph "fn_1030"`), so
+  cross-references between the source view and the CFG view agree
+  on the identifier.
+
+**Implementation.** Five-component change:
+
+1. **`dac-recovery::functions`** grew `pub enum FunctionKind { User,
+   PltStub { import: String } }` (with `Default = User`) and a new
+   `Function.kind` field. A new `SourceMask::PLT` bit and
+   `DiscoveryStats.from_plt: u64` track the PLT-derived signal.
+   `discover_functions` now calls `elf_x86_64_plt_stubs(model, bytes)`
+   after the main signal sweep and folds each `(stub_va, import_name)`
+   in through the existing `record_signal` path with
+   `Source::Observed` confidence. Materialisation then sets `kind`
+   from the PLT-binding map. Non-PLT functions keep
+   `FunctionKind::User`. Pure / deterministic — no global state.
+2. **`dac-backend-c::ast`** grew `Item::ExternDecl(ExternDecl)` and
+   the `ExternDecl { name, return_type, params, is_variadic,
+   leading_comment }` struct. The emitter renders one line per
+   declaration (`extern int64_t name(...);`) with an optional
+   `/* … */` leading comment block.
+3. **`dac-backend-c::lower`** exposed `map_ir_type` (was
+   private) so callers can convert `dac_ir::Type` to `CType` for
+   extern-declaration signatures.
+4. **`dac-cli::main::render_c_unit`** branches on `f.kind` for each
+   function: `PltStub { import }` synthesises an `ExternDecl` via
+   the new `lower_plt_stub_extern` helper (`dac-knowledge` catalogue
+   lookup → return-type + param list; falls back to
+   `int64_t name(void)` for unknown imports). The translation unit
+   now reads `extern` declarations, then typedefs, then user
+   function bodies.
+5. **`dac-cli::annotations::annotate_name`** added a PLT-stub branch
+   ahead of the symbol-table branch: when `SourceMask::PLT` is set
+   and the function carries a recovered name, the annotation
+   surfaces it with `Source::Observed` confidence and the
+   "{format} PLT trampoline at {VA} resolves to imported symbol
+   '{name}' via JUMP_SLOT relocation" rationale. Listing and report
+   `signals:` rows gained the `plt={N}` column and `plt` source
+   token.
+
+**Counter wiring.** The `from_plt` counter is structural (counts
+matched PLT bindings, independent of whether the backend chose to
+render them as `extern` or absorb them into a body). The translation
+unit emits one `ExternDecl` per `FunctionKind::PltStub`; the listing
+and DOT views still cite the trampoline at its original VA so a
+reviewer can locate it.
+
+**Per-fixture corpus deltas.** Fixture-by-fixture impact of the
+default emit + signal-row update:
+
+- `tests/golden/hello-elf-o1-c/source.c`: 6893 bytes (was 7118 —
+  −3.2 % on the rendered source; the trampoline body is replaced
+  with a 6-line `extern` block including its leading comment).
+- `tests/golden/hello-elf-o1-c-hints/source.c`: 6978 bytes (was
+  7272 — −4.0 %).
+- `tests/golden/hello-elf-o0-report/report.txt`: signals row gains
+  `plt=1`, `0x1030..0x1040` row renames `<unnamed>` → `write` with
+  source rank `observed/1.000  call,plt`.
+- `tests/golden/cpp-hierarchy-o1-cpp/listing.txt`: function count
+  grew 16 → 17 because the PLT walker minted `_ZdlPvm` (operator
+  delete) which previously had no caller to seed the discovery
+  pass; `__stack_chk_fail` (already discovered via CALL) gained the
+  `plt` source tag. Source `.cpp` is unchanged because the cpp
+  backend keys on `RecoveredClasses`, not the function set.
+- Every `listing.txt` golden gained a `plt={N}` column on the
+  `;; signals:` row (`0` for fixtures the walker recognised no PLT
+  in: PE, libsample, syscall-hello, …). PE / Mach-O do not surface
+  PLT here because `elf_x86_64_plt_stubs` early-returns for them;
+  the binding for PE imports already flows through the IAT-derived
+  symbol table at B3.21.
+
+**Tests.** Fourteen new unit tests:
+
+- `dac-recovery::functions::tests`:
+  - `b3_23_plt_stub_is_minted_when_otherwise_undiscovered`
+  - `b3_23_plt_binding_promotes_existing_call_discovery`
+  - `b3_23_named_symbol_keeps_its_name_but_still_tags_as_plt_stub`
+  - `b3_23_user_functions_keep_user_kind`
+- `dac-backend-c::emit::tests`:
+  - `b3_23_extern_decl_with_void_params_renders_as_one_line`
+  - `b3_23_extern_decl_with_signature_renders_typed_params`
+  - `b3_23_extern_decl_variadic_renders_trailing_ellipsis`
+  - `b3_23_extern_decl_leading_comment_renders_above_signature`
+- `dac-cli::main::tests`:
+  - `b3_23_lower_plt_stub_extern_uses_dac_knowledge_signature`
+  - `b3_23_lower_plt_stub_extern_falls_back_for_unknown_imports`
+  - `b3_23_lower_plt_stub_extern_propagates_variadic_flag`
+  - `b3_23_lower_plt_stub_extern_debug_appends_signal_row`
+- `dac-cli::report::tests`:
+  - `b3_23_report_text_includes_plt_signal_column`
+- `dac-cli::annotations::tests`:
+  - `b3_23_plt_stub_name_renders_as_observed_with_import_explanation`
+
+Plus the existing
+`dac-binfmt::plt::tests::real_hello_elf_binds_write_plt_stub` continues
+to anchor the regression check end-to-end. Workspace test count rose
+from 649 (B3.27) to 663 (+14).
+
+**Done-when checklist (PLAN.md):**
+
+- ✓ `0x1030` in the `hello-x86_64` fixture resolves to `write`
+  across the function list (`;; function write` in the listing),
+  callgraph (`fn_write_1030` in the CFG dot), annotation JSON
+  (`"value": "write"` under the function at `0x1030`), and the call
+  expression inside `main` (`write` identifier in the rendered
+  source).
+- ✓ Function-name coverage rises: `<unnamed>` /`fn_1030` → `write`
+  for the trampoline (the `named_values` *variable*-name coverage
+  is unchanged because the function name and variable names live on
+  different metrics; the function-name promotion is visible
+  function-by-function in the report's per-function list).
+- ✓ Round-trip compile gate still green: `cc -x c -c hello.c -o
+  hello.o` succeeds with only the existing
+  `function called through a non-compatible type` warning.
+
+Closes: B3.23, FR-9 (function discovery), FR-19 (import linking),
+FR-21 (target source quality), I-3 (confidence + source).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

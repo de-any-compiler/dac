@@ -37,7 +37,8 @@ use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, res
 use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter, RegisterFile};
 use dac_arch_x86::X86_64;
 use dac_backend_c::ast::{
-    Block as CBlock, CType, Function as CFunction, Item as CItem, Stmt as CStmt, TranslationUnit,
+    Block as CBlock, CType, ExternDecl as CExternDecl, Function as CFunction, Item as CItem,
+    Param as CParam, Stmt as CStmt, TranslationUnit,
 };
 use dac_backend_c::{
     default_includes as c_default_includes, emit as c_emit,
@@ -463,6 +464,12 @@ fn render_c_unit(
     // function that references it.
     let mut typedefs: std::collections::BTreeMap<String, dac_backend_c::ast::StructDecl> =
         std::collections::BTreeMap::new();
+    // B3.23: PLT-bound functions surface as `extern <sig> name(...);`
+    // forward declarations instead of bodies. Collect them separately
+    // so the rendered translation unit starts with imports, then
+    // typedefs, then user-function bodies — a stable ordering callers
+    // (and the golden tests) can rely on.
+    let mut extern_items: Vec<CItem> = Vec::new();
     let mut function_items: Vec<CItem> = Vec::with_capacity(functions.functions.len());
     for (i, f) in functions.functions.iter().enumerate() {
         let outcome = lift_outcomes.and_then(|os| os.get(i));
@@ -470,13 +477,18 @@ fn render_c_unit(
             .functions
             .iter()
             .find(|a| a.address == f.address);
+        if let dac_recovery::FunctionKind::PltStub { import } = &f.kind {
+            extern_items.push(CItem::ExternDecl(lower_plt_stub_extern(f, import, debug)));
+            continue;
+        }
         let lowered = lower_one_c_function(f, outcome, annot, &resolver, debug);
         for decl in lowered.struct_decls {
             typedefs.entry(decl.name.clone()).or_insert(decl);
         }
         function_items.push(CItem::Function(lowered.function));
     }
-    let mut items: Vec<CItem> = typedefs.into_values().map(CItem::StructDecl).collect();
+    let mut items: Vec<CItem> = extern_items;
+    items.extend(typedefs.into_values().map(CItem::StructDecl));
     items.extend(function_items);
     let mut includes = c_default_includes();
     includes.insert(
@@ -595,6 +607,92 @@ fn lower_one_c_function(
             }
         }
     }
+}
+
+/// Lower a PLT-bound stub function (B3.23) to a C `extern` forward
+/// declaration. Looks the import up in the `dac-knowledge` API
+/// catalogue: when matched, the recovered signature drives the
+/// rendered `return_type` and `params`; otherwise the declaration
+/// falls back to `int64_t name(void)` so callers compile.
+fn lower_plt_stub_extern(f: &dac_recovery::Function, import: &str, debug: bool) -> CExternDecl {
+    let signature = dac_knowledge::lookup_api_signature(import);
+    let return_type = signature
+        .and_then(|s| dac_backend_c::map_ir_type(&s.return_ty))
+        .unwrap_or(CType::Int {
+            width_bits: 64,
+            signed: true,
+        });
+    let params: Vec<CParam> = signature
+        .map(|s| {
+            s.parameters
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let ty = dac_backend_c::map_ir_type(&p.ty).unwrap_or(CType::Int {
+                        width_bits: 64,
+                        signed: true,
+                    });
+                    let name = if p.name.is_empty() {
+                        format!("arg{i}")
+                    } else {
+                        p.name.to_string()
+                    };
+                    CParam { name, ty }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let is_variadic = signature.map(|s| s.is_variadic).unwrap_or(false);
+    let leading_comment = Some(plt_stub_leading_comment(
+        f,
+        import,
+        signature.is_some(),
+        debug,
+    ));
+    CExternDecl {
+        name: sanitize_c_identifier(import),
+        return_type,
+        params,
+        is_variadic,
+        leading_comment,
+    }
+}
+
+/// Build the `/* … */` block that precedes a PLT-stub `extern`
+/// declaration. Mirrors the shape of [`stub_body_leading_comment`]
+/// so the rendered translation unit stays uniform: address range,
+/// joined-discovery confidence, plus a one-line trampoline / import
+/// pair so a reviewer can trace the binding back to the relocation
+/// table.
+fn plt_stub_leading_comment(
+    f: &dac_recovery::Function,
+    import: &str,
+    signature_known: bool,
+    debug: bool,
+) -> String {
+    let mut s = format!(
+        "dac-recovered PLT stub\n\
+         address: {:#x}\n\
+         end: {}\n\
+         confidence: {:.2} ({:?})\n\
+         import: {} (signature: {})",
+        f.address,
+        f.end
+            .map(|e| format!("{e:#x}"))
+            .unwrap_or_else(|| "?".to_string()),
+        f.confidence.value(),
+        f.confidence.source(),
+        import,
+        if signature_known {
+            "dac-knowledge"
+        } else {
+            "unknown — fell back to int64_t(void)"
+        },
+    );
+    if debug {
+        s.push_str("\nsignal: PLT");
+    }
+    s
 }
 
 /// Build the leading comment for a recovered function whose body
@@ -1184,4 +1282,121 @@ fn hints_error_to_core(err: HintError) -> dac_core::Error {
     let msg = err.message();
     tracing::error!(error = %msg, "failed to load hints file");
     dac_core::Error::Other(msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dac_core::{Confidence, EvidenceGraph, EvidenceNode, IrLayer, Source};
+
+    fn plt_stub_function(import: &str, address: u64) -> dac_recovery::Function {
+        let mut g = EvidenceGraph::new();
+        let ev = g.add_node(EvidenceNode::IrNode {
+            layer: IrLayer::Cfg,
+            id: 0,
+        });
+        dac_recovery::Function {
+            address,
+            end: Some(address + 0x10),
+            name: Some(import.to_string()),
+            confidence: Confidence::new(1.0, Source::Observed),
+            sources: dac_recovery::SourceMask::PLT,
+            evidence: ev,
+            kind: dac_recovery::FunctionKind::PltStub {
+                import: import.to_string(),
+            },
+        }
+    }
+
+    /// A PLT stub whose import lives in the `dac-knowledge` catalogue
+    /// surfaces the recovered signature: the return type and each
+    /// positional parameter come from the catalogue entry, so the
+    /// rendered declaration reads like the libc / Win32 header.
+    #[test]
+    fn b3_23_lower_plt_stub_extern_uses_dac_knowledge_signature() {
+        let f = plt_stub_function("write", 0x1030);
+        let e = lower_plt_stub_extern(&f, "write", false);
+        assert_eq!(e.name, "write");
+        // `write` in dac-knowledge returns `ssize_t` (int64_t in C),
+        // and takes (int fd, void *buf, size_t n).
+        assert!(matches!(
+            e.return_type,
+            CType::Int {
+                width_bits: 64,
+                signed: true
+            }
+        ));
+        assert_eq!(e.params.len(), 3);
+        assert_eq!(e.params[0].name, "fd");
+        assert!(matches!(
+            e.params[0].ty,
+            CType::Int {
+                width_bits: 32,
+                signed: true
+            }
+        ));
+        assert!(matches!(e.params[1].ty, CType::Ptr(_)));
+        assert!(matches!(
+            e.params[2].ty,
+            CType::Int {
+                width_bits: 64,
+                signed: false
+            }
+        ));
+        assert!(!e.is_variadic);
+    }
+
+    /// An import the catalogue doesn't know about degrades visibly
+    /// (I-6): a single `int64_t name(void);` declaration and a
+    /// leading-comment marker so a reader sees the fallback fired.
+    #[test]
+    fn b3_23_lower_plt_stub_extern_falls_back_for_unknown_imports() {
+        let f = plt_stub_function("__nosuch_runtime_helper", 0x2000);
+        let e = lower_plt_stub_extern(&f, "__nosuch_runtime_helper", false);
+        assert_eq!(e.name, "__nosuch_runtime_helper");
+        assert!(matches!(
+            e.return_type,
+            CType::Int {
+                width_bits: 64,
+                signed: true
+            }
+        ));
+        assert!(e.params.is_empty());
+        assert!(!e.is_variadic);
+        let comment = e.leading_comment.expect("leading comment present");
+        assert!(
+            comment.contains("unknown — fell back to int64_t(void)"),
+            "missing fallback marker: {comment:?}"
+        );
+    }
+
+    /// Variadic catalog entries (`printf`) propagate `is_variadic`
+    /// into the rendered declaration so the emitter writes
+    /// `extern int32_t printf(... , ...);`.
+    #[test]
+    fn b3_23_lower_plt_stub_extern_propagates_variadic_flag() {
+        let f = plt_stub_function("printf", 0x3000);
+        let e = lower_plt_stub_extern(&f, "printf", false);
+        assert!(e.is_variadic);
+    }
+
+    /// The `--debug` knob appends a `signal: PLT` row to the leading
+    /// comment so a reviewer can see which discoverer signal pinned
+    /// the binding without re-running with `--emit-annotations`.
+    #[test]
+    fn b3_23_lower_plt_stub_extern_debug_appends_signal_row() {
+        let f = plt_stub_function("write", 0x1030);
+        let e_default = lower_plt_stub_extern(&f, "write", false);
+        let e_debug = lower_plt_stub_extern(&f, "write", true);
+        assert!(!e_default
+            .leading_comment
+            .as_deref()
+            .unwrap()
+            .contains("signal: PLT"));
+        assert!(e_debug
+            .leading_comment
+            .as_deref()
+            .unwrap()
+            .contains("signal: PLT"));
+    }
 }

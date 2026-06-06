@@ -28,8 +28,8 @@ use std::fmt::Write as _;
 #[cfg(test)]
 use crate::ast::StructField;
 use crate::ast::{
-    BinaryOp, Block, CType, Expr, Function, Item, Local, Param, Stmt, StructDecl, SwitchArm,
-    TranslationUnit, UnaryOp,
+    BinaryOp, Block, CType, Expr, ExternDecl, Function, Item, Local, Param, Stmt, StructDecl,
+    SwitchArm, TranslationUnit, UnaryOp,
 };
 
 /// Render a [`TranslationUnit`] as formatted C source.
@@ -65,7 +65,39 @@ fn emit_item(p: &mut Printer<'_>, item: &Item) {
     match item {
         Item::Function(f) => emit_function_into(p, f),
         Item::StructDecl(s) => emit_struct_decl(p, s),
+        Item::ExternDecl(e) => emit_extern_decl(p, e),
     }
+}
+
+fn emit_extern_decl(p: &mut Printer<'_>, e: &ExternDecl) {
+    if let Some(comment) = &e.leading_comment {
+        for line in comment.lines() {
+            p.write_line(&format!("/* {line} */"));
+        }
+    }
+    let mut line = String::from("extern ");
+    line.push_str(&render_type_prefix(&e.return_type));
+    line.push(' ');
+    line.push_str(&e.name);
+    line.push('(');
+    if e.params.is_empty() && !e.is_variadic {
+        line.push_str("void");
+    } else {
+        for (i, param) in e.params.iter().enumerate() {
+            if i > 0 {
+                line.push_str(", ");
+            }
+            line.push_str(&render_param(param));
+        }
+        if e.is_variadic {
+            if !e.params.is_empty() {
+                line.push_str(", ");
+            }
+            line.push_str("...");
+        }
+    }
+    line.push_str(");");
+    p.write_line(&line);
 }
 
 fn emit_struct_decl(p: &mut Printer<'_>, s: &StructDecl) {
@@ -775,5 +807,116 @@ void f(void) {
 }
 ";
         assert_eq!(s, want);
+    }
+
+    // ---- B3.23 extern declarations ---------------------------------
+
+    #[test]
+    fn b3_23_extern_decl_with_void_params_renders_as_one_line() {
+        // A typeless extern (no recovered signature) falls back to
+        // `int64_t name(void);` so the rendered source stays valid C.
+        let e = ExternDecl {
+            name: "abort".into(),
+            return_type: CType::Int {
+                width_bits: 64,
+                signed: true,
+            },
+            params: Vec::new(),
+            is_variadic: false,
+            leading_comment: None,
+        };
+        let u = TranslationUnit {
+            includes: Vec::new(),
+            items: vec![Item::ExternDecl(e)],
+        };
+        assert_eq!(emit(&u), "extern int64_t abort(void);\n");
+    }
+
+    #[test]
+    fn b3_23_extern_decl_with_signature_renders_typed_params() {
+        // Mirrors `ssize_t write(int fd, const void *buf, size_t n);`
+        // from the dac-knowledge catalogue.
+        let e = ExternDecl {
+            name: "write".into(),
+            return_type: CType::Int {
+                width_bits: 64,
+                signed: true,
+            },
+            params: vec![
+                Param {
+                    name: "fd".into(),
+                    ty: CType::Int {
+                        width_bits: 32,
+                        signed: true,
+                    },
+                },
+                Param {
+                    name: "buf".into(),
+                    ty: CType::Ptr(Box::new(CType::Void)),
+                },
+                Param {
+                    name: "n".into(),
+                    ty: CType::Int {
+                        width_bits: 64,
+                        signed: false,
+                    },
+                },
+            ],
+            is_variadic: false,
+            leading_comment: None,
+        };
+        let s = emit_function_via_unit(Item::ExternDecl(e));
+        assert_eq!(
+            s,
+            "extern int64_t write(int32_t fd, void * buf, uint64_t n);\n",
+        );
+    }
+
+    #[test]
+    fn b3_23_extern_decl_variadic_renders_trailing_ellipsis() {
+        let e = ExternDecl {
+            name: "printf".into(),
+            return_type: CType::Int {
+                width_bits: 32,
+                signed: true,
+            },
+            params: vec![Param {
+                name: "fmt".into(),
+                ty: CType::Ptr(Box::new(CType::Int {
+                    width_bits: 8,
+                    signed: true,
+                })),
+            }],
+            is_variadic: true,
+            leading_comment: None,
+        };
+        let s = emit_function_via_unit(Item::ExternDecl(e));
+        assert_eq!(s, "extern int32_t printf(int8_t * fmt, ...);\n");
+    }
+
+    #[test]
+    fn b3_23_extern_decl_leading_comment_renders_above_signature() {
+        let e = ExternDecl {
+            name: "abort".into(),
+            return_type: CType::Void,
+            params: Vec::new(),
+            is_variadic: false,
+            leading_comment: Some("dac-recovered PLT stub\nimport: abort".to_string()),
+        };
+        let s = emit_function_via_unit(Item::ExternDecl(e));
+        let want = "\
+/* dac-recovered PLT stub */
+/* import: abort */
+extern void abort(void);
+";
+        assert_eq!(s, want);
+    }
+
+    fn emit_function_via_unit(item: Item) -> String {
+        let u = TranslationUnit {
+            includes: Vec::new(),
+            items: vec![item],
+        };
+        emit(&u)
     }
 }

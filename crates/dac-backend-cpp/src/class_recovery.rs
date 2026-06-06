@@ -778,6 +778,7 @@ mod tests {
                     layer: IrLayer::Cfg,
                     id: addr,
                 }),
+                kind: Default::default(),
             })
             .collect();
         FunctionSet {
