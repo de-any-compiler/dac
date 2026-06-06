@@ -45,9 +45,9 @@
 //! function bodies when the symbol table is silent, and gives B2.1
 //! (CFG construction) a half-open byte range to work with.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use dac_arch::{ControlFlow, InstructionDecoder};
+use dac_arch::{ControlFlow, DecodedInstruction, InstructionDecoder};
 use dac_binfmt::{elf_x86_64_plt_stubs, BinaryModel, Section, SymbolKind};
 use dac_core::{Confidence, EdgeKind, EvidenceGraph, EvidenceId, EvidenceNode, IrLayer, Source};
 
@@ -126,13 +126,17 @@ impl SourceMask {
     }
 }
 
-/// Coarse taxonomy for a recovered function (B3.23).
+/// Coarse taxonomy for a recovered function (B3.23, B3.25).
 ///
 /// `User` covers any function whose body should be lowered to source.
 /// `PltStub` marks a Procedure Linkage Table trampoline bound to a
 /// concrete imported symbol — the C backend renders these as `extern`
 /// forward declarations instead of bodies, and call sites resolve
-/// through the import name.
+/// through the import name. `Thunk` marks an in-binary forwarding
+/// thunk whose entire body is `[endbr64?]; jmp <known function>` —
+/// the C backend renders these as a one-line tail call to the target
+/// instead of stubbing the body with a structuring fallback (B3.25,
+/// FR-21).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum FunctionKind {
     /// A regular function discovered in the binary. The deterministic
@@ -144,6 +148,11 @@ pub enum FunctionKind {
     /// time. `import` is the symbol the trampoline binds to (e.g.
     /// `write`, `__libc_start_main`).
     PltStub { import: String },
+    /// An in-binary forwarding thunk whose entire body is an optional
+    /// `endbr64` landing pad followed by an unconditional jump to
+    /// another recovered function's entry. `target` is the
+    /// jump-target virtual address (B3.25, FR-21).
+    Thunk { target: u64 },
 }
 
 /// A function recovered from the binary.
@@ -205,6 +214,11 @@ pub struct DiscoveryStats {
     /// Number of functions bound to an imported symbol through a
     /// recognised PLT trampoline (B3.23).
     pub from_plt: u64,
+    /// Number of functions reclassified as forwarding thunks by
+    /// [`detect_thunks`] (B3.25). Counts the
+    /// `[endbr64?]; jmp <known function>` shape only — indirect
+    /// IAT-slot jumps are handled by the PLT-binding path instead.
+    pub from_thunk: u64,
 }
 
 /// Set of functions recovered from a [`BinaryModel`].
@@ -412,6 +426,139 @@ pub fn discover_functions(
     }
 
     FunctionSet { functions, stats }
+}
+
+/// Reclassify forwarding thunks in `set` (B3.25, FR-21).
+///
+/// A *forwarding thunk* is a function whose entire body is
+///
+/// ```text
+/// [endbr64?] ; jmp <target>
+/// ```
+///
+/// where `<target>` is itself the entry of another recovered function
+/// in `set`. Trailing nop padding is tolerated (the unconditional jmp
+/// ends control flow, so anything after it is dead). The classic
+/// example is `frame_dummy` on ELF, which is `endbr64; jmp
+/// register_tm_clones`; on PE, mingw's `atexit` is `jmp _crt_atexit`.
+///
+/// Matched functions transition from [`FunctionKind::User`] to
+/// [`FunctionKind::Thunk`] with `target` set to the jump destination.
+/// The C backend then renders the body as a one-line tail call to the
+/// target instead of a `/* dac: structuring fallback */` stub, which
+/// is what every other path would produce for a function whose
+/// terminator is a tail-jump out of itself (B3.27 collapsed
+/// `__builtin_unreachable();` to the structuring-fallback line, and a
+/// thunk's body is exactly that case).
+///
+/// Functions already reclassified as [`FunctionKind::PltStub`] are
+/// left untouched — a PLT trampoline is also a forwarding thunk in
+/// spirit, but it binds to an *external* import and the extern-decl
+/// rendering already conveys the binding more precisely than a
+/// `return imp();` body would. Functions with an unknown `end` are
+/// skipped because the byte range that bounds the pattern match is
+/// not known.
+///
+/// Determinism: [`Pure`](dac_core::Source) — the only inputs are the
+/// (already-deterministic) function set and the (already-deterministic)
+/// decoded instruction stream, and the only side-effect is mutating
+/// `set.functions[i].kind` plus the
+/// [`DiscoveryStats::from_thunk`] counter. The evidence graph is
+/// untouched because the byte-range and CFG-layer nodes the
+/// discoverer minted already cover the thunk's span.
+pub fn detect_thunks(
+    set: &mut FunctionSet,
+    model: &BinaryModel,
+    bytes: &[u8],
+    decoder: &dyn InstructionDecoder,
+) {
+    let exec_sections: Vec<&Section> = model
+        .sections
+        .iter()
+        .filter(|s| s.perms.executable && s.file_offset.is_some() && s.size > 0)
+        .collect();
+    let entries: BTreeSet<u64> = set.functions.iter().map(|f| f.address).collect();
+    for f in set.functions.iter_mut() {
+        if !matches!(f.kind, FunctionKind::User) {
+            continue;
+        }
+        let Some(end) = f.end else { continue };
+        let Some(slice) = function_slice(f.address, end, &exec_sections, bytes) else {
+            continue;
+        };
+        let instructions: Vec<DecodedInstruction> =
+            decoder.iter(slice, f.address).take(3).collect();
+        if let Some(target) = match_thunk_pattern(&instructions, &entries) {
+            f.kind = FunctionKind::Thunk { target };
+            set.stats.from_thunk += 1;
+        }
+    }
+}
+
+/// Match the canonical forwarding-thunk shape in `body`. Returns the
+/// jump target when the body is `[endbr64?]; jmp <known function>`
+/// (with `<known function>` ∈ `entries`); returns `None` otherwise.
+///
+/// `body` is the head of the function's instruction stream (the
+/// caller passes the first three decoded instructions, which is
+/// enough to cover the longest accepted prefix). Trailing instructions
+/// after the unconditional jmp are dead and are not inspected.
+fn match_thunk_pattern(body: &[DecodedInstruction], entries: &BTreeSet<u64>) -> Option<u64> {
+    let mut iter = body.iter();
+    let first = iter.next()?;
+    if !first.valid {
+        return None;
+    }
+    let jmp = if first.mnemonic == "endbr64" {
+        let second = iter.next()?;
+        if !second.valid {
+            return None;
+        }
+        second
+    } else {
+        first
+    };
+    let ControlFlow::UnconditionalBranch { target: Some(t) } = jmp.flow else {
+        return None;
+    };
+    if !entries.contains(&t) {
+        return None;
+    }
+    Some(t)
+}
+
+/// Slice `bytes` to the function's executable byte range, clamped to
+/// the enclosing executable section. Returns `None` when the start /
+/// end / section bounds disagree — the same defensive shape as
+/// [`crate::convention`]-side helpers, lifted here so
+/// [`detect_thunks`] can reuse it without leaking into the public
+/// surface.
+fn function_slice<'a>(
+    start: u64,
+    end: u64,
+    exec_sections: &[&Section],
+    bytes: &'a [u8],
+) -> Option<&'a [u8]> {
+    let sec = exec_sections.iter().find(|s| {
+        let s_start = s.address;
+        let s_end = s_start.saturating_add(s.size);
+        start >= s_start && start < s_end
+    })?;
+    let s_start = sec.address;
+    let s_end = s_start.saturating_add(sec.size);
+    let clamped_end = end.min(s_end);
+    if clamped_end <= start {
+        return None;
+    }
+    let file_off = usize::try_from(sec.file_offset?).ok()?;
+    let in_sec_off = usize::try_from(start - s_start).ok()?;
+    let length = usize::try_from(clamped_end - start).ok()?;
+    let begin = file_off.checked_add(in_sec_off)?;
+    let finish = begin.checked_add(length)?;
+    if finish > bytes.len() {
+        return None;
+    }
+    Some(&bytes[begin..finish])
 }
 
 #[derive(Debug, Default)]
@@ -920,5 +1067,252 @@ mod tests {
         assert_eq!(set.functions[0].kind, FunctionKind::User);
         assert!(!set.functions[0].sources.contains(SourceMask::PLT));
         assert_eq!(set.stats.from_plt, 0);
+    }
+
+    // ---- B3.25 forwarding-thunk recognition ------------------------
+
+    /// Build a `DecodedInstruction` carrying `mnemonic` / `flow` at
+    /// `address`. The bytes / operands fields are irrelevant for the
+    /// thunk detector (only `mnemonic`, `valid`, and `flow` are
+    /// inspected), so the helper leaves them at their defaults so the
+    /// test reads as a sequence of "endbr64 here, jmp there".
+    fn decoded(address: u64, mnemonic: &str, flow: ControlFlow) -> dac_arch::DecodedInstruction {
+        dac_arch::DecodedInstruction {
+            address,
+            length: 1,
+            bytes: Vec::new(),
+            mnemonic: mnemonic.to_string(),
+            operands: String::new(),
+            flow,
+            valid: true,
+        }
+    }
+
+    /// A decoder driven by a per-address script. `scripts` maps the
+    /// requested decode address to the canned instruction stream the
+    /// helper hands back. Useful for exercising
+    /// [`detect_thunks`]'s pattern matcher without round-tripping
+    /// through the real x86-64 decoder.
+    struct ScriptedDecoder {
+        scripts: std::collections::BTreeMap<u64, Vec<dac_arch::DecodedInstruction>>,
+    }
+
+    impl ScriptedDecoder {
+        fn new() -> Self {
+            Self {
+                scripts: std::collections::BTreeMap::new(),
+            }
+        }
+
+        fn at(mut self, address: u64, stream: Vec<dac_arch::DecodedInstruction>) -> Self {
+            self.scripts.insert(address, stream);
+            self
+        }
+    }
+
+    impl InstructionDecoder for ScriptedDecoder {
+        fn decode_one(
+            &self,
+            _bytes: &[u8],
+            _address: u64,
+        ) -> Result<dac_arch::DecodedInstruction, dac_arch::DecodeError> {
+            Err(dac_arch::DecodeError::Truncated { offset: 0 })
+        }
+
+        fn iter<'a>(
+            &'a self,
+            _bytes: &'a [u8],
+            address: u64,
+        ) -> Box<dyn Iterator<Item = dac_arch::DecodedInstruction> + 'a> {
+            let stream = self.scripts.get(&address).cloned().unwrap_or_default();
+            Box::new(stream.into_iter())
+        }
+    }
+
+    /// Set up a two-function model: a candidate thunk at `thunk_va`
+    /// and its target at `target_va` inside the same `.text` section.
+    /// Returns the model alongside a byte buffer sized to cover both
+    /// functions so the `function_slice` byte-range bookkeeping is
+    /// happy (the scripted decoder ignores the contents).
+    fn two_function_model(thunk_va: u64, target_va: u64) -> (BinaryModel, Vec<u8>) {
+        let base = thunk_va.min(target_va);
+        let end = thunk_va.max(target_va).saturating_add(0x20);
+        let section_size = end - base;
+        let mut model = empty_model(base, section_size);
+        model.symbols.push(text_sym("thunk", thunk_va, 0x09));
+        model.symbols.push(text_sym("target", target_va, 0x10));
+        let bytes = vec![0u8; section_size as usize];
+        (model, bytes)
+    }
+
+    /// `endbr64; jmp <target>` lowering thunk: the canonical
+    /// `frame_dummy` shape. After [`detect_thunks`] the function
+    /// reclassifies to `FunctionKind::Thunk { target }` and the
+    /// discovery stats grow `from_thunk += 1`.
+    #[test]
+    fn b3_25_endbr64_jmp_known_function_reclassifies_as_thunk() {
+        let thunk_va = 0x1150;
+        let target_va = 0x10c0;
+        let (model, bytes) = two_function_model(thunk_va, target_va);
+        let decoder = ScriptedDecoder::new().at(
+            thunk_va,
+            vec![
+                decoded(thunk_va, "endbr64", ControlFlow::Sequential),
+                decoded(
+                    thunk_va + 4,
+                    "jmp",
+                    ControlFlow::UnconditionalBranch {
+                        target: Some(target_va),
+                    },
+                ),
+            ],
+        );
+        let mut g = EvidenceGraph::new();
+        let mut set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        detect_thunks(&mut set, &model, &bytes, &decoder);
+        let f = set.get(thunk_va).expect("thunk function");
+        assert_eq!(f.kind, FunctionKind::Thunk { target: target_va });
+        assert_eq!(set.stats.from_thunk, 1);
+        // The target stays a plain user function.
+        let t = set.get(target_va).expect("target function");
+        assert_eq!(t.kind, FunctionKind::User);
+    }
+
+    /// Bare `jmp <target>` (no `endbr64` prefix) — the mingw `atexit`
+    /// shape on PE. Still a forwarding thunk; reclassifies the same
+    /// way.
+    #[test]
+    fn b3_25_bare_jmp_known_function_reclassifies_as_thunk() {
+        let thunk_va = 0x1460;
+        let target_va = 0x29c8;
+        let (model, bytes) = two_function_model(thunk_va, target_va);
+        let decoder = ScriptedDecoder::new().at(
+            thunk_va,
+            vec![decoded(
+                thunk_va,
+                "jmp",
+                ControlFlow::UnconditionalBranch {
+                    target: Some(target_va),
+                },
+            )],
+        );
+        let mut g = EvidenceGraph::new();
+        let mut set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        detect_thunks(&mut set, &model, &bytes, &decoder);
+        assert_eq!(
+            set.get(thunk_va).unwrap().kind,
+            FunctionKind::Thunk { target: target_va }
+        );
+        assert_eq!(set.stats.from_thunk, 1);
+    }
+
+    /// `xor ecx, ecx; jmp <target>` (mingw `safe_flush` shape) is
+    /// *not* a pure forwarding thunk: the body mutates a register
+    /// before forwarding. Recognising it as a thunk would lose that
+    /// behaviour, so the detector leaves the kind as `User`.
+    #[test]
+    fn b3_25_jmp_after_other_work_is_not_a_thunk() {
+        let thunk_va = 0x1010;
+        let target_va = 0x2990;
+        let (model, bytes) = two_function_model(thunk_va, target_va);
+        let decoder = ScriptedDecoder::new().at(
+            thunk_va,
+            vec![
+                decoded(thunk_va, "xor", ControlFlow::Sequential),
+                decoded(
+                    thunk_va + 2,
+                    "jmp",
+                    ControlFlow::UnconditionalBranch {
+                        target: Some(target_va),
+                    },
+                ),
+            ],
+        );
+        let mut g = EvidenceGraph::new();
+        let mut set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        detect_thunks(&mut set, &model, &bytes, &decoder);
+        assert_eq!(set.get(thunk_va).unwrap().kind, FunctionKind::User);
+        assert_eq!(set.stats.from_thunk, 0);
+    }
+
+    /// A jump whose target is *not* itself a recovered function entry
+    /// is not a forwarding thunk (it might be a branch into the
+    /// middle of another function, a PLT stub we haven't bound yet,
+    /// or noise) — the detector leaves the kind as `User`.
+    #[test]
+    fn b3_25_jmp_to_non_entry_address_is_not_a_thunk() {
+        let thunk_va = 0x1150;
+        let (model, bytes) = two_function_model(thunk_va, 0x10c0);
+        let decoder = ScriptedDecoder::new().at(
+            thunk_va,
+            vec![decoded(
+                thunk_va,
+                "jmp",
+                // 0xdead is not in the function set.
+                ControlFlow::UnconditionalBranch {
+                    target: Some(0xdead),
+                },
+            )],
+        );
+        let mut g = EvidenceGraph::new();
+        let mut set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        detect_thunks(&mut set, &model, &bytes, &decoder);
+        assert_eq!(set.get(thunk_va).unwrap().kind, FunctionKind::User);
+        assert_eq!(set.stats.from_thunk, 0);
+    }
+
+    /// An indirect jump (`jmp rax`, `jmp [rip+disp]`) is structurally
+    /// a thunk shape on PE / ELF .got.plt, but B3.25 only handles
+    /// *direct* jumps with a known immediate target. The PLT-binding
+    /// path (B3.23) is what classifies indirect IAT jumps. The
+    /// detector therefore leaves these as `User` (or as `PltStub`
+    /// when the PLT walker matched them earlier).
+    #[test]
+    fn b3_25_indirect_jmp_is_not_classified_as_thunk() {
+        let thunk_va = 0x2960;
+        let (model, bytes) = two_function_model(thunk_va, 0x29c8);
+        let decoder = ScriptedDecoder::new().at(
+            thunk_va,
+            vec![decoded(thunk_va, "jmp", ControlFlow::IndirectBranch)],
+        );
+        let mut g = EvidenceGraph::new();
+        let mut set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        detect_thunks(&mut set, &model, &bytes, &decoder);
+        assert_eq!(set.get(thunk_va).unwrap().kind, FunctionKind::User);
+        assert_eq!(set.stats.from_thunk, 0);
+    }
+
+    /// A function already classified as a PLT stub stays a PLT stub
+    /// even when its body trivially looks like a forwarding thunk.
+    /// The extern-decl rendering carries more information than the
+    /// thunk path (it binds to the relocation table), so the
+    /// detector skips it.
+    #[test]
+    fn b3_25_plt_stub_kind_is_preserved() {
+        let thunk_va = 0x1030;
+        let (model, bytes) = make_plt_model(thunk_va, 0x4000, "write");
+        let decoder = ScriptedDecoder::new().at(
+            thunk_va,
+            vec![decoded(
+                thunk_va,
+                "jmp",
+                ControlFlow::UnconditionalBranch {
+                    target: Some(0x4000),
+                },
+            )],
+        );
+        let mut g = EvidenceGraph::new();
+        let mut set = discover_functions(&model, &bytes, &NullDecoder, &mut g);
+        // Sanity: the PLT walker minted the stub as PltStub.
+        assert!(matches!(
+            set.get(thunk_va).unwrap().kind,
+            FunctionKind::PltStub { .. }
+        ));
+        detect_thunks(&mut set, &model, &bytes, &decoder);
+        assert!(matches!(
+            set.get(thunk_va).unwrap().kind,
+            FunctionKind::PltStub { .. }
+        ));
+        assert_eq!(set.stats.from_thunk, 0);
     }
 }

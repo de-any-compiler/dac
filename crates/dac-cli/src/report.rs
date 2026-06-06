@@ -49,6 +49,9 @@ pub(crate) struct Report {
     /// Functions bound to an imported symbol through a recognised
     /// PLT trampoline (B3.23).
     pub from_plt: u64,
+    /// Functions reclassified as forwarding thunks by
+    /// `dac_recovery::detect_thunks` (B3.25).
+    pub from_thunk: u64,
     pub coverage: Coverage,
     pub lift: LiftStats,
     pub functions: Vec<FunctionSummary>,
@@ -84,6 +87,7 @@ impl Report {
             from_call: functions.stats.from_call,
             from_prologue: functions.stats.from_prologue,
             from_plt: functions.stats.from_plt,
+            from_thunk: functions.stats.from_thunk,
             coverage,
             lift,
             functions: summaries,
@@ -158,8 +162,8 @@ pub(crate) fn render_report_text(r: &Report) -> String {
     let _ = writeln!(out, ";; functions:   {}", r.function_count);
     let _ = writeln!(
         out,
-        ";; signals:     symbol={} entry={} call={} prologue={} plt={}",
-        r.from_symbol, r.from_entry, r.from_call, r.from_prologue, r.from_plt,
+        ";; signals:     symbol={} entry={} call={} prologue={} plt={} thunk={}",
+        r.from_symbol, r.from_entry, r.from_call, r.from_prologue, r.from_plt, r.from_thunk,
     );
     let cov = &r.coverage;
     let pct = cov.lifted_fraction() * 100.0;
@@ -379,8 +383,31 @@ mod tests {
         );
         let s = render_report_text(&r);
         assert!(
-            s.contains(";; signals:     symbol=0 entry=1 call=0 prologue=0 plt=0"),
+            s.contains(";; signals:     symbol=0 entry=1 call=0 prologue=0 plt=0 thunk=0"),
             "expected plt= column in signals row of:\n{s}",
+        );
+    }
+
+    #[test]
+    fn b3_25_report_text_includes_thunk_signal_column() {
+        // B3.25: the `signals:` row grows a `thunk=N` column so the
+        // forwarding-thunk reclassification count is grep-able even
+        // when no thunk was recognised in the run.
+        let model = empty_model();
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
+        let s = render_report_text(&r);
+        assert!(
+            s.contains(";; signals:     symbol=0 entry=1 call=0 prologue=0 plt=0 thunk=0"),
+            "expected thunk= column in signals row of:\n{s}",
         );
     }
 

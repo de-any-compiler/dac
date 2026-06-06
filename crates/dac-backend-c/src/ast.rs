@@ -297,6 +297,16 @@ pub enum Expr {
     /// [`Expr::Var`] for direct calls and an [`Expr::AddrLit`] for
     /// indirect calls whose target address is known.
     Call { target: Box<Expr>, args: Vec<Expr> },
+    /// `name(arg0, arg1, …)` — clean direct call with no
+    /// function-pointer cast in front. Used for forwarding-thunk
+    /// bodies (B3.25, FR-21) where the target is a recovered function
+    /// declared elsewhere in the same translation unit and the cast
+    /// wrapper [`Expr::Call`] uses to dodge implicit-declaration
+    /// errors would only obscure the structural intent. The lowering
+    /// pass only synthesises this variant when it can guarantee the
+    /// declaration is in scope (definition-before-use, extern decl,
+    /// or hint-driven prototype).
+    DirectCall { name: String, args: Vec<Expr> },
     /// `((void (*)())0xdeadbeef)` — call-target literal for direct
     /// calls whose name we don't know yet.
     AddrLit(u64),
@@ -486,6 +496,7 @@ mod tests {
             | Expr::Unary { .. }
             | Expr::Load { .. }
             | Expr::Call { .. }
+            | Expr::DirectCall { .. }
             | Expr::AddrLit(_)
             | Expr::Field { .. }
             | Expr::Cast { .. }

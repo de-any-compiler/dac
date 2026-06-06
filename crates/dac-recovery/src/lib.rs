@@ -66,9 +66,9 @@ pub use convention::{
     RegisterArg, StackArg,
 };
 pub use functions::{
-    discover_functions, DiscoveryStats, Function, FunctionKind, FunctionSet, SourceMask,
-    CALL_EDGE_CONFIDENCE, ENTRY_CONFIDENCE, PLT_BINDING_CONFIDENCE, PROLOGUE_CONFIDENCE,
-    SYMBOL_CONFIDENCE,
+    detect_thunks, discover_functions, DiscoveryStats, Function, FunctionKind, FunctionSet,
+    SourceMask, CALL_EDGE_CONFIDENCE, ENTRY_CONFIDENCE, PLT_BINDING_CONFIDENCE,
+    PROLOGUE_CONFIDENCE, SYMBOL_CONFIDENCE,
 };
 pub use idioms::{
     recover_idioms, resolve_switch_entries, RecoveredIdioms, ResolvedSwitchEntry, SwitchBound,

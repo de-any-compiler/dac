@@ -1115,22 +1115,13 @@ int64_t mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     return v10;
 }
 
-/* dac-recovered function */
+/* dac-recovered forwarding thunk */
 /* address: 0x140001460 */
 /* end: 0x140001490 */
 /* confidence: 1.00 (Observed) */
-/* source_blocks: 1 */
-/* goto_count: 0 */
-/* label_count: 0 */
-/* irreducible: false */
-/* convention: ms-x64 (score 0.40) */
-/* args: (no register args) */
-/* return_reg: none */
-/* stack_locals: 0 */
-/* struct_layouts: pointer=0 stack=0 */
-/* switch_tables: 0 */
+/* tail-call: _crt_atexit (0x1400029c8) */
 void atexit(void) {
-    /* dac: structuring fallback */
+    _crt_atexit();
 }
 
 /* dac-recovered function */
@@ -5007,20 +4998,11 @@ int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     return 42LL;
 }
 
-/* dac-recovered function */
+/* dac-recovered forwarding thunk */
 /* address: 0x140002ac0 */
 /* end: 0x140002ad0 */
 /* confidence: 1.00 (Observed) */
-/* source_blocks: 1 */
-/* goto_count: 0 */
-/* label_count: 0 */
-/* irreducible: false */
-/* convention: ms-x64 (score 0.40) */
-/* args: (no register args) */
-/* return_reg: none */
-/* stack_locals: 0 */
-/* struct_layouts: pointer=0 stack=0 */
-/* switch_tables: 0 */
+/* tail-call: __gcc_register_frame (0x140001490) */
 void register_frame_ctor(void) {
-    /* dac: structuring fallback */
+    __gcc_register_frame();
 }

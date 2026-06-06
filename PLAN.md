@@ -49,23 +49,14 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22, B3.26, B3.27, B3.23, and B3.24 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.25, B3.28 – B3.31 are the M3 "real
+B3.1 – B3.22, B3.26, B3.27, B3.23, B3.24, and B3.25 are complete —
+see [CHANGELOG.md](./CHANGELOG.md). B3.28 – B3.31 are the M3 "real
 decompiler" follow-on still queued, closing the remaining readability
-and signature-correctness gaps surfaced in review (tail-call thunks,
-canonical `main`, return-width inference, CRT classification, etc.).
-The "B3 residue shelf" further down tracks heavier residue items that
-stay deferred past M3 and are sized as separate milestones rather than
-numbered batches.
-
-### B3.25 — Tail-call recognition for forwarding thunks
-- Detector for `endbr64? ; jmp <known function>` as the entire
-  function body.
-- `FunctionKind::Thunk { target: u64 }`.
-- C backend renders as `return <target>(...);` (or `<target>();` for
-  `void`) instead of `__builtin_unreachable()`.
-- **Done when:** `frame_dummy` reads as a one-line tail call; no
-  `__builtin_unreachable` for thunk-shaped functions (FR-21).
+and signature-correctness gaps surfaced in review (canonical `main`,
+return-width inference, CRT classification, etc.). The "B3 residue
+shelf" further down tracks heavier residue items that stay deferred
+past M3 and are sized as separate milestones rather than numbered
+batches.
 
 ### B3.28 — `main` canonical signature + hint-arity follow-up
 - Knowledge: canonical entry-point signatures (`main`, `wmain`,
@@ -120,7 +111,11 @@ numbered batches.
 B3.26 is the largest single readability lever and is independent of
 the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG → fewer
 fallback blocks to suppress). B3.28 depends on B3.29 (return width
-feeds the canonical `main` shape). B3.31 can land at any point.
+feeds the canonical `main` shape). B3.30's `Thunk` taxonomy entry
+overlaps with the [`FunctionKind::Thunk { target }`](./CHANGELOG.md)
+that B3.25 already shipped; B3.30 only needs to reconcile the two so
+the taxonomy column reads `Thunk` for the recovered entries and
+`CrtSupport` for the new ones. B3.31 can land at any point.
 
 ### B3 residue shelf
 

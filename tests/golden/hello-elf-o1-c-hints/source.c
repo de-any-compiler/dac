@@ -224,22 +224,13 @@ int64_t __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
     }
 }
 
-/* dac-recovered function */
+/* dac-recovered forwarding thunk */
 /* address: 0x1150 */
 /* end: 0x1159 */
 /* confidence: 1.00 (Observed) */
-/* source_blocks: 1 */
-/* goto_count: 0 */
-/* label_count: 0 */
-/* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
-/* args: (no register args) */
-/* return_reg: none */
-/* stack_locals: 0 */
-/* struct_layouts: pointer=0 stack=0 */
-/* switch_tables: 0 */
+/* tail-call: register_tm_clones (0x10c0) */
 void frame_dummy(void) {
-    /* dac: structuring fallback */
+    register_tm_clones();
 }
 
 /* dac-recovered function */

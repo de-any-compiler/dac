@@ -37,8 +37,8 @@ use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, res
 use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter, RegisterFile};
 use dac_arch_x86::X86_64;
 use dac_backend_c::ast::{
-    Block as CBlock, CType, ExternDecl as CExternDecl, Function as CFunction, Item as CItem,
-    Param as CParam, Stmt as CStmt, TranslationUnit,
+    Block as CBlock, CType, Expr as CExpr, ExternDecl as CExternDecl, Function as CFunction,
+    Item as CItem, Param as CParam, Stmt as CStmt, TranslationUnit,
 };
 use dac_backend_c::{
     default_includes as c_default_includes, emit as c_emit,
@@ -52,7 +52,7 @@ use dac_backend_cpp::{
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph};
 use dac_hints::{HintError, Hints};
-use dac_recovery::{discover_functions, FunctionSet};
+use dac_recovery::{detect_thunks, discover_functions, FunctionSet};
 
 use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
@@ -184,7 +184,12 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     match &backend {
         Some(b) => {
             let mut graph = EvidenceGraph::new();
-            let functions = discover_functions(&model, &bytes, b.decoder.as_ref(), &mut graph);
+            let mut functions = discover_functions(&model, &bytes, b.decoder.as_ref(), &mut graph);
+            // B3.25: reclassify `[endbr64?]; jmp <known function>`
+            // bodies as `FunctionKind::Thunk { target }` so the C
+            // backend can render them as one-line tail calls instead
+            // of structuring-fallback stubs (FR-21).
+            detect_thunks(&mut functions, &model, &bytes, b.decoder.as_ref());
             // B3.6: register every loaded hint as an
             // `EvidenceNode::UserHint` in the same graph so the
             // annotation channel can cite them and the per-binary
@@ -481,6 +486,12 @@ fn render_c_unit(
             extern_items.push(CItem::ExternDecl(lower_plt_stub_extern(f, import, debug)));
             continue;
         }
+        if let dac_recovery::FunctionKind::Thunk { target } = &f.kind {
+            function_items.push(CItem::Function(lower_thunk_function(
+                f, *target, &resolver, debug,
+            )));
+            continue;
+        }
         let lowered = lower_one_c_function(f, outcome, annot, &resolver, debug);
         for decl in lowered.struct_decls {
             typedefs.entry(decl.name.clone()).or_insert(decl);
@@ -691,6 +702,94 @@ fn plt_stub_leading_comment(
     );
     if debug {
         s.push_str("\nsignal: PLT");
+    }
+    s
+}
+
+/// Lower a forwarding thunk (B3.25, FR-21) to a C function whose body
+/// is a single tail-call to the recovered target. The thunk's own
+/// signature collapses to `void (void)` — a thunk's call-site
+/// arguments pass through registers without dac having to materialise
+/// them, and the void return reflects that the thunk itself never
+/// writes a return register the caller can observe.
+///
+/// When the target name resolves through `resolver`, the call
+/// emits as `target_name();`; otherwise it falls back to the
+/// existing [`CExpr::Call`] cast through an `AddrLit` so the
+/// emitter still produces compileable C (the function-pointer cast
+/// dodges the implicit-declaration error a bare numeric call would
+/// trip on the round-trip gate).
+fn lower_thunk_function(
+    f: &dac_recovery::Function,
+    target: u64,
+    resolver: &CNameResolver,
+    debug: bool,
+) -> CFunction {
+    let raw_name = f
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("fn_{:x}", f.address));
+    let sanitized = sanitize_c_identifier(&raw_name);
+    let target_name = resolver.get(&target).cloned();
+    let call = match &target_name {
+        Some(name) => CExpr::DirectCall {
+            name: name.clone(),
+            args: Vec::new(),
+        },
+        None => CExpr::Call {
+            target: Box::new(CExpr::AddrLit(target)),
+            args: Vec::new(),
+        },
+    };
+    let body = CBlock {
+        stmts: vec![CStmt::ExprStmt(call)],
+    };
+    CFunction {
+        name: sanitized,
+        return_type: CType::Void,
+        params: Vec::new(),
+        locals: Vec::new(),
+        body,
+        leading_comment: Some(thunk_leading_comment(
+            f,
+            target,
+            target_name.as_deref(),
+            debug,
+        )),
+    }
+}
+
+/// Build the `/* … */` block that precedes a forwarding-thunk
+/// function body. Mirrors the shape of [`plt_stub_leading_comment`]
+/// and [`stub_body_leading_comment`] so the rendered translation
+/// unit stays uniform: address range, joined-discovery confidence,
+/// plus a one-line `tail-call → <target>` pair so a reviewer can
+/// trace the binding back to the recovered call edge.
+fn thunk_leading_comment(
+    f: &dac_recovery::Function,
+    target: u64,
+    target_name: Option<&str>,
+    debug: bool,
+) -> String {
+    let target_display = match target_name {
+        Some(name) => format!("{name} ({target:#x})"),
+        None => format!("{target:#x}"),
+    };
+    let mut s = format!(
+        "dac-recovered forwarding thunk\n\
+         address: {:#x}\n\
+         end: {}\n\
+         confidence: {:.2} ({:?})\n\
+         tail-call: {target_display}",
+        f.address,
+        f.end
+            .map(|e| format!("{e:#x}"))
+            .unwrap_or_else(|| "?".to_string()),
+        f.confidence.value(),
+        f.confidence.source(),
+    );
+    if debug {
+        s.push_str("\nsignal: THUNK");
     }
     s
 }
@@ -1398,5 +1497,98 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("signal: PLT"));
+    }
+
+    // ---- B3.25 forwarding-thunk lowering ---------------------------
+
+    fn thunk_function(name: &str, address: u64, target: u64) -> dac_recovery::Function {
+        let mut g = EvidenceGraph::new();
+        let ev = g.add_node(EvidenceNode::IrNode {
+            layer: IrLayer::Cfg,
+            id: 0,
+        });
+        dac_recovery::Function {
+            address,
+            end: Some(address + 0x09),
+            name: Some(name.to_string()),
+            confidence: Confidence::new(1.0, Source::Observed),
+            sources: dac_recovery::SourceMask::SYMBOL,
+            evidence: ev,
+            kind: dac_recovery::FunctionKind::Thunk { target },
+        }
+    }
+
+    /// A thunk whose target resolves through the name resolver
+    /// lowers to a one-line clean direct call. The function
+    /// signature collapses to `void(void)` and the leading comment
+    /// carries the target's name + address so a reviewer sees the
+    /// recognised pattern.
+    #[test]
+    fn b3_25_lower_thunk_function_uses_clean_direct_call() {
+        let f = thunk_function("frame_dummy", 0x1150, 0x10c0);
+        let mut resolver = CNameResolver::new();
+        resolver.insert(0x10c0, "register_tm_clones".to_string());
+        let cf = lower_thunk_function(&f, 0x10c0, &resolver, false);
+        assert_eq!(cf.name, "frame_dummy");
+        assert!(matches!(cf.return_type, CType::Void));
+        assert!(cf.params.is_empty());
+        assert_eq!(cf.body.stmts.len(), 1);
+        match &cf.body.stmts[0] {
+            CStmt::ExprStmt(CExpr::DirectCall { name, args }) => {
+                assert_eq!(name, "register_tm_clones");
+                assert!(args.is_empty());
+            }
+            other => panic!("expected DirectCall, got {other:?}"),
+        }
+        let comment = cf.leading_comment.expect("leading comment");
+        assert!(comment.contains("forwarding thunk"));
+        assert!(comment.contains("tail-call: register_tm_clones (0x10c0)"));
+        // `signal: THUNK` is debug-only.
+        assert!(!comment.contains("signal: THUNK"));
+    }
+
+    /// A thunk whose target is *not* in the resolver falls back to
+    /// the [`CExpr::Call`] / [`CExpr::AddrLit`] cast pattern so the
+    /// emitter still produces a compileable forwarding call. The
+    /// leading comment still names the target VA so a reviewer can
+    /// trace the binding.
+    #[test]
+    fn b3_25_lower_thunk_function_falls_back_to_addrlit_when_unresolved() {
+        let f = thunk_function("opaque_thunk", 0x9000, 0x9abc);
+        let resolver = CNameResolver::new();
+        let cf = lower_thunk_function(&f, 0x9abc, &resolver, false);
+        assert_eq!(cf.body.stmts.len(), 1);
+        match &cf.body.stmts[0] {
+            CStmt::ExprStmt(CExpr::Call { target, args }) => {
+                assert!(args.is_empty());
+                assert_eq!(**target, CExpr::AddrLit(0x9abc));
+            }
+            other => panic!("expected fallback Call(AddrLit), got {other:?}"),
+        }
+        let comment = cf.leading_comment.expect("leading comment");
+        assert!(comment.contains("tail-call: 0x9abc"));
+    }
+
+    /// The `--debug` knob appends a `signal: THUNK` row so a reader
+    /// of the per-function header sees which detector ran without
+    /// digging into the annotation channel — same convention as the
+    /// B3.23 PLT-stub leading comment.
+    #[test]
+    fn b3_25_lower_thunk_function_debug_appends_signal_row() {
+        let f = thunk_function("atexit", 0x1460, 0x29c8);
+        let mut resolver = CNameResolver::new();
+        resolver.insert(0x29c8, "_crt_atexit".to_string());
+        let default = lower_thunk_function(&f, 0x29c8, &resolver, false);
+        let debug = lower_thunk_function(&f, 0x29c8, &resolver, true);
+        assert!(!default
+            .leading_comment
+            .as_deref()
+            .unwrap()
+            .contains("signal: THUNK"));
+        assert!(debug
+            .leading_comment
+            .as_deref()
+            .unwrap()
+            .contains("signal: THUNK"));
     }
 }

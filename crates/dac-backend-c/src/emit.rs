@@ -406,6 +406,24 @@ fn render_expr(expr: &Expr) -> String {
             s.push(')');
             s
         }
+        Expr::DirectCall { name, args } => {
+            // Clean direct call — no function-pointer cast in front.
+            // Used by the B3.25 forwarding-thunk lowering when the
+            // target is a recovered function definition that the C
+            // compiler has already seen by the time it parses this
+            // call site (FR-21).
+            let mut s = String::new();
+            s.push_str(name);
+            s.push('(');
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    s.push_str(", ");
+                }
+                s.push_str(&render_expr(arg));
+            }
+            s.push(')');
+            s
+        }
         Expr::AddrLit(addr) => {
             // Bare `AddrLit` outside of a `Call` lowers to the
             // integer literal so an `int64_t` slot can hold it. The

@@ -5633,6 +5633,164 @@ the listing target does not consult the convention pass.
 Closes: B3.24, FR-12 (calling-convention inference), I-3 (confidence
 + source).
 
+#### B3.25 — Tail-call recognition for forwarding thunks (2026-06-06)
+
+**Motivation.** ChatGPT's review of dac's `-O3` C output called out
+`frame_dummy` (and the matching mingw PE thunks `atexit`,
+`register_frame_ctor`) as a low-signal surface — every fixture had
+one function whose body printed `/* dac: structuring fallback */`
+even though the binary's actual byte pattern was a single trivial
+forwarding jmp. The structurer was correct (the function's
+terminator decoded to `Unreachable` because the `jmp` exits the
+function's own byte range), but the emitted source obscured the
+real semantics: *this function is a thunk that forwards to another
+recovered function.* A reverse engineer reading the C output should
+see `register_tm_clones();` on the body, not a fallback marker.
+
+**Behaviour change.**
+
+- New `dac_recovery::detect_thunks` pass runs immediately after
+  `discover_functions` and walks each `FunctionKind::User`
+  function's body bytes. When the body matches `[endbr64?]; jmp
+  <known function>` (with `<known function>` ∈ recovered function
+  entries), the function reclassifies to
+  `FunctionKind::Thunk { target: u64 }`. Bodies that mutate state
+  before forwarding (mingw's `safe_flush = xor ecx,ecx; jmp fflush`,
+  `__mingw_setusermatherr = mov [rip+disp],rcx; jmp __setusermatherr`)
+  fail the pattern match and stay `User`.
+- New `FunctionKind::Thunk { target: u64 }` variant alongside the
+  existing `User` / `PltStub` variants. Indirect IAT-slot jumps
+  (`jmp *[rip+disp]`) still land as `PltStub` via the B3.23 ELF
+  walker; B3.25 only handles direct jumps.
+- C backend renders a thunk as a one-line tail call. The function
+  signature collapses to `void thunk_name(void)`, the body is a
+  single `target_name();` statement, and the leading comment carries
+  the `tail-call: <name> (<addr>)` provenance line. When the target
+  doesn't resolve through the name resolver, the body falls back to
+  the existing `Expr::Call { target: AddrLit(addr), .. }` cast
+  wrapper so the source still compiles.
+- New `Expr::DirectCall { name, args }` AST variant in
+  `dac-backend-c` emits the thunk call cleanly (`name();` instead
+  of the existing `((long long (*)())name)();` cast wrapper). The
+  cast wrapper exists because B3.10 hasn't reached the emitter yet
+  — for a thunk to a same-TU definition that's already been parsed,
+  the cast just obscures the structural intent. Only the thunk
+  lowering uses the new variant; every other call site stays on
+  `Expr::Call` so the existing arity-matched cast logic keeps
+  protecting indirect-call call sites and forward references in PE
+  bodies (which still emit undeclared-identifier errors that B3.30
+  / a follow-up forward-decl pass would address).
+- `DiscoveryStats` grows `from_thunk: u64`. The report's signals
+  row grows `thunk=N` so the count is grep-able.
+
+**Implementation.**
+
+- `dac-recovery/src/functions.rs`: extended `FunctionKind` (new
+  `Thunk { target }` variant), added `detect_thunks` plus the
+  `match_thunk_pattern` / `function_slice` helpers, and grew
+  `DiscoveryStats::from_thunk`. The detector is `Pure` (NFR-9):
+  same function set in, same byte stream in → same set of thunk
+  reclassifications out.
+- `dac-recovery/src/lib.rs`: re-exported `detect_thunks` next to
+  `discover_functions`.
+- `dac-backend-c/src/ast.rs`: added `Expr::DirectCall { name, args }`
+  and extended the exhaustive-match test.
+- `dac-backend-c/src/emit.rs`: added the `Expr::DirectCall` arm —
+  emits `name(args…)` with no cast.
+- `dac-cli/src/main.rs`: imported `detect_thunks`, threaded the
+  call between `discover_functions` and the rest of the pipeline,
+  added a `lower_thunk_function` + `thunk_leading_comment` pair
+  mirroring B3.23's PLT-stub helpers, and branched on
+  `FunctionKind::Thunk` in `render_c_unit` so the thunk body
+  bypasses the orchestrator's Sem body altogether.
+- `dac-cli/src/report.rs`: grew `Report::from_thunk` + the
+  `thunk=N` signals-row column.
+
+**Per-fixture deltas (after `cargo xtask golden update`).**
+
+- `tests/golden/hello-elf-o0-report/report.txt` — `signals:` row
+  grows `thunk=1` (frame_dummy).
+- `tests/golden/hello-elf-o1-c/source.c` — `frame_dummy`'s body
+  collapses from 13-line `convention/source_blocks/...` block + a
+  `/* dac: structuring fallback */` body to a 5-line
+  `forwarding thunk + tail-call` block + a one-line
+  `register_tm_clones();` body.
+- `tests/golden/hello-elf-o1-c-hints/source.c` — same shape as the
+  no-hint counterpart (the hint catalogue doesn't override the
+  thunk classification).
+- `tests/golden/hello-elf-o1-c-hints/report.txt` — `signals:` row
+  grows `thunk=1`.
+- `tests/golden/hello-pe-o1-c/source.c` — two thunks reclassify:
+  `atexit → _crt_atexit` and `register_frame_ctor →
+  __gcc_register_frame`. Each loses its 13-line generic header and
+  fallback marker, gains the 5-line thunk header and one-line call
+  body. Mingw's `safe_flush` and `__mingw_setusermatherr` stay
+  classified as user functions because their bodies mutate state
+  before forwarding (correct exclusion — the detector wouldn't be
+  faithful if it dropped the `xor` / `mov`).
+- `tests/golden/syscall-hello-elf-o1-c/source.c` — `frame_dummy`
+  reclassifies; same shape as the hello-elf counterpart.
+
+**Tests.**
+
+Six new unit tests in `dac-recovery::functions::tests`:
+
+- `b3_25_endbr64_jmp_known_function_reclassifies_as_thunk` —
+  canonical `frame_dummy` shape; `Thunk { target }` set,
+  `from_thunk` increments.
+- `b3_25_bare_jmp_known_function_reclassifies_as_thunk` —
+  no-endbr64 `atexit` shape; same outcome.
+- `b3_25_jmp_after_other_work_is_not_a_thunk` — `xor; jmp` doesn't
+  match (mingw `safe_flush` shape).
+- `b3_25_jmp_to_non_entry_address_is_not_a_thunk` — jmp into the
+  middle of an unrelated function doesn't match.
+- `b3_25_indirect_jmp_is_not_classified_as_thunk` —
+  `IndirectBranch` flow doesn't match (PE IAT-slot territory,
+  handled by PLT walker).
+- `b3_25_plt_stub_kind_is_preserved` — a function already
+  classified `PltStub` by the B3.23 walker stays `PltStub`; the
+  thunk detector never overwrites a non-`User` kind.
+
+Three new unit tests in `dac-cli::main::tests`:
+
+- `b3_25_lower_thunk_function_uses_clean_direct_call` — resolver
+  hit → `CExpr::DirectCall { name: "register_tm_clones", … }` and a
+  `tail-call: register_tm_clones (0x10c0)` line in the leading
+  comment.
+- `b3_25_lower_thunk_function_falls_back_to_addrlit_when_unresolved`
+  — resolver miss → fallback `CExpr::Call { target: AddrLit(addr),
+  … }` so the emitter still produces compileable C.
+- `b3_25_lower_thunk_function_debug_appends_signal_row` —
+  `--debug` appends a `signal: THUNK` row, mirroring the B3.23
+  PLT-stub convention.
+
+One new unit test in `dac-cli::report::tests`:
+
+- `b3_25_report_text_includes_thunk_signal_column` — the
+  `signals:` row carries the new `thunk=N` column regardless of
+  whether any thunk was recognised in the run.
+
+**Done when (PLAN.md).**
+
+- ✓ `frame_dummy` reads as a one-line tail call. Verified on the
+  hello-x86_64 fixture: `void frame_dummy(void) {
+  register_tm_clones(); }` — no fallback marker, no
+  `__builtin_unreachable()`.
+- ✓ No `__builtin_unreachable` for thunk-shaped functions on the
+  three matching fixtures (`hello-elf-o1-c`, `hello-pe-o1-c`,
+  `syscall-hello-elf-o1-c`). Verified via `grep
+  '__builtin_unreachable' tests/golden/*-o1-c/source.c` → zero
+  matches inside any thunk body.
+- ✓ `cargo xtask ci` green: fmt + clippy + 679 tests pass (10
+  more than the 669 at B3.24 — six new B3.25 tests in
+  `dac-recovery`, three in `dac-cli::main`, one in
+  `dac-cli::report`); 32 goldens across 12 cases match.
+
+Closes: B3.25, FR-21 (recovered source readability), I-3
+(confidence + source — thunk reclassification rides the existing
+`Confidence::Observed` produced by the discovery signals; it does
+not promote a `Speculative` fact).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 
