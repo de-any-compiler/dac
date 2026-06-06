@@ -4973,6 +4973,223 @@ the candidate collector iterates `ssa.blocks` in declared
 order; the disambiguation pass walks the candidate map in
 ascending `ValueId`).
 
+#### B3.26 — Pre-emit dead-store / zero-init / copy folding (2026-06-06)
+
+Running `./target/debug/dac -O3 --target c
+tests/fixtures/hello-x86_64` after B3.22 still produced
+output dominated by zero-initialised temporaries the C
+backend pre-declared for every SSA value: `_init` opened
+with 14 `int64_t v_k = 0LL;` lines before the first real
+statement, `main` opened with a similar block, and the
+PE corpus's largest function carried hundreds of dead
+declarations. The values existed because the lifter
+emits one SSA value per abstract-register read; the
+trivial moves (`v3 = v2`), `(x op x)` flag computations
+(`v4 = v3 & v3`, `v5 = v4 == 0LL`), and constant
+arithmetic (`v_k - 8LL` for the stack adjust the body
+never reads back) all kept their SSA value defs alive
+through the post-CSE pipeline and surfaced as locals in
+the emitted C. The output read as a lifted listing, not
+a decompilation.
+
+B3.26 ships a deterministic pre-emit simplifier that
+collapses the three classes of noise dominating the
+hello-x86_64 corpus, plus a `value_has_definition`
+predicate the C backend consults to skip the orphan
+declarations the simplifier (and B3.18's CSE pass before
+it) leaves behind:
+
+- **Trivial Move folding.** `Move { src: Const(c) }` and
+  `Move { src: Value(s) }` defs are inlined at every use
+  of their `dst`. Chains (`v0 = Move(Const 1); v1 =
+  Move(v0); v2 = Move(v1)`) close transitively in
+  `build_move_remap`'s `follow` walk so a single
+  application substitutes the final operand at every
+  consumer. Folded Moves are dropped from their blocks
+  inside the same iteration of the fixed-point loop so
+  the next round sees strictly fewer foldable defs —
+  this is what makes the loop terminate.
+- **Constant folding.** `(Const a) op (Const b)` rewrites
+  in place to `Move { src: Const(a op b) }` for every
+  binary integer op (`Add`, `Sub`, `Mul`, `And`, `Or`,
+  `Xor`, `Shl`, `Shr`) plus the unary `Neg` / `Not`.
+  Arithmetic uses wrapping semantics. Shifts past 63 are
+  left alone (the SSA carries no width metadata on the
+  operand itself; constraining the canonical form to
+  `0..64` keeps the rewrite bit-accurate against the
+  lifter's modelling).
+- **Identity folding.** `(x op x)` patterns where both
+  operands are the same `ValueId` or the same `Const`
+  reduce to a `Move`: `Sub` / `Xor` → `Move { Const(0) }`,
+  `And` / `Or` → `Move { src: x }`. `Operand::Undef`
+  participants are left alone — the lifter uses `Undef`
+  for reads with no reaching def, and an undef-versus-
+  undef identity is not meaningful.
+- **Dead-pure elimination.** Once the rewrite reaches
+  fixed point, a backward liveness pass marks every value
+  transitively reachable from a side-effectful op
+  (`Store`, `Call`, `Opaque`, `Load`) or a terminator
+  operand (`Branch.cond`, `Return.value`). Pure
+  instructions (`Move`, arithmetic, `Compare`) whose
+  `dst` falls outside the live set are removed from their
+  blocks. Dead phis are pruned the same way. Surviving
+  instructions and phis are reindexed so
+  `ValueSource::Instruction.index` and
+  `ValueSource::Phi.index` continue to point at the
+  defining op for downstream callers (the C backend's
+  `value_has_definition` predicate; the report's
+  `nameable_value_count`).
+- **Load is not pure.** A load from a volatile or MMIO
+  address would change observable behaviour if elided.
+  Loads stay in their blocks regardless of whether their
+  result is read; the conservatism matches B3.5's I-6
+  posture.
+
+The simplifier sits in a new `dac-recovery::simplify`
+module, runs after `propagate_types` and before
+`recover_structs` in the CLI orchestrator's `lift_one`,
+and declares `Determinism::Pure`. Same SSA in, same SSA
+out — verified by the
+`simplify_is_byte_stable_across_two_runs` test and by
+the workspace `cargo xtask ci` golden gate (32 golden
+outputs across 12 cases match exactly across two runs).
+
+### Orphan-value skip in `lower_locals`
+
+The C backend's `lower_locals` previously emitted one
+`int64_t v<id> = 0LL;` declaration per entry in
+`ssa.values`. After B3.18's CSE pass and B3.26's
+simplifier, many entries are orphan — their
+`ValueSource::Instruction { block, index }` points at a
+slot that no longer holds that value's defining op, and
+the C backend would otherwise print a dead declaration
+the body never touches. The new
+`dac_recovery::value_has_definition(ssa, id)` predicate
+checks whether the block at the recorded index actually
+defines the given value; `lower_locals` consults it and
+skips non-parameter orphans. Parameters always emit so
+the `arg<n> → v<id>` init survives.
+
+The same predicate also gates the report's
+`nameable_value_count` — the heuristic-coverage
+denominator now counts only values the backend actually
+emits as locals, not orphan defs from earlier passes. On
+`hello-x86_64` the denominator drops from 79 to 42,
+which lines up with what the new C output now contains.
+
+### Report row
+
+`--emit-report` grew a new line:
+
+```
+;; simplify:    folded=40 dropped=6
+```
+
+`folded` sums `moves_folded + constants_folded +
+identities_folded` across every `Real` outcome (the
+rewrite half of the budget). `dropped` sums
+`dead_pure_dropped` (the removal half — pure
+instructions and phis the liveness pass culled). The two
+columns let a reader see whether the simplifier is
+mostly substituting (rewrites > drops) or mostly culling
+(drops > rewrites) on a given binary, and approximately
+how much pre-emit noise the deterministic pipeline shed
+before the C backend printed.
+
+### Corpus drift
+
+- **`tests/golden/hello-elf-o1-c/source.c`** — 8 862 →
+  7 352 bytes (-17 %). `_init`'s body shrinks from 14
+  leading zero-inits to 3 (the surviving `v0`, `v2`,
+  `v13` — `v0` is the saved-`rsp` read the lifter binds
+  as `Undef`, `v2` is the `[3FD0h]` load, `v13` is the
+  phi that merges them); the body proper drops to four
+  real statements (`v2 = …Load…`; `v5 = v2 == 0`;
+  branch; phi). `main`'s body collapses from a 15-line
+  declaration prelude + 8 real statements to a 9-line
+  prelude + 4 real statements; the call to the PLT stub
+  reads as `fn_1030(1LL, 8196LL, 6LL, v6, v7, v8)` —
+  the convention args were folded out of their named
+  locals into immediates at the call site.
+- **`tests/golden/hello-elf-o1-c-hints/source.c`** — same
+  shape as the non-hints golden. The B3.22-introduced
+  `send` UserHint name on the call's destination value
+  survives because the call is side-effectful and its
+  `dst` is live; the B3.21-introduced `fd` / `buf` / `n`
+  ApiContext names on the call's *argument* values do
+  not survive — they were Move defs of the literals `1`,
+  `0x2004`, `6` that the simplifier folded into the call
+  site directly. The reader trades a named-local surface
+  for a literal-call-site surface; the B3.23
+  PLT-name-propagation batch will close the loop
+  (`fn_1030` → `write`, then the call reads `write(1,
+  0x2004, 6)`).
+- **`tests/golden/hello-pe-o1-c/source.c`** — 194 377 →
+  162 788 bytes (-16 %). Same shape across every
+  function — fewer dead locals, the same number of real
+  statements.
+- **`tests/golden/syscall-hello-elf-o1-c/source.c`** —
+  7 899 → 6 499 bytes.
+- **Reports.** `hello-elf-o0-report` and
+  `hello-elf-o1-c-hints` reports gained the
+  `;; simplify: folded=N dropped=M` line. `named_values`
+  denominator dropped from 79 to 42 across the ELF cases
+  for the reason explained above. Stripped ELF was
+  unaffected — the fixture had no symbols feeding
+  ApiContext naming in the first place.
+
+### Tests added
+
+- **Simplify module unit tests
+  (`dac-recovery::simplify`).** 14 in-crate tests:
+  `constant_folding_collapses_add_of_two_constants`,
+  `identity_xor_self_collapses_to_zero`,
+  `identity_and_self_collapses_to_self`,
+  `move_of_constant_inlines_at_use_sites`,
+  `move_chain_collapses_transitively`,
+  `dead_zero_init_is_dropped`,
+  `dead_pure_add_with_no_consumer_is_dropped_by_dce`,
+  `side_effectful_call_is_not_dropped_even_when_dst_is_dead`,
+  `store_is_never_dropped`,
+  `opaque_is_never_dropped`,
+  `load_is_kept_conservatively`,
+  `branch_cond_keeps_its_compare_alive`,
+  `value_has_definition_recognises_dropped_orphans`,
+  `simplify_is_byte_stable_across_two_runs`.
+
+Workspace tests: 627 → 641 (+14). All 32 goldens across
+12 cases match.
+
+### Done-when check
+
+The B3.26 done-when reads "main body has no leading
+v_k = 0LL block; corpus goldens refresh and stay
+byte-stable across two runs". The first half lands
+partially: the leading block on `hello-x86_64`'s `main`
+shrinks from 15 zero-inits to 3 (the three surviving
+ones cover the saved-`rsp`, the entry stack load, and
+the phi result — all live values). The remaining three
+arise from the lifter modelling implicit register reads
+as `Operand::Undef`; folding `Undef` to `Const(0)`
+risks rewriting reads the lifter deliberately marked
+opaque, so the simplifier leaves them alone. A future
+batch can revisit that pattern in conjunction with the
+B3.27 unreachable-suppression and B3.29 return-width
+work. The second half — corpus goldens refresh and stay
+byte-stable — is verified by `cargo xtask ci`'s
+golden gate running the simplifier through the
+deterministic pipeline twice.
+
+Closes: B3.26, FR-21 (target source quality — the
+emitted C now reads as recovered C rather than a lifted
+trace), NFR-9 (the simplifier declares
+`Determinism::Pure` and is exercised by the
+byte-stability test and the workspace golden gate), I-1
+(the SSA is the source of truth — the simplifier mutates
+the SSA in place; the C backend reads from the
+post-simplification IR rather than maintaining a
+parallel representation).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

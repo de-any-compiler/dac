@@ -56,6 +56,7 @@ pub mod convention;
 pub mod functions;
 pub mod idioms;
 pub mod names;
+pub mod simplify;
 pub mod stack;
 pub mod structs;
 pub mod types;
@@ -75,6 +76,7 @@ pub use names::{
     recover_names, CallRenameResolver, LoopInfo, LoopShape, NameCandidate, NameSource, NameTable,
     NullCallRenameResolver, NullStringResolver, StringResolver, NAME_CONFIDENCE,
 };
+pub use simplify::{simplify, value_has_definition, SimplifyStats};
 pub use stack::{
     analyze_stack_frame, FramePointer, StackConvention, StackFrame, StackLocal, StackLocalKind,
 };

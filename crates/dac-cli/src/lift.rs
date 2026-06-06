@@ -52,9 +52,10 @@ use dac_knowledge::{lookup_api_signature, ApiSignature, X86_64_CONVENTIONS};
 use dac_lift::lift_function;
 use dac_recovery::{
     analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms, recover_names,
-    recover_structs, resolve_switch_entries, ApiResolver, CallRenameResolver, ConventionMatch,
-    Function, FunctionSet, LoopInfo, LoopShape, NameTable, RecoveredIdioms, RecoveredStructs,
-    StackConvention, StackFrame, StringResolver, SwitchTableIdiom, TypeMap, ValueType,
+    recover_structs, resolve_switch_entries, simplify, ApiResolver, CallRenameResolver,
+    ConventionMatch, Function, FunctionSet, LoopInfo, LoopShape, NameTable, RecoveredIdioms,
+    RecoveredStructs, SimplifyStats, StackConvention, StackFrame, StringResolver, SwitchTableIdiom,
+    TypeMap, ValueType,
 };
 
 /// Per-function outcome of the orchestrator.
@@ -96,6 +97,11 @@ pub(crate) struct RecoveryFacts {
     /// Maps SSA `ValueId`s to heuristic identifiers (`path`, `fmt`,
     /// `str_hello`, …) the C backend renders in place of `v<id>`.
     pub names: NameTable,
+    /// Per-function simplifier counters (B3.26). Surfaces in
+    /// `--emit-report` so a reader sees how many dead pure ops the
+    /// pre-emit pass removed from the function. `Default` zeros for
+    /// fixtures and tests that do not run the simplifier.
+    pub simplify: SimplifyStats,
 }
 
 /// Summary of the user hint applied to a function. Surfaces in
@@ -228,6 +234,15 @@ pub(crate) struct LiftStats {
     /// outcome — the denominator for the heuristic-name coverage
     /// fraction.
     pub nameable_values: u64,
+    /// Pure SSA ops + phis the B3.26 simplifier removed across every
+    /// `Real` outcome. Surfaces in `--emit-report` so a reader can
+    /// see how much pre-emit noise the deterministic pipeline shed.
+    pub simplifier_drops: u64,
+    /// Constant + identity folds the simplifier performed, summed
+    /// across functions. Surfaces alongside [`Self::simplifier_drops`]
+    /// in the report so the two halves of the simplification budget
+    /// (rewrites vs. removals) are visible.
+    pub simplifier_folds: u64,
 }
 
 impl LiftStats {
@@ -257,6 +272,11 @@ impl LiftStats {
                         .filter(|c| c.source == dac_recovery::NameSource::UserHint)
                         .count() as u64;
                     s.nameable_values += nameable_value_count(ssa, facts.as_ref()) as u64;
+                    s.simplifier_drops += facts.simplify.dead_pure_dropped as u64;
+                    s.simplifier_folds += (facts.simplify.constants_folded
+                        + facts.simplify.identities_folded
+                        + facts.simplify.moves_folded)
+                        as u64;
                 }
                 LiftOutcome::Stub { .. } => s.stub += 1,
             }
@@ -320,6 +340,11 @@ fn loop_info_from_forest(forest: &LoopForest) -> LoopInfo {
 /// i.e. every defined value the C backend emits as a local, minus
 /// the convention's inferred parameter slots (which the backend
 /// names `argN` from the signature, not via [`NameTable`]).
+///
+/// Orphan values (no defining instruction or phi after the B3.26
+/// simplifier, or already orphaned by the earlier CSE pass) are
+/// skipped so the denominator matches the locals the C backend
+/// actually emits.
 fn nameable_value_count(ssa: &SsaFunction, facts: &RecoveryFacts) -> usize {
     let mut params: std::collections::BTreeSet<dac_ir::ssa::ValueId> =
         std::collections::BTreeSet::new();
@@ -330,7 +355,7 @@ fn nameable_value_count(ssa: &SsaFunction, facts: &RecoveryFacts) -> usize {
     }
     ssa.values
         .iter()
-        .filter(|v| !params.contains(&v.id))
+        .filter(|v| !params.contains(&v.id) && dac_recovery::value_has_definition(ssa, v.id))
         .count()
 }
 
@@ -359,7 +384,7 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
 
     let raw = lift_function(&cfg, &instructions_per_block, ctx.register_file);
     let doms = DominatorTree::build(&cfg);
-    let ssa = construct_ssa(&cfg, &doms, &raw);
+    let mut ssa = construct_ssa(&cfg, &doms, &raw);
     let pdoms = PostDominatorTree::build(&cfg);
     let loops = LoopForest::build(&cfg, &doms);
 
@@ -373,6 +398,16 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
         .next();
     let signature = convention.as_ref().map(|c| &c.signature);
     let mut types = propagate_types(&ssa, signature, Some(&stack_frame), &ctx.api_resolver);
+
+    // B3.26: pre-emit simplifier. Constant-folds, identity-folds,
+    // substitutes trivial Move chains, and drops dead pure ops + dead
+    // phis. Runs after `propagate_types` so the type lattice was
+    // seeded from the un-simplified IR (load / store widths and API
+    // signatures still anchor it correctly); orphaned `TypeMap`
+    // entries for now-dead values are harmless. Determinism: `Pure` —
+    // same SSA in, same SSA out.
+    let simplify_stats = simplify(&mut ssa);
+
     let structs = recover_structs(&ssa, Some(&stack_frame), Some(&types));
     let idioms = recover_idioms(&ssa);
 
@@ -415,6 +450,7 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
         idioms,
         user_hint,
         names,
+        simplify: simplify_stats,
     });
     LiftOutcome::Real { ssa, sem, facts }
 }
@@ -1006,6 +1042,7 @@ mod tests {
             idioms: RecoveredIdioms::default(),
             user_hint: None,
             names: NameTable::default(),
+            simplify: SimplifyStats::default(),
         }
     }
 

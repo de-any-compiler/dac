@@ -93,16 +93,6 @@ than numbered batches.
 - **Done when:** `frame_dummy` reads as a one-line tail call; no
   `__builtin_unreachable` for thunk-shaped functions (FR-21).
 
-### B3.26 — Pre-emit dead-store / zero-init / copy folding
-- A `Determinism::Pure` SSA simplifier: drop dead `= 0` definitions,
-  substitute single-use pure constants, fold `(c op c)` identities
-  (`c ^ c` → `0`, `c - c` → `0`, `c & c` → `c`).
-- Runs after `propagate_types`, before `structure`.
-- Declares its `Determinism` class so NFR-9 is enforced.
-- **Done when:** `main` body has no leading `v_k = 0LL` block; corpus
-  goldens refresh and stay byte-stable across two runs
-  (FR-21, NFR-9, I-1).
-
 ### B3.27 — Suppress structurally-unreachable bodies in non-debug emit
 - C backend gates `__builtin_unreachable()` and
   `/* structurally unreachable: block N */` lines behind `--debug`.

@@ -187,6 +187,11 @@ pub(crate) fn render_report_text(r: &Report) -> String {
         ";; naming:      named_values={} / {} ({:.2}% heuristic coverage, hint={})",
         r.lift.named_values, r.lift.nameable_values, name_pct, r.lift.hint_named_values,
     );
+    let _ = writeln!(
+        out,
+        ";; simplify:    folded={} dropped={}",
+        r.lift.simplifier_folds, r.lift.simplifier_drops,
+    );
     out.push('\n');
     out.push_str("functions:\n");
     for f in &r.functions {

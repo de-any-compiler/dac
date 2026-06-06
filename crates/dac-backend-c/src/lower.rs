@@ -569,6 +569,17 @@ fn lower_locals(
 ) -> Vec<Local> {
     let mut locals = Vec::with_capacity(ssa.values.len());
     for def in &ssa.values {
+        // B3.26: skip values orphaned by the pre-emit simplifier
+        // (and by the earlier B2.3 local CSE pass). Parameters always
+        // emit so their `arg<n> → v<id>` init survives. A non-parameter
+        // value with no defining instruction or phi never appears in
+        // any kept operand — emitting it would leave a stale
+        // `int64_t vN = 0LL;` declaration that the user perceives as
+        // dead-store noise.
+        let is_param = parameter_inits.contains_key(&def.id);
+        if !is_param && !dac_recovery::value_has_definition(ssa, def.id) {
+            continue;
+        }
         let declared = declared_ctype(ssa, def, recovered, struct_typedefs);
         let zero_init = Expr::IntLit {
             value: 0,
