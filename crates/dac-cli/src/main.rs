@@ -41,8 +41,8 @@ use dac_backend_c::ast::{
 };
 use dac_backend_c::{
     default_includes as c_default_includes, emit as c_emit,
-    lower_function_with_typedefs as c_lower_function_with_typedefs, LoweredFunction,
-    NameResolver as CNameResolver, Recovered as CRecovered,
+    lower_function_with_options as c_lower_function_with_options, LowerOptions as CLowerOptions,
+    LoweredFunction, NameResolver as CNameResolver, Recovered as CRecovered,
 };
 use dac_backend_cpp::{
     class_recovery::recover_classes as recover_cpp_classes,
@@ -550,7 +550,13 @@ fn lower_one_c_function(
                 Some(&facts.structs),
                 Some(&facts.names),
             );
-            let mut lowered = c_lower_function_with_typedefs(ssa, sem, resolver, &recovered);
+            let mut lowered = c_lower_function_with_options(
+                ssa,
+                sem,
+                resolver,
+                &recovered,
+                CLowerOptions { debug },
+            );
             // `lower_function_with_typedefs` derives the name from
             // `sem.function_name` (the recovered symbol); sanitise to
             // keep emitted C syntactically valid for symbols that

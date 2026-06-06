@@ -590,8 +590,7 @@ int64_t __mingw_invalidParameterHandler(void) {
 void safe_flush(int64_t arg0) {
     int64_t v0 = arg0;
 
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -859,8 +858,7 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     while (1) {
         /* phi v29 <- (bb0: v27) (bb3: 1000) */
         (/* opaque: cmpxchg */ 0);
-        /* structurally unreachable: block 4 */
-        __builtin_unreachable();
+        /* dac: structuring fallback */
     }
     /* phi v39 <- (bb5: 0) (bb18: 1) */
     v40 = (*((int64_t *)(5368726720LL)));
@@ -874,8 +872,7 @@ L0:;
         /* phi v328 <- (bb6: v34) (bb79: v321) */
         /* phi v329 <- (bb6: v35) (bb79: v322) */
         v331 = ((long long (*)(long long, long long, long long, long long, long long, long long))_amsg_exit)(v325, v326, v327, 31LL, v328, v329);
-        /* structurally unreachable: block 81 */
-        __builtin_unreachable();
+        /* dac: structuring fallback */
     } else {
         v45 = (*((int32_t *)(v40)));
         v48 = (v45 == 0LL);
@@ -989,8 +986,7 @@ L1:;
                 v199 = (*((int32_t *)(v197)));
                 *((int32_t *)(((int64_t)(v196)))) = v199;
                 v201 = ((long long (*)(long long, long long, long long, long long, long long, long long))_setargv)(n, v186, v199, v187, v189, v190);
-                /* structurally unreachable: block 44 */
-                __builtin_unreachable();
+                /* dac: structuring fallback */
             }
         } else {
             *((int32_t *)(5368741892LL)) = 1LL;
@@ -1134,8 +1130,7 @@ int64_t mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, i
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void atexit(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -1221,8 +1216,7 @@ L0:;
     v42 = (*((int64_t *)(((int64_t)(v41)))));
     v43 = ((void *)((((int64_t)(v41)) + 8LL)));
     v45 = (*((int64_t *)(((int64_t)(v43)))));
-    /* structurally unreachable: block 7 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -1279,8 +1273,7 @@ int64_t __gcc_deregister_frame(int64_t arg0, int64_t arg1, int64_t arg2) {
     } else {
         v21 = ((void *)((((int64_t)(v4)) + 32LL)));
         v22 = (*((int64_t *)(((int64_t)(v21)))));
-        /* structurally unreachable: block 3 */
-        __builtin_unreachable();
+        /* dac: structuring fallback */
     }
 }
 
@@ -1440,8 +1433,7 @@ void __do_global_ctors(int64_t arg0, int64_t arg1) {
     v35 = (*((int64_t *)(((int64_t)(v34)))));
     v36 = ((void *)((((int64_t)(v34)) + 8LL)));
     v38 = (*((int64_t *)(((int64_t)(v36)))));
-    /* structurally unreachable: block 5 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -1466,8 +1458,7 @@ int32_t __main(void) {
     v3 = (v0 == 0LL);
     if (v3) {
         *((int32_t *)(5368742048LL)) = 1LL;
-        /* structurally unreachable: block 3 */
-        __builtin_unreachable();
+        /* dac: structuring fallback */
     } else {
         return v0;
     }
@@ -1516,8 +1507,7 @@ int64_t __dyn_tls_dtor(void) {
     v1 = (v0 == 3LL);
     if (v1) {
 L0:;
-        /* structurally unreachable: block 4 */
-        __builtin_unreachable();
+        /* dac: structuring fallback */
     } else {
         v3 = (v0 == 0LL);
         if (v3) {
@@ -1633,8 +1623,7 @@ L0:;
             v14 = (*((int64_t *)(((int64_t)(v13)))));
             v15 = ((void *)((((int64_t)(v13)) + 8LL)));
             v17 = (*((int64_t *)(((int64_t)(v15)))));
-            /* structurally unreachable: block 13 */
-            __builtin_unreachable();
+            /* dac: structuring fallback */
         } else {
             goto L0;
         }
@@ -1739,8 +1728,7 @@ int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, S_140001730_v6_t * ar
         /* recovered switch table at block 1 (arm resolution pending) */
         switch (v9) {
             default: {
-                /* structurally unreachable: block 1 */
-                __builtin_unreachable();
+                /* dac: structuring fallback */
             }
         }
     }
@@ -1804,8 +1792,7 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v27 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v18, v24, 5368726016LL, 2LL, v12, v14);
     v31 = ((long long (*)(long long, long long, long long, long long, long long, long long))vfprintf)(v18, v24, v6, v27, v24, v14);
     v32 = ((long long (*)(long long, long long, long long, long long, long long, long long))abort)(v18, v24, v6, v27, v24, v14);
-    /* structurally unreachable: block 5 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -1948,8 +1935,7 @@ L0:;
             /* phi v118 <- (bb6: v42) (bb21: v56) */
             /* phi v119 <- (bb6: v44) (bb21: v115) */
             v122 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(((int64_t)(v47)), v41, v118, 5368726048LL, v119, v43);
-            /* structurally unreachable: block 23 */
-            __builtin_unreachable();
+            /* dac: structuring fallback */
         } else {
             v51 = (*((int64_t *)(5368742152LL)));
             v53 = (v41 * 4LL);
@@ -1982,8 +1968,7 @@ L0:;
             } else {
                 v75 = ((void *)((((int64_t)(v7)) + 68LL)));
                 v76 = v7->field_44;
-                /* structurally unreachable: block 10 */
-                __builtin_unreachable();
+                /* dac: structuring fallback */
             }
         }
     } else {
@@ -2387,8 +2372,7 @@ L3:;
                                 /* phi v200 <- (bb8: v90) (bb67: v115) */
                                 /* phi v201 <- (bb8: v91) (bb67: v113) */
                                 v203 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(dst, src, v199, 5368726176LL, v200, v201);
-                                /* structurally unreachable: block 69 */
-                                __builtin_unreachable();
+                                /* dac: structuring fallback */
                             } else {
                                 v96 = (v88 + 12LL);
                                 v97 = (*((int64_t *)(5368726528LL)));
@@ -2408,11 +2392,9 @@ L3:;
                                         v116 = (v106 == 32LL);
                                         if (v116) {
                                             v175 = (*((int32_t *)(((int64_t)(v115)))));
-                                            /* structurally unreachable: block 47 */
-                                            __builtin_unreachable();
+                                            /* dac: structuring fallback */
                                         } else {
-                                            /* structurally unreachable: block 23 */
-                                            __builtin_unreachable();
+                                            /* dac: structuring fallback */
                                         }
                                     }
                                     goto L1;
@@ -2521,8 +2503,7 @@ void __mingw_setusermatherr(int64_t arg0) {
     int64_t v0 = arg0;
 
     *((int64_t *)(5368742160LL)) = v0;
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -2618,8 +2599,7 @@ L2:;
                             }
                         }
                     } else {
-                        /* structurally unreachable: block 8 */
-                        __builtin_unreachable();
+                        /* dac: structuring fallback */
                     }
                     goto L0;
                 } else {
@@ -2640,8 +2620,7 @@ L2:;
                                 goto L4;
                             }
                             default: {
-                                /* structurally unreachable: block 5 */
-                                __builtin_unreachable();
+                                /* dac: structuring fallback */
                             }
                         }
                     }
@@ -2741,8 +2720,7 @@ L0:;
                 } else {
                     v58 = ((void *)((((int64_t)(v3)) + 32LL)));
                     v59 = (*((int64_t *)(((int64_t)(v58)))));
-                    /* structurally unreachable: block 9 */
-                    __builtin_unreachable();
+                    /* dac: structuring fallback */
                 }
             } else {
                 v14 = (v7 <= -1073741685LL);
@@ -2767,8 +2745,7 @@ L1:;
                             }
                         }
                     } else {
-                        /* structurally unreachable: block 12 */
-                        __builtin_unreachable();
+                        /* dac: structuring fallback */
                     }
                 } else {
                     v15 = (v7 + 1073741683LL);
@@ -2788,8 +2765,7 @@ L1:;
                                 goto L4;
                             }
                             default: {
-                                /* structurally unreachable: block 4 */
-                                __builtin_unreachable();
+                                /* dac: structuring fallback */
                             }
                         }
                     }
@@ -2909,8 +2885,7 @@ void __mingwthr_run_key_dtors_part_0(int64_t arg0, int64_t arg1, int64_t arg2) {
     v52 = (*((int64_t *)(((int64_t)(v50)))));
     v53 = ((void *)((((int64_t)(v50)) + 8LL)));
     v55 = (*((int64_t *)(((int64_t)(v53)))));
-    /* structurally unreachable: block 9 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -3056,8 +3031,7 @@ int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2
                 v27 = (*((int32_t *)(((int64_t)(v25)))));
                 v29 = (((int64_t)(v25)) + 16LL);
                 v30 = v25->field_10;
-                /* structurally unreachable: block 9 */
-                __builtin_unreachable();
+                /* dac: structuring fallback */
             }
         }
         /* phi v40 <- (bb4: v13) (bb7: v22) (bb12: v22) */
@@ -3125,8 +3099,7 @@ int64_t __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t ar
         v51 = ((long long (*)(long long, long long, long long, long long, long long, long long))_fpreset)(v11, v12, v2, v41, v13, v14);
         return 1LL;
     } else {
-        /* structurally unreachable: block 1 */
-        __builtin_unreachable();
+        /* dac: structuring fallback */
     }
 }
 
@@ -4155,8 +4128,7 @@ int64_t fn_1400027e0(int64_t arg0) {
     v3 = ((S_1400027e0_v3_t *)((((int64_t)(v1)) - 8LL)));
     *((int64_t *)(((int64_t)(v3)))) = v4;
     v5 = ((void *)((((int64_t)(v3)) + 24LL)));
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4360,8 +4332,7 @@ void _amsg_exit(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t 
     v12 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v7, v8, v9, 2LL, v10, v11);
     v16 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v7, v8, 5368726448LL, v12, v4, v11);
     v18 = ((long long (*)(long long, long long, long long, long long, long long, long long))_exit)(v7, v8, 5368726448LL, 255LL, v4, v11);
-    /* structurally unreachable: block 3 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4464,8 +4435,7 @@ int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, in
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void strlen(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4483,8 +4453,7 @@ void strlen(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void strncmp(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4502,8 +4471,7 @@ void strncmp(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __acrt_iob_func(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4521,8 +4489,7 @@ void __acrt_iob_func(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __p__commode(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4540,8 +4507,7 @@ void __p__commode(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __p__fmode(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4559,8 +4525,7 @@ void __p__fmode(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __stdio_common_vfprintf(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4578,8 +4543,7 @@ void __stdio_common_vfprintf(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void fflush(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4597,8 +4561,7 @@ void fflush(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void setvbuf(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4616,8 +4579,7 @@ void setvbuf(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __set_app_type(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4635,8 +4597,7 @@ void __set_app_type(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __p___argc(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4654,8 +4615,7 @@ void __p___argc(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __p___argv(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4673,8 +4633,7 @@ void __p___argv(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _cexit(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4692,8 +4651,7 @@ void _cexit(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _configure_narrow_argv(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4711,8 +4669,7 @@ void _configure_narrow_argv(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _crt_atexit(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4730,8 +4687,7 @@ void _crt_atexit(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _exit(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4749,8 +4705,7 @@ void _exit(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _initialize_narrow_environment(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4768,8 +4723,7 @@ void _initialize_narrow_environment(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _initterm(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4787,8 +4741,7 @@ void _initterm(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _initterm_e(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4806,8 +4759,7 @@ void _initterm_e(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _set_invalid_parameter_handler(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4825,8 +4777,7 @@ void _set_invalid_parameter_handler(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void abort(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4844,8 +4795,7 @@ void abort(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void exit(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4863,8 +4813,7 @@ void exit(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void signal(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4882,8 +4831,7 @@ void signal(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void memcpy(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4901,8 +4849,7 @@ void memcpy(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __setusermatherr(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4920,8 +4867,7 @@ void __setusermatherr(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _configthreadlocale(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4939,8 +4885,7 @@ void _configthreadlocale(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void _set_new_mode(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4958,8 +4903,7 @@ void _set_new_mode(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void calloc(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4977,8 +4921,7 @@ void calloc(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void free(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -4996,8 +4939,7 @@ void free(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void malloc(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -5015,8 +4957,7 @@ void malloc(void) {
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void __p__environ(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -5081,6 +5022,5 @@ int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void register_frame_ctor(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }

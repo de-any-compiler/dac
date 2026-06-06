@@ -192,6 +192,11 @@ pub(crate) fn render_report_text(r: &Report) -> String {
         ";; simplify:    folded={} dropped={}",
         r.lift.simplifier_folds, r.lift.simplifier_drops,
     );
+    let _ = writeln!(
+        out,
+        ";; structuring: fallbacks={}",
+        r.lift.structuring_fallbacks,
+    );
     out.push('\n');
     out.push_str("functions:\n");
     for f in &r.functions {
@@ -347,6 +352,28 @@ mod tests {
         assert!(s.contains(";; functions:   1"));
         assert!(s.contains("0x0000000000001000"));
         assert!(s.contains("entry"));
+    }
+
+    #[test]
+    fn report_text_includes_structuring_fallbacks_row() {
+        // B3.27: the structuring row is unconditional (zero even when
+        // no fallbacks fired), keyed so a reader can grep for it.
+        let model = empty_model();
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
+        let s = render_report_text(&r);
+        assert!(
+            s.contains(";; structuring: fallbacks=0"),
+            "expected structuring row in:\n{s}",
+        );
     }
 
     #[test]

@@ -243,6 +243,13 @@ pub(crate) struct LiftStats {
     /// in the report so the two halves of the simplification budget
     /// (rewrites vs. removals) are visible.
     pub simplifier_folds: u64,
+    /// Number of [`SemStmt::Unreachable`] markers the structurer
+    /// emitted across every `Real` outcome (B3.27). The C backend's
+    /// default emit collapses each marker to a single
+    /// `/* dac: structuring fallback */` line; the report surfaces
+    /// the raw count so a reader sees how often the structurer hit a
+    /// recognised fallback regardless of `--debug` (FR-25).
+    pub structuring_fallbacks: u64,
 }
 
 impl LiftStats {
@@ -250,8 +257,9 @@ impl LiftStats {
         let mut s = Self::default();
         for o in outcomes {
             match o {
-                LiftOutcome::Real { ssa, facts, .. } => {
+                LiftOutcome::Real { ssa, sem, facts } => {
                     s.real += 1;
+                    s.structuring_fallbacks += count_structuring_fallbacks(&sem.body) as u64;
                     if recovered_convention_is_useful(facts.convention.as_ref()) {
                         s.typed_signatures += 1;
                     }
@@ -308,6 +316,47 @@ impl LiftStats {
             self.real as f32 / t as f32
         }
     }
+}
+
+/// Count [`SemStmt::Unreachable`] markers in `body` (recursively).
+/// Each marker is a structuring fallback the structurer emitted
+/// because the source block's terminator was `Unreachable` /
+/// `Indirect` and no further idiom recogniser claimed it. The C
+/// backend's default emit collapses each occurrence to a single
+/// `/* dac: structuring fallback */` line (B3.27); the report
+/// surfaces the raw count regardless of `--debug` (FR-25).
+fn count_structuring_fallbacks(block: &SemBlock) -> u32 {
+    let mut total = 0u32;
+    for stmt in &block.stmts {
+        match stmt {
+            SemStmt::Unreachable { .. } => total = total.saturating_add(1),
+            SemStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                total = total.saturating_add(count_structuring_fallbacks(then_body));
+                if let Some(eb) = else_body {
+                    total = total.saturating_add(count_structuring_fallbacks(eb));
+                }
+            }
+            SemStmt::While { body, .. }
+            | SemStmt::DoWhile { body, .. }
+            | SemStmt::Loop { body, .. } => {
+                total = total.saturating_add(count_structuring_fallbacks(body));
+            }
+            SemStmt::Switch { arms, default, .. } => {
+                for arm in arms {
+                    total = total.saturating_add(count_structuring_fallbacks(&arm.body));
+                }
+                if let Some(d) = default {
+                    total = total.saturating_add(count_structuring_fallbacks(d));
+                }
+            }
+            _ => {}
+        }
+    }
+    total
 }
 
 fn recovered_convention_is_useful(c: Option<&ConventionMatch>) -> bool {
@@ -1070,6 +1119,78 @@ mod tests {
         let s = LiftStats::from(&[]);
         assert_eq!(s.total(), 0);
         assert_eq!(s.fraction(), 0.0);
+    }
+
+    // ---- B3.27 structuring-fallback counter ------------------------
+
+    fn ev_node() -> dac_core::EvidenceId {
+        dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+            layer: dac_core::IrLayer::Semantic,
+            id: 0,
+        })
+    }
+
+    #[test]
+    fn b3_27_counts_lone_unreachable_marker() {
+        let mut body = SemBlock::empty();
+        body.stmts.push(SemStmt::Unreachable {
+            source_block: 0,
+            evidence: ev_node(),
+        });
+        assert_eq!(count_structuring_fallbacks(&body), 1);
+    }
+
+    #[test]
+    fn b3_27_counts_unreachable_nested_in_if_arm() {
+        // A nested fallback (the structurer reached an unreachable arm
+        // of an If) must contribute exactly once to the count.
+        let mut body = SemBlock::empty();
+        let mut else_body = SemBlock::empty();
+        else_body.stmts.push(SemStmt::Unreachable {
+            source_block: 2,
+            evidence: ev_node(),
+        });
+        body.stmts.push(SemStmt::If {
+            cond: dac_ir::ssa::Operand::Const(0),
+            then_body: SemBlock::empty(),
+            else_body: Some(else_body),
+            source_block: 0,
+            evidence: ev_node(),
+        });
+        assert_eq!(count_structuring_fallbacks(&body), 1);
+    }
+
+    #[test]
+    fn b3_27_counts_unreachable_inside_switch_default() {
+        // B3.17 lowers switches whose entries fail to resolve by
+        // wrapping the recognised idiom in a Switch with an
+        // Unreachable default body. That default counts as one
+        // fallback, plus any extras in arms.
+        let mut body = SemBlock::empty();
+        let mut default_body = SemBlock::empty();
+        default_body.stmts.push(SemStmt::Unreachable {
+            source_block: 4,
+            evidence: ev_node(),
+        });
+        body.stmts.push(SemStmt::Switch {
+            scrutinee: dac_ir::ssa::Operand::Value(0),
+            arms: Vec::new(),
+            default: Some(default_body),
+            source_block: 4,
+            evidence: ev_node(),
+        });
+        assert_eq!(count_structuring_fallbacks(&body), 1);
+    }
+
+    #[test]
+    fn b3_27_counts_zero_when_body_has_no_unreachable() {
+        // A real `Return None` body has no fallback markers.
+        let mut body = SemBlock::empty();
+        body.stmts.push(SemStmt::Return {
+            value: None,
+            evidence: ev_node(),
+        });
+        assert_eq!(count_structuring_fallbacks(&body), 0);
     }
 
     // ---- B3.17 switch-table lowering -------------------------------

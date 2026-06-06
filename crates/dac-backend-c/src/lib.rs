@@ -68,6 +68,6 @@ pub use ast::{
 pub use compile::{try_compile, CompileResult};
 pub use emit::{emit, emit_function};
 pub use lower::{
-    default_includes, lower_function, lower_function_with_typedefs, lower_unit, LoweredFunction,
-    NameResolver, Recovered,
+    default_includes, lower_function, lower_function_with_options, lower_function_with_typedefs,
+    lower_unit, LowerOptions, LoweredFunction, NameResolver, Recovered,
 };

@@ -57,8 +57,7 @@ int64_t _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t ar
 /* switch_tables: 0 */
 /* user_hint: id=2 rename=send return_override=false args_override=0 */
 void send(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -130,8 +129,7 @@ void _start(int64_t arg0, int64_t arg1, int64_t arg2) {
     *((int64_t *)(v12)) = v12;
     v18 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(4160LL, v5, ((int64_t)(v6)), 0LL, 0LL, v2);
     (/* opaque: hlt */ 0);
-    /* structurally unreachable: block 1 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -165,8 +163,7 @@ L0:;
         if (v6) {
             goto L0;
         } else {
-            /* structurally unreachable: block 2 */
-            __builtin_unreachable();
+            /* dac: structuring fallback */
         }
     }
 }
@@ -190,8 +187,7 @@ int64_t register_tm_clones(void) {
     int8_t v11 = 0LL;
     int64_t v12 = 0LL;
 
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */
@@ -236,8 +232,7 @@ int64_t __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
         v3 = ((void *)((v2 - 8LL)));
         *((int64_t *)(((int64_t)(v3)))) = v4;
         v5 = (*((int64_t *)(16352LL)));
-        /* structurally unreachable: block 1 */
-        __builtin_unreachable();
+        /* dac: structuring fallback */
     }
 }
 
@@ -256,8 +251,7 @@ int64_t __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t 
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
 void frame_dummy(void) {
-    /* structurally unreachable: block 0 */
-    __builtin_unreachable();
+    /* dac: structuring fallback */
 }
 
 /* dac-recovered function */

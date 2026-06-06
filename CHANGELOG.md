@@ -5190,6 +5190,148 @@ the SSA in place; the C backend reads from the
 post-simplification IR rather than maintaining a
 parallel representation).
 
+#### B3.27 — Suppress structurally-unreachable bodies in non-debug emit (2026-06-06)
+
+The structurer marks every CFG block whose terminator was decoded
+as `Unreachable` or `Indirect` and could not be reduced further
+with a `SemStmt::Unreachable` node so the lowering pass can render
+a comment at the right place without silently dropping the block
+(I-6). The B2.8 C backend rendered each marker as a
+`/* structurally unreachable: block N */` comment plus a
+`__builtin_unreachable();` call. On `hello-x86_64` that surface
+fired in six functions — `fn_1030`, `_start`, `deregister_tm_clones`,
+`register_tm_clones`, `__do_global_dtors_aux`, and `frame_dummy` —
+so half the recovered functions read with a `__builtin_unreachable()`
+tail and a per-source-block citation that mirrors the structurer's
+internal trace into the user-facing source. A reverse engineer
+reading the emitted C does not need that citation; a pipeline
+debugger does.
+
+B3.27 gates the citation + call pair behind `--debug`. The default
+emit collapses each marker to a single
+`/* dac: structuring fallback */` line — the reader still sees that
+the structurer hit a recognised fallback at that point in the
+body, without the decoder-trace noise. The `--debug` surface
+preserves the original pair so the pipeline-debugging signal stays
+available. The recovery report grows a `;; structuring: fallbacks=N`
+row so the raw fallback count is visible regardless of the
+emit-side mode (FR-25).
+
+Implementation:
+
+- `dac-backend-c`: new `LowerOptions { debug: bool }` knob bag
+  (`Default` zeroes the bit). `lower_function_with_options(ssa,
+  sem, resolver, recovered, options) -> LoweredFunction` carries
+  the bag through; the existing `lower_function_with_typedefs`
+  delegates with `LowerOptions::default()` so existing callers
+  (and the workspace's `lower_unit` translation-unit packer) keep
+  the suppressed surface unchanged. `LowerCtx` carries the bag;
+  the `SemStmt::Unreachable` arm in `lower_stmt` branches on
+  `self.options.debug`.
+- `dac-cli`: `lower_one_c_function` builds
+  `CLowerOptions { debug }` from `args.debug` and calls the
+  options-aware entry point. The CPP path stays on the typedefs
+  entry — the C++ AST does not lower bodies yet (B3 residue shelf)
+  so there's no Unreachable surface to gate.
+- `dac-cli::lift`: `LiftStats` grows a `structuring_fallbacks: u64`
+  counter. `LiftStats::from` walks `SemFunction.body` per `Real`
+  outcome via a new `count_structuring_fallbacks` helper that
+  recursively counts `SemStmt::Unreachable` occurrences across
+  `If` / `While` / `DoWhile` / `Loop` bodies and `Switch` arms +
+  default. The count stays structural — independent of the
+  `--debug` flag — so the report row reflects what the
+  structurer produced, not what the C backend chose to render.
+- `dac-cli::report`: new `;; structuring: fallbacks={N}` row
+  printed after the existing `;; simplify:` row in the FR-25
+  report so the two pre-emit-cleanup signals appear together.
+
+The B3.17 switch lowering's "switch with empty arms +
+`Unreachable` default" surface (which the structurer emits when an
+idiom was recognised but the entries could not be resolved)
+benefits from the same collapse: the default body now renders as
+`/* dac: structuring fallback */` instead of the pair. The
+recognised-idiom comment + `Switch` keyword stay so the reader
+still sees that the idiom was recognised (I-6).
+
+Behaviour on the corpus (default emit):
+
+- `hello-elf-o1-c/source.c`: 7352 → 7118 bytes (−3 %, six
+  fallbacks collapsed). `fn_1030`, `register_tm_clones`,
+  `frame_dummy` each shed both lines of their two-line body and
+  surface as one-line "fallback" bodies; `_start`,
+  `deregister_tm_clones`, `__do_global_dtors_aux` keep their
+  surrounding statements but the trailing fallback line is one
+  comment instead of two.
+- `hello-elf-o1-c-hints/source.c`: 7506 → 7272 bytes; same six
+  collapses. Report row appears with `structuring: fallbacks=6`.
+- `hello-elf-o0-report/report.txt`: gains the
+  `;; structuring: fallbacks=6` row.
+- `hello-elf-o1-c-hints/report.txt`: same row added.
+- `hello-pe-o1-c/source.c`: 162788 → 160251 bytes (−1.6 %); the
+  PE corpus has many CRT-side fallbacks the new surface
+  consolidates.
+- `syscall-hello-elf-o1-c/source.c`: 6499 → 6302 bytes; same
+  shape as the ELF hello.
+
+`--debug` emit holds the prior surface byte-for-byte on every
+fixture (manual spot-check via `./target/debug/dac -O1 --target c
+--debug tests/fixtures/hello-x86_64` shows the six
+`/* structurally unreachable: block N */ + __builtin_unreachable();`
+pairs intact).
+
+Tests:
+
+- `dac-backend-c::lower::tests::b3_27_default_emit_collapses_unreachable_to_single_fallback_comment`
+  pins the non-debug surface: the body has exactly one
+  `Stmt::Comment("dac: structuring fallback")` and no
+  `Stmt::Unreachable`.
+- `dac-backend-c::lower::tests::b3_27_debug_emit_keeps_per_block_citation_and_unreachable_call`
+  pins the debug surface: the body has the
+  `Comment("structurally unreachable: block 7") + Stmt::Unreachable`
+  pair, in order.
+- `dac-backend-c::lower::tests::b3_27_default_options_match_lower_function_with_typedefs`
+  pins backwards compatibility: the existing
+  `lower_function_with_typedefs` entry point emits the same
+  `LoweredFunction` as the options entry point called with
+  `LowerOptions::default()`.
+- `dac-cli::lift::tests::b3_27_counts_lone_unreachable_marker`,
+  `b3_27_counts_unreachable_nested_in_if_arm`,
+  `b3_27_counts_unreachable_inside_switch_default`,
+  `b3_27_counts_zero_when_body_has_no_unreachable` cover the
+  recursive counter across the structurer's container shapes
+  (raw body, `If` arms, `Switch` default).
+- `dac-cli::report::tests::report_text_includes_structuring_fallbacks_row`
+  pins the new FR-25 row's presence (and that it renders
+  `fallbacks=0` cleanly when no fallbacks fired).
+- `cargo xtask ci`: 649 workspace tests pass (was 641 at B3.26,
+  +8 net new B3.27 tests), all 32 goldens across 12 cases match
+  exactly, fmt + clippy clean.
+
+Done-when checklist:
+
+- ✓ `frame_dummy` no longer prints `__builtin_unreachable()` by
+  default. The whole body collapses to a single
+  `/* dac: structuring fallback */` line, prefixed by the existing
+  recovered-function header comments.
+- ✓ `register_tm_clones` no longer prints `__builtin_unreachable()`
+  by default; same collapse.
+- ✓ `__do_global_dtors_aux` no longer prints
+  `__builtin_unreachable()` by default; the trailing fallback
+  comment lands inside the `else` arm in place of the citation +
+  call pair.
+- ✓ `--debug` still prints both lines on every affected function.
+- ✓ The recovery report row `;; structuring: fallbacks=6` is
+  visible on the hello fixture (and `fallbacks=0` when there are
+  no fallbacks, as in the byte-stability test).
+
+Closes: B3.27, FR-21 (target source quality — the emitted C no
+longer surfaces structurer-trace noise in the default emit), FR-25
+(unresolved constructs — the fallback count is reported alongside
+the existing rubric rows so a reader can see how much of the
+binary the structurer reduced versus stopped at a recognised
+fallback), I-6 (degrade visibly — the fallback comment keeps the
+"structurer hit a fallback here" signal alive, just compactly).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

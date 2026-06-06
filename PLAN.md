@@ -93,17 +93,6 @@ than numbered batches.
 - **Done when:** `frame_dummy` reads as a one-line tail call; no
   `__builtin_unreachable` for thunk-shaped functions (FR-21).
 
-### B3.27 — Suppress structurally-unreachable bodies in non-debug emit
-- C backend gates `__builtin_unreachable()` and
-  `/* structurally unreachable: block N */` lines behind `--debug`.
-- Default emit replaces those with a single
-  `/* dac: structuring fallback */` line, or omits the block when no
-  edge remains after B3.26.
-- Recovery report grows a `structuring_fallbacks: N` counter.
-- **Done when:** `frame_dummy`, `register_tm_clones`,
-  `__do_global_dtors_aux` no longer print `__builtin_unreachable()` by
-  default; `--debug` still does (FR-21, FR-25).
-
 ### B3.28 — `main` canonical signature + hint-arity follow-up
 - Knowledge: canonical entry-point signatures (`main`, `wmain`,
   `WinMain`) keyed by symbol.

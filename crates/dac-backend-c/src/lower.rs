@@ -210,6 +210,24 @@ pub struct LoweredFunction {
     pub struct_decls: Vec<StructDecl>,
 }
 
+/// Per-lowering knobs the C backend honours (B3.27, FR-21, FR-25).
+///
+/// Default-constructible so existing call sites and tests stay green
+/// without ceremony; callers that want the debug-only surface flip
+/// the flag at the call site.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LowerOptions {
+    /// When true, the C backend keeps the
+    /// `/* structurally unreachable: block N */` + `__builtin_unreachable();`
+    /// pair the structurer's [`SemStmt::Unreachable`] markers lower to.
+    /// When false (the `--debug`-off default), the pair collapses to a
+    /// single `/* dac: structuring fallback */` line — the reader still
+    /// sees that the structurer hit a fallback, without the
+    /// per-source-block citation that only matters when debugging the
+    /// pipeline (B3.27).
+    pub debug: bool,
+}
+
 /// Lower a function and also return the struct typedefs the lowering
 /// pass needs at translation-unit scope. The typedef shape mirrors the
 /// recovered [`StructLayout`]: leading padding bringing the first
@@ -230,6 +248,21 @@ pub fn lower_function_with_typedefs(
     resolver: &NameResolver,
     recovered: &Recovered<'_>,
 ) -> LoweredFunction {
+    lower_function_with_options(ssa, sem, resolver, recovered, LowerOptions::default())
+}
+
+/// Like [`lower_function_with_typedefs`] but consumes a
+/// [`LowerOptions`] knob bag. Added at B3.27 so the CLI can flip the
+/// structuring-fallback surface between the debug-citation form and
+/// the default collapsed form without breaking existing callers.
+#[must_use]
+pub fn lower_function_with_options(
+    ssa: &SsaFunction,
+    sem: &SemFunction,
+    resolver: &NameResolver,
+    recovered: &Recovered<'_>,
+    options: LowerOptions,
+) -> LoweredFunction {
     debug_assert_eq!(ssa.function_address, sem.function_address);
     let name = sem
         .function_name
@@ -248,6 +281,7 @@ pub fn lower_function_with_typedefs(
         return_type: return_type.clone(),
         value_types,
         struct_typedefs: &struct_typedefs,
+        options,
     };
     let body = ctx.lower_block(&sem.body);
     let leading_comment = Some(format!(
@@ -545,6 +579,11 @@ struct LowerCtx<'a> {
     /// every `Load` / `Store` address site to rewrite the access into
     /// `base->field_<hex>` form.
     struct_typedefs: &'a StructTypedefTable,
+    /// Per-lowering knobs threaded from the CLI (B3.27). Currently
+    /// the `debug` bit gates the structuring-fallback citation form;
+    /// the struct is here so later knobs land without re-threading
+    /// every call site.
+    options: LowerOptions,
 }
 
 /// The `(declared, width)` pair the lowering pass tracks per SSA value.
@@ -931,10 +970,22 @@ impl<'a> LowerCtx<'a> {
             SemStmt::Label { id, .. } => out.push(CStmt::Label(*id)),
             SemStmt::Goto { target, .. } => out.push(CStmt::Goto(*target)),
             SemStmt::Unreachable { source_block, .. } => {
-                out.push(CStmt::Comment(format!(
-                    "structurally unreachable: block {source_block}"
-                )));
-                out.push(CStmt::Unreachable);
+                // B3.27: gate the per-source-block citation +
+                // `__builtin_unreachable();` pair behind `--debug`.
+                // The default emit collapses to a single
+                // `/* dac: structuring fallback */` line so the
+                // reader sees a recognised structuring fallback
+                // without the per-block decoder-trace noise. The
+                // debug surface keeps the original pair so the
+                // pipeline-debugging signal stays available.
+                if self.options.debug {
+                    out.push(CStmt::Comment(format!(
+                        "structurally unreachable: block {source_block}"
+                    )));
+                    out.push(CStmt::Unreachable);
+                } else {
+                    out.push(CStmt::Comment("dac: structuring fallback".to_string()));
+                }
             }
         }
     }
@@ -1620,6 +1671,95 @@ mod tests {
         let a = lower_function(&ssa, &sem, &NameResolver::new(), &Recovered::default());
         let b = lower_function(&ssa, &sem, &NameResolver::new(), &Recovered::default());
         assert_eq!(a, b);
+    }
+
+    // -----------------------------------------------------------------
+    // B3.27 — Structuring-fallback suppression in non-debug emit.
+    // -----------------------------------------------------------------
+
+    /// Build a one-block sem function whose body is a lone
+    /// `SemStmt::Unreachable` — the shape the structurer produces for a
+    /// function whose source block's terminator decoded as
+    /// `Unreachable` / `Indirect` and no further idiom recogniser
+    /// claimed it.
+    fn sem_with_lone_unreachable(name: &str) -> SemFunction {
+        SemFunction {
+            function_address: 0x1000,
+            function_name: Some(name.to_string()),
+            body: SemBlock {
+                stmts: vec![SemStmt::Unreachable {
+                    source_block: 7,
+                    evidence: ev(),
+                }],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        }
+    }
+
+    #[test]
+    fn b3_27_default_emit_collapses_unreachable_to_single_fallback_comment() {
+        let ssa = empty_ssa("frame_dummy_like");
+        let sem = sem_with_lone_unreachable("frame_dummy_like");
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &Recovered::default(),
+            LowerOptions { debug: false },
+        );
+        let body = lowered.function.body.stmts;
+        assert_eq!(
+            body,
+            vec![CStmt::Comment("dac: structuring fallback".into())],
+            "default emit must collapse Unreachable to a single fallback comment",
+        );
+        assert!(
+            !body.iter().any(|s| matches!(s, CStmt::Unreachable)),
+            "non-debug emit must not surface __builtin_unreachable()",
+        );
+    }
+
+    #[test]
+    fn b3_27_debug_emit_keeps_per_block_citation_and_unreachable_call() {
+        let ssa = empty_ssa("frame_dummy_like");
+        let sem = sem_with_lone_unreachable("frame_dummy_like");
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &Recovered::default(),
+            LowerOptions { debug: true },
+        );
+        let body = lowered.function.body.stmts;
+        assert_eq!(
+            body,
+            vec![
+                CStmt::Comment("structurally unreachable: block 7".into()),
+                CStmt::Unreachable,
+            ],
+            "debug emit must keep the per-block citation + __builtin_unreachable pair",
+        );
+    }
+
+    #[test]
+    fn b3_27_default_options_match_lower_function_with_typedefs() {
+        // The wrapper `lower_function_with_typedefs` continues to use
+        // `LowerOptions::default()` so existing callers and goldens
+        // keep the new (suppressed) surface as the default — confirm
+        // by emitting via both paths and comparing.
+        let ssa = empty_ssa("dual_path");
+        let sem = sem_with_lone_unreachable("dual_path");
+        let via_typedefs =
+            lower_function_with_typedefs(&ssa, &sem, &NameResolver::new(), &Recovered::default());
+        let via_options = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &Recovered::default(),
+            LowerOptions::default(),
+        );
+        assert_eq!(via_typedefs, via_options);
     }
 
     // -----------------------------------------------------------------

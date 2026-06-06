@@ -6,6 +6,7 @@
 ;; recovery:    typed_sigs=7 struct_fields=0 switch_tables=0 user_hints=2
 ;; naming:      named_values=1 / 42 (2.38% heuristic coverage, hint=1)
 ;; simplify:    folded=40 dropped=6
+;; structuring: fallbacks=6
 
 functions:
   0x0000000000001000..0x000000000000101b  _init                     observed/1.000  symbol,prologue
