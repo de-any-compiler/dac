@@ -81,9 +81,10 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
+use dac_binfmt::{Architecture, BinaryFormat};
 use dac_core::{Confidence, Source};
 use dac_ir::ssa::{Operand, SsaFunction, SsaOp, SsaTerminator, ValueId, ValueSource, VariableId};
-use dac_knowledge::{CallingConvention, ConventionKind};
+use dac_knowledge::{CallingConvention, ConventionKind, MS_X64, SYSV_AMD64, SYSV_AMD64_SYSCALL};
 
 use crate::stack::StackFrame;
 
@@ -244,6 +245,51 @@ pub fn pick_best(
         .into_iter()
         .next()
 }
+
+/// Format-gated candidate slice for the inference pass (B3.24, FR-12).
+///
+/// The pre-B3.24 CLI passed [`dac_knowledge::X86_64_CONVENTIONS`] raw,
+/// which left both [`SYSV_AMD64`] and [`MS_X64`] on the slate for
+/// every binary. On a clean ELF that meant any function whose
+/// arg-prefix scoring happened to favour MsX64 (e.g. an `rcx`/`rdx`
+/// reader with no SysV-unique args) could be tagged `ms-x64` even
+/// though no Windows program loader is involved. This helper bakes
+/// the binary's *format* into the candidate slate so the inference
+/// pass scores only conventions the loader could actually have
+/// produced.
+///
+/// Rules:
+///
+/// - ELF / Mach-O on x86-64 → SysV-family only ([`SYSV_AMD64`],
+///   [`SYSV_AMD64_SYSCALL`]). Windows ABI is impossible on these
+///   loaders.
+/// - PE on x86-64 → MsX64 only ([`MS_X64`]). Linux syscall
+///   conventions are impossible on this loader.
+/// - Non-x86-64 architecture → the full [`X86_64_CONVENTIONS`] slate.
+///   dac does not yet lift other architectures end-to-end, but
+///   returning the full slate preserves the pre-B3.24 behaviour for
+///   any caller that exercises a non-x86-64 path (no test relies on
+///   this branch today, so the choice is documentational).
+///
+/// The returned slice's order mirrors [`X86_64_CONVENTIONS`] so a
+/// score tie still breaks toward the entry that appears first there
+/// (SysV before MsX64, both before the syscall variant).
+#[must_use]
+pub fn candidates_for(
+    format: BinaryFormat,
+    arch: Architecture,
+) -> &'static [&'static CallingConvention] {
+    if !matches!(arch, Architecture::X86_64) {
+        return dac_knowledge::X86_64_CONVENTIONS;
+    }
+    match format {
+        BinaryFormat::Elf | BinaryFormat::MachO => ELF_X86_64_CONVENTIONS,
+        BinaryFormat::Pe => PE_X86_64_CONVENTIONS,
+    }
+}
+
+const ELF_X86_64_CONVENTIONS: &[&CallingConvention] = &[&SYSV_AMD64, &SYSV_AMD64_SYSCALL];
+const PE_X86_64_CONVENTIONS: &[&CallingConvention] = &[&MS_X64];
 
 /// All parameter values in the function, paired with their
 /// register name (lowercased via the SSA variable table).
@@ -1274,5 +1320,113 @@ mod tests {
         assert!(sig.stack_args.is_empty(), "locals (offset<0) are not args");
         assert_eq!(sig.int_args.len(), 1);
         assert_eq!(sig.int_args[0].register, "rdi");
+    }
+
+    // --- B3.24: format-gated candidate slice --------------------
+
+    /// ELF x86-64 binaries see only the SysV-family candidates. The
+    /// Windows ABI is impossible on this loader, so dropping `ms-x64`
+    /// keeps the inference pass from ranking it ahead of SysV on
+    /// argument patterns shared between the two (`rcx`, `rdx`, …).
+    #[test]
+    fn b3_24_elf_x86_64_drops_msx64_from_candidate_slate() {
+        let slate = candidates_for(BinaryFormat::Elf, Architecture::X86_64);
+        let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["sysv-amd64", "sysv-amd64-syscall"]);
+    }
+
+    /// PE x86-64 binaries see only `ms-x64`. The Linux syscall variant
+    /// cannot fire on a Windows loader, and SysV-AMD64 is impossible
+    /// to compile against on PE.
+    #[test]
+    fn b3_24_pe_x86_64_keeps_only_msx64() {
+        let slate = candidates_for(BinaryFormat::Pe, Architecture::X86_64);
+        let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["ms-x64"]);
+    }
+
+    /// Mach-O on x86-64 uses the SysV-family ABI (Apple's amd64 ABI
+    /// matches SysV with platform-specific extensions out of scope
+    /// for this batch). Same slate as ELF.
+    #[test]
+    fn b3_24_macho_x86_64_mirrors_elf_slate() {
+        let slate = candidates_for(BinaryFormat::MachO, Architecture::X86_64);
+        let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["sysv-amd64", "sysv-amd64-syscall"]);
+    }
+
+    /// A non-x86-64 architecture falls back to the full
+    /// `X86_64_CONVENTIONS` slate. dac does not lift other
+    /// architectures end-to-end yet, so this branch preserves the
+    /// pre-B3.24 caller behaviour rather than returning an empty
+    /// slice that would silently disable convention inference.
+    #[test]
+    fn b3_24_non_x86_64_arch_returns_full_x86_64_slate() {
+        let slate = candidates_for(BinaryFormat::Elf, Architecture::Aarch64);
+        let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["sysv-amd64", "ms-x64", "sysv-amd64-syscall"]);
+    }
+
+    /// On the same SysV-style function fixture as
+    /// `sysv_three_int_args_outranks_msx64`, the ELF-gated candidate
+    /// slate ranks only SysV-family conventions: `ms-x64` is removed
+    /// entirely, which is the B3.24 done-when criterion.
+    #[test]
+    fn b3_24_elf_slate_excludes_msx64_from_ranking() {
+        // 0 rsp, 1 rdi, 2 rsi, 3 rdx, 4 rax, 5 t, 6 t2
+        let raw = RawFunction {
+            variables: vec![
+                var(0, "rsp"),
+                var(1, "rdi"),
+                var(2, "rsi"),
+                var(3, "rdx"),
+                var(4, "rax"),
+                var(5, "t"),
+                var(6, "t2"),
+            ],
+            blocks: vec![RawBlock {
+                ops: vec![add_vv(5, 1, 2), add_vv(6, 5, 3), mov(4, 6)],
+                terminator: RawTerminator::Return {
+                    value: Some(RawOperand::Variable(4)),
+                },
+            }],
+        };
+        let ssa = build(raw, 1, &[]);
+        let frame = analyze_stack_frame(&ssa, StackConvention::SysVAmd64);
+        let slate = candidates_for(BinaryFormat::Elf, Architecture::X86_64);
+        let ranked = infer_calling_convention(&ssa, &frame, slate);
+        let names: Vec<&str> = ranked.iter().map(|m| m.convention_name).collect();
+        assert_eq!(names, vec!["sysv-amd64", "sysv-amd64-syscall"]);
+        assert!(!names.contains(&"ms-x64"), "ELF slate must not rank ms-x64",);
+    }
+
+    /// Symmetric check: on a MsX64-style function shape, a PE-gated
+    /// slate ranks only MsX64 — and the SysV-syscall convention,
+    /// which could win the prefix-bonus race on a PE binary that
+    /// happens to set `rdi` etc., never enters the ranking.
+    #[test]
+    fn b3_24_pe_slate_excludes_sysv_from_ranking() {
+        // 0 rsp, 1 rcx, 2 rdx, 3 rax, 4 t
+        let raw = RawFunction {
+            variables: vec![
+                var(0, "rsp"),
+                var(1, "rcx"),
+                var(2, "rdx"),
+                var(3, "rax"),
+                var(4, "t"),
+            ],
+            blocks: vec![RawBlock {
+                ops: vec![add_vv(4, 1, 2), mov(3, 4)],
+                terminator: RawTerminator::Return {
+                    value: Some(RawOperand::Variable(3)),
+                },
+            }],
+        };
+        let ssa = build(raw, 1, &[]);
+        let frame = analyze_stack_frame(&ssa, StackConvention::MsX64);
+        let slate = candidates_for(BinaryFormat::Pe, Architecture::X86_64);
+        let ranked = infer_calling_convention(&ssa, &frame, slate);
+        let names: Vec<&str> = ranked.iter().map(|m| m.convention_name).collect();
+        assert_eq!(names, vec!["ms-x64"]);
     }
 }

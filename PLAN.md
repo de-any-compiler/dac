@@ -49,23 +49,14 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22, B3.26, B3.27, and B3.23 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.24, B3.25, B3.28 – B3.31 are the
-M3 "real decompiler" follow-on still queued, closing the remaining
-readability and signature-correctness gaps surfaced in review (ABI
-gating, tail-call thunks, canonical `main`, return-width inference,
-CRT classification, etc.). The "B3 residue shelf" further down tracks
-heavier residue items that stay deferred past M3 and are sized as
-separate milestones rather than numbered batches.
-
-### B3.24 — ABI candidate set gated by binary format
-- `dac-recovery::convention::candidates_for(format, arch)` — drops
-  `ms-x64` from the candidate slice on ELF and SysV on PE.
-- The CLI `lift_one` consults that helper instead of passing
-  `X86_64_CONVENTIONS` raw.
-- **Done when:** every function in `hello-x86_64` reports
-  `convention: sysv-amd64`; PE goldens still pass with `ms-x64`
-  (FR-12, I-3).
+B3.1 – B3.22, B3.26, B3.27, B3.23, and B3.24 are complete — see
+[CHANGELOG.md](./CHANGELOG.md). B3.25, B3.28 – B3.31 are the M3 "real
+decompiler" follow-on still queued, closing the remaining readability
+and signature-correctness gaps surfaced in review (tail-call thunks,
+canonical `main`, return-width inference, CRT classification, etc.).
+The "B3 residue shelf" further down tracks heavier residue items that
+stay deferred past M3 and are sized as separate milestones rather than
+numbered batches.
 
 ### B3.25 — Tail-call recognition for forwarding thunks
 - Detector for `endbr64? ; jmp <known function>` as the entire
@@ -126,13 +117,10 @@ separate milestones rather than numbered batches.
 
 ### Sequencing
 
-B3.24 is independent of the rest of the queued M3 follow-on and can
-land in either order with B3.25. B3.26 is the largest single
-readability lever and is independent of the format/ABI batches.
-B3.27 depends on B3.26 (cleaner CFG → fewer fallback blocks to
-suppress). B3.28 depends on B3.24 (ABI gate stabilises the signature
-input) and B3.29 (return width feeds the canonical `main` shape).
-B3.31 can land at any point.
+B3.26 is the largest single readability lever and is independent of
+the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG → fewer
+fallback blocks to suppress). B3.28 depends on B3.29 (return width
+feeds the canonical `main` shape). B3.31 can land at any point.
 
 ### B3 residue shelf
 

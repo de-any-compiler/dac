@@ -56,18 +56,18 @@ int64_t _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t ar
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: ms-x64 (score 0.28) */
-/* args: rcx */
+/* convention: sysv-amd64 (score 0.10) */
+/* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-/* user_hint: id=1 rename=user_main return_override=true args_override=1 */
-int64_t user_main(int32_t arg0) {
+/* user_hint: id=1 rename=user_main return_override=true args_override=0 */
+int64_t user_main(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int32_t v6 = arg0;
+    int64_t v6 = 0LL;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
     int64_t send = 0LL;
@@ -88,15 +88,15 @@ int64_t user_main(int32_t arg0) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: ms-x64 (score 0.47) */
-/* args: rcx,rdx,r8 */
+/* convention: sysv-amd64 (score 0.00) */
+/* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-void _start(int64_t arg0, int64_t arg1, int64_t arg2) {
+void _start(void) {
     int64_t v0 = 0LL;
-    int64_t v2 = arg1;
+    int64_t v2 = 0LL;
     void * v4 = ((void *)(0LL));
     int64_t v5 = 0LL;
     void * v6 = ((void *)(0LL));
@@ -104,8 +104,8 @@ void _start(int64_t arg0, int64_t arg1, int64_t arg2) {
     void * v10 = ((void *)(0LL));
     int64_t v11 = 0LL;
     int64_t v12 = 0LL;
-    int64_t v13 = arg2;
-    int64_t v15 = arg0;
+    int64_t v13 = 0LL;
+    int64_t v15 = 0LL;
     int64_t v18 = 0LL;
 
     v5 = (*((int64_t *)(((int64_t)(v4)))));

@@ -62,7 +62,8 @@ pub mod structs;
 pub mod types;
 
 pub use convention::{
-    infer_calling_convention, pick_best, ConventionMatch, InferredSignature, RegisterArg, StackArg,
+    candidates_for, infer_calling_convention, pick_best, ConventionMatch, InferredSignature,
+    RegisterArg, StackArg,
 };
 pub use functions::{
     discover_functions, DiscoveryStats, Function, FunctionKind, FunctionSet, SourceMask,

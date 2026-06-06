@@ -561,7 +561,7 @@ typedef struct __attribute__((packed)) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -601,13 +601,13 @@ void safe_flush(int64_t arg0) {
 /* goto_count: 2 */
 /* label_count: 2 */
 /* irreducible: true */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 11 */
 /* struct_layouts: pointer=3 stack=1 */
 /* switch_tables: 0 */
-int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -620,9 +620,9 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     void * v9 = ((void *)(0LL));
     int64_t v10 = 0LL;
     void * v11 = ((void *)(0LL));
-    int64_t v12 = arg0;
+    int64_t v12 = 0LL;
     void * v13 = ((void *)(0LL));
-    int64_t v14 = arg1;
+    int64_t v14 = 0LL;
     void * v15 = ((void *)(0LL));
     int64_t v16 = 0LL;
     S_140001020_v17_t * v17 = ((S_140001020_v17_t *)(0LL));
@@ -631,12 +631,12 @@ int64_t __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
     int64_t v21 = 0LL;
     int64_t v23 = 0LL;
     int64_t v25 = 0LL;
-    int64_t v27 = arg3;
+    int64_t v27 = arg0;
     int64_t v29 = 0LL;
     int8_t v31 = 0LL;
-    int64_t v33 = arg2;
-    int64_t v34 = arg4;
-    int64_t v35 = arg5;
+    int64_t v33 = arg1;
+    int64_t v34 = arg2;
+    int64_t v35 = arg3;
     int64_t v36 = 0LL;
     int64_t v39 = 0LL;
     int64_t v40 = 0LL;
@@ -1061,21 +1061,21 @@ L1:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int64_t WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v2 = 0LL;
-    int64_t v4 = arg0;
-    int64_t v5 = arg1;
-    int64_t v6 = arg2;
-    int64_t v7 = arg3;
-    int64_t v8 = arg4;
-    int64_t v9 = arg5;
+    int64_t v4 = 0LL;
+    int64_t v5 = 0LL;
+    int64_t v6 = arg1;
+    int64_t v7 = arg0;
+    int64_t v8 = arg2;
+    int64_t v9 = arg3;
     int64_t v10 = 0LL;
 
     v2 = (*((int64_t *)(5368726624LL)));
@@ -1092,21 +1092,21 @@ int64_t WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int64_t mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v2 = 0LL;
-    int64_t v4 = arg0;
-    int64_t v5 = arg1;
-    int64_t v6 = arg2;
-    int64_t v7 = arg3;
-    int64_t v8 = arg4;
-    int64_t v9 = arg5;
+    int64_t v4 = 0LL;
+    int64_t v5 = 0LL;
+    int64_t v6 = arg1;
+    int64_t v7 = arg0;
+    int64_t v8 = arg2;
+    int64_t v9 = arg3;
     int64_t v10 = 0LL;
 
     v2 = (*((int64_t *)(5368726624LL)));
@@ -1123,7 +1123,7 @@ int64_t mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, i
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -1141,13 +1141,13 @@ void atexit(void) {
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.35) */
-/* args: rdi,rsi,rdx */
+/* convention: ms-x64 (score 0.10) */
+/* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 4 */
 /* struct_layouts: pointer=0 stack=1 */
 /* switch_tables: 0 */
-void __gcc_register_frame(int64_t arg0, int64_t arg1, int64_t arg2) {
+void __gcc_register_frame(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -1155,9 +1155,9 @@ void __gcc_register_frame(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
     void * v6 = ((void *)(0LL));
-    int64_t v9 = arg0;
-    int64_t v10 = arg1;
-    int64_t v11 = arg2;
+    int64_t v9 = 0LL;
+    int64_t v10 = 0LL;
+    int64_t v11 = 0LL;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
@@ -1227,22 +1227,22 @@ L0:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.50) */
-/* args: rdi,rsi,rdx */
+/* convention: ms-x64 (score 0.25) */
+/* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int64_t __gcc_deregister_frame(int64_t arg0, int64_t arg1, int64_t arg2) {
+int64_t __gcc_deregister_frame(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
     void * v4 = ((void *)(0LL));
     int64_t v5 = 0LL;
     int8_t v8 = 0LL;
-    int64_t v10 = arg0;
-    int64_t v11 = arg1;
-    int64_t v12 = arg2;
+    int64_t v10 = 0LL;
+    int64_t v11 = 0LL;
+    int64_t v12 = 0LL;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
     int64_t v15 = 0LL;
@@ -1285,24 +1285,24 @@ int64_t __gcc_deregister_frame(int64_t arg0, int64_t arg1, int64_t arg2) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int64_t __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v2 = 0LL;
     int64_t v4 = 0LL;
     int8_t v7 = 0LL;
-    int64_t v8 = arg2;
+    int64_t v8 = arg1;
     int64_t v9 = 0LL;
-    int64_t v10 = arg0;
-    int64_t v11 = arg1;
-    int64_t v12 = arg3;
-    int64_t v13 = arg4;
-    int64_t v14 = arg5;
+    int64_t v10 = 0LL;
+    int64_t v11 = 0LL;
+    int64_t v12 = arg0;
+    int64_t v13 = arg2;
+    int64_t v14 = arg3;
     int64_t v15 = 0LL;
     int64_t v16 = 0LL;
     int64_t v18 = 0LL;
@@ -1340,16 +1340,16 @@ int64_t __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.30) */
-/* args: rdi,rsi */
+/* convention: ms-x64 (score 0.20) */
+/* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 2 */
 /* struct_layouts: pointer=0 stack=1 */
 /* switch_tables: 0 */
-void __do_global_ctors(int64_t arg0, int64_t arg1) {
+void __do_global_ctors(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
-    int64_t v2 = arg1;
+    int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
     int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
@@ -1368,7 +1368,7 @@ void __do_global_ctors(int64_t arg0, int64_t arg1) {
     int64_t v24 = 0LL;
     int64_t v25 = 0LL;
     int64_t v27 = 0LL;
-    int64_t v28 = arg0;
+    int64_t v28 = 0LL;
     int64_t v29 = 0LL;
     int64_t v30 = 0LL;
     int64_t v31 = 0LL;
@@ -1444,7 +1444,7 @@ void __do_global_ctors(int64_t arg0, int64_t arg1) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.55) */
+/* convention: ms-x64 (score 0.55) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -1472,7 +1472,7 @@ int32_t __main(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -1492,7 +1492,7 @@ int64_t _setargv(void) {
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.30) */
+/* convention: ms-x64 (score 0.30) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -1526,23 +1526,23 @@ L0:;
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 2 */
 /* struct_layouts: pointer=0 stack=1 */
 /* switch_tables: 0 */
-int64_t __dyn_tls_init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t __dyn_tls_init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
-    int64_t v2 = arg1;
+    int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
     int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
     int64_t v6 = 0LL;
     int32_t v8 = 0LL;
     int8_t v9 = 0LL;
-    int64_t v10 = arg2;
+    int64_t v10 = arg1;
     int8_t v11 = 0LL;
     int8_t v12 = 0LL;
     void * v13 = ((void *)(0LL));
@@ -1557,10 +1557,10 @@ int64_t __dyn_tls_init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, i
     void * v30 = ((void *)(0LL));
     int64_t v31 = 0LL;
     int8_t v34 = 0LL;
-    int64_t v35 = arg0;
-    int64_t v36 = arg3;
-    int64_t v37 = arg4;
-    int64_t v38 = arg5;
+    int64_t v35 = 0LL;
+    int64_t v36 = arg0;
+    int64_t v37 = arg2;
+    int64_t v38 = arg3;
     int64_t v39 = 0LL;
     int64_t v40 = 0LL;
     void * v41 = ((void *)(0LL));
@@ -1638,7 +1638,7 @@ L0:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -1658,20 +1658,20 @@ int64_t __tlregdtor(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 2 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 1 */
-int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, S_140001730_v6_t * arg3, int64_t arg4, int64_t arg5) {
+int64_t _matherr(S_140001730_v6_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
-    int64_t v2 = arg1;
+    int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
     int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
-    S_140001730_v6_t * v6 = arg3;
+    S_140001730_v6_t * v6 = arg0;
     int32_t v7 = 0LL;
     int8_t v8 = 0LL;
     int32_t v9 = 0LL;
@@ -1680,10 +1680,10 @@ int64_t _matherr(int64_t arg0, int64_t arg1, int64_t arg2, S_140001730_v6_t * ar
     int32_t v14 = 0LL;
     int64_t v18 = 0LL;
     int64_t v19 = 0LL;
-    int64_t v22 = arg0;
-    int64_t v23 = arg2;
-    int64_t v24 = arg4;
-    int64_t v25 = arg5;
+    int64_t v22 = 0LL;
+    int64_t v23 = arg1;
+    int64_t v24 = arg2;
+    int64_t v25 = arg3;
     int64_t v26 = 0LL;
     int64_t v31 = 0LL;
     void * v33 = ((void *)(0LL));
@@ -1803,27 +1803,27 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
 /* goto_count: 3 */
 /* label_count: 3 */
 /* irreducible: true */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 6 */
 /* struct_layouts: pointer=5 stack=1 */
 /* switch_tables: 0 */
-int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
-    int64_t v2 = arg0;
+    int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
-    int64_t v4 = arg1;
+    int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
     int64_t v6 = 0LL;
     S_140001890_v7_t * v7 = ((S_140001890_v7_t *)(0LL));
     int32_t v8 = 0LL;
-    int64_t v10 = arg3;
+    int64_t v10 = arg0;
     int8_t v13 = 0LL;
-    int64_t v14 = arg5;
-    int64_t v15 = arg4;
-    int64_t v16 = arg2;
+    int64_t v14 = arg3;
+    int64_t v15 = arg2;
+    int64_t v16 = arg1;
     int64_t v17 = 0LL;
     int64_t v20 = 0LL;
     S_140001890_v21_t * v21 = ((S_140001890_v21_t *)(0LL));
@@ -2025,13 +2025,13 @@ L1:;
 /* goto_count: 9 */
 /* label_count: 5 */
 /* irreducible: true */
-/* convention: sysv-amd64 (score 0.70) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.70) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 9 */
 /* struct_layouts: pointer=5 stack=1 */
 /* switch_tables: 0 */
-int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -2044,9 +2044,9 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     void * v9 = ((void *)(0LL));
     int64_t v10 = 0LL;
     void * v11 = ((void *)(0LL));
-    int64_t v12 = arg0;
+    int64_t v12 = 0LL;
     void * v13 = ((void *)(0LL));
-    int64_t v14 = arg1;
+    int64_t v14 = 0LL;
     void * v15 = ((void *)(0LL));
     int64_t v16 = 0LL;
     void * v17 = ((void *)(0LL));
@@ -2071,10 +2071,10 @@ int64_t _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int6
     int64_t v46 = 0LL;
     void * v47 = ((void *)(0LL));
     int64_t v49 = 0LL;
-    int64_t v52 = arg2;
-    int64_t v53 = arg3;
-    int64_t v54 = arg4;
-    int64_t v55 = arg5;
+    int64_t v52 = arg1;
+    int64_t v53 = arg0;
+    int64_t v54 = arg2;
+    int64_t v55 = arg3;
     int64_t v56 = 0LL;
     int64_t v64 = 0LL;
     int64_t dst = 0LL;
@@ -2444,25 +2444,25 @@ L4:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 2 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-int64_t __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     S_140001d90_v1_t * v1 = ((S_140001d90_v1_t *)(0LL));
     int64_t v2 = 0LL;
     int8_t v5 = 0LL;
     void * v6 = ((void *)(0LL));
-    int64_t v7 = arg3;
+    int64_t v7 = arg0;
     void * v10 = ((void *)(0LL));
-    int64_t v11 = arg2;
-    int64_t v12 = arg0;
-    int64_t v13 = arg1;
-    int64_t v14 = arg4;
-    int64_t v15 = arg5;
+    int64_t v11 = arg1;
+    int64_t v12 = 0LL;
+    int64_t v13 = 0LL;
+    int64_t v14 = arg2;
+    int64_t v15 = arg3;
     int64_t v16 = 0LL;
     int64_t v17 = 0LL;
 
@@ -2514,15 +2514,15 @@ void __mingw_setusermatherr(int64_t arg0) {
 /* goto_count: 7 */
 /* label_count: 3 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 0 */
 /* struct_layouts: pointer=1 stack=0 */
 /* switch_tables: 1 */
-int64_t __mingw_SEH_error_handler(int64_t arg0, int64_t arg1, int64_t arg2, S_140001de0_v2_t * arg3, int64_t arg4, int64_t arg5) {
+int64_t __mingw_SEH_error_handler(S_140001de0_v2_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
-    S_140001de0_v2_t * v2 = arg3;
+    S_140001de0_v2_t * v2 = arg0;
     int64_t v3 = 0LL;
     int8_t v4 = 0LL;
     int8_t v5 = 0LL;
@@ -2541,11 +2541,11 @@ int64_t __mingw_SEH_error_handler(int64_t arg0, int64_t arg1, int64_t arg2, S_14
     int8_t v23 = 0LL;
     int8_t v24 = 0LL;
     int8_t v25 = 0LL;
-    int64_t v26 = arg2;
-    int64_t v29 = arg0;
-    int64_t v30 = arg1;
-    int64_t v31 = arg4;
-    int64_t v32 = arg5;
+    int64_t v26 = arg1;
+    int64_t v29 = 0LL;
+    int64_t v30 = 0LL;
+    int64_t v31 = arg2;
+    int64_t v32 = arg3;
     int64_t v33 = 0LL;
     int8_t v34 = 0LL;
     int8_t v36 = 0LL;
@@ -2789,24 +2789,24 @@ L4:;
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.35) */
-/* args: rdi,rsi,rdx */
+/* convention: ms-x64 (score 0.10) */
+/* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 4 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-void __mingwthr_run_key_dtors_part_0(int64_t arg0, int64_t arg1, int64_t arg2) {
+void __mingwthr_run_key_dtors_part_0(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
-    int64_t v4 = arg0;
+    int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
-    int64_t v6 = arg1;
+    int64_t v6 = 0LL;
     void * v7 = ((void *)(0LL));
     int64_t v8 = 0LL;
     void * v9 = ((void *)(0LL));
-    int64_t v11 = arg2;
+    int64_t v11 = 0LL;
     int64_t v12 = 0LL;
     int64_t v13 = 0LL;
     int64_t v14 = 0LL;
@@ -3051,24 +3051,24 @@ int64_t ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int64_t __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
-    int64_t v2 = arg2;
+    int64_t v2 = arg1;
     int8_t v3 = 0LL;
     int8_t v5 = 0LL;
     int32_t v6 = 0LL;
     int8_t v9 = 0LL;
-    int64_t v11 = arg0;
-    int64_t v12 = arg1;
-    int64_t v13 = arg4;
-    int64_t v14 = arg5;
+    int64_t p = 0LL;
+    int64_t v12 = 0LL;
+    int64_t v13 = arg2;
+    int64_t v14 = arg3;
     int64_t v15 = 0LL;
     int32_t v16 = 0LL;
     int8_t v19 = 0LL;
@@ -3085,7 +3085,7 @@ int64_t __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t ar
     int64_t v35 = 0LL;
     int8_t v38 = 0LL;
     int64_t v40 = 0LL;
-    int64_t v41 = arg3;
+    int64_t v41 = arg0;
     int64_t v42 = 0LL;
     int8_t v45 = 0LL;
     int32_t v46 = 0LL;
@@ -3096,7 +3096,7 @@ int64_t __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t ar
     v1 = (v0 - 56LL);
     v3 = (v2 == 2LL);
     if (v3) {
-        v51 = ((long long (*)(long long, long long, long long, long long, long long, long long))_fpreset)(v11, v12, v2, v41, v13, v14);
+        v51 = ((long long (*)(long long, long long, long long, long long, long long, long long))_fpreset)(p, v12, v2, v41, v13, v14);
         return 1LL;
     } else {
         /* dac: structuring fallback */
@@ -3111,7 +3111,7 @@ int64_t __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t ar
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -3275,27 +3275,27 @@ L0:;
 /* goto_count: 5 */
 /* label_count: 1 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 4 */
 /* struct_layouts: pointer=2 stack=1 */
 /* switch_tables: 0 */
-int64_t _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
-    int64_t v4 = arg0;
+    int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
-    int64_t v6 = arg1;
+    int64_t v6 = 0LL;
     void * v7 = ((void *)(0LL));
     int64_t v8 = 0LL;
     void * v9 = ((void *)(0LL));
-    int64_t v10 = arg3;
-    int64_t v12 = arg2;
-    int64_t v13 = arg4;
-    int64_t v14 = arg5;
+    int64_t v10 = arg0;
+    int64_t v12 = arg1;
+    int64_t v13 = arg2;
+    int64_t v14 = arg3;
     uint64_t v15 = 0LL;
     int8_t v16 = 0LL;
     S_140002470_v17_t * v17 = ((S_140002470_v17_t *)(0LL));
@@ -3734,7 +3734,7 @@ L1:;
 /* goto_count: 1 */
 /* label_count: 1 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.45) */
+/* convention: ms-x64 (score 0.45) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -4139,25 +4139,25 @@ int64_t fn_1400027e0(int64_t arg0) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 4 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-int64_t vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
-    int64_t v2 = arg0;
+    int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
-    int64_t v4 = arg1;
+    int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
     int64_t v6 = 0LL;
     S_140002820_v7_t * v7 = ((S_140002820_v7_t *)(0LL));
-    int64_t v8 = arg3;
-    int64_t v10 = arg2;
-    int64_t v12 = arg4;
-    int64_t v14 = arg5;
+    int64_t v8 = arg0;
+    int64_t v10 = arg1;
+    int64_t v12 = arg2;
+    int64_t v14 = arg3;
     void * v15 = ((void *)(0LL));
     int64_t v19 = 0LL;
     void * v21 = ((void *)(0LL));
@@ -4266,7 +4266,7 @@ int64_t fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.55) */
+/* convention: ms-x64 (score 0.55) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -4284,7 +4284,7 @@ int64_t __local_stdio_printf_options(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.55) */
+/* convention: ms-x64 (score 0.55) */
 /* args: (no register args) */
 /* return_reg: rax */
 /* stack_locals: 0 */
@@ -4307,22 +4307,22 @@ int64_t __p___initenv(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.70) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.70) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: none */
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-void _amsg_exit(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+void _amsg_exit(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
-    int64_t v4 = arg3;
-    int64_t v7 = arg0;
-    int64_t v8 = arg1;
-    int64_t v9 = arg2;
-    int64_t v10 = arg4;
-    int64_t v11 = arg5;
+    int64_t v4 = arg0;
+    int64_t v7 = 0LL;
+    int64_t v8 = 0LL;
+    int64_t v9 = arg1;
+    int64_t v10 = arg2;
+    int64_t v11 = arg3;
     int64_t v12 = 0LL;
     int64_t v16 = 0LL;
     int64_t v18 = 0LL;
@@ -4343,27 +4343,27 @@ void _amsg_exit(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t 
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.90) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.90) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 5 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
     void * v3 = ((void *)(0LL));
-    int64_t v4 = arg0;
+    int64_t v4 = 0LL;
     void * v5 = ((void *)(0LL));
-    int64_t v6 = arg1;
+    int64_t v6 = 0LL;
     void * v7 = ((void *)(0LL));
     int64_t v8 = 0LL;
     S_140002900_v9_t * v9 = ((S_140002900_v9_t *)(0LL));
-    int64_t v10 = arg5;
-    int64_t v12 = arg2;
-    int64_t v14 = arg4;
-    int64_t v16 = arg3;
+    int64_t v10 = arg3;
+    int64_t v12 = arg1;
+    int64_t v14 = arg2;
+    int64_t v16 = arg0;
     int64_t v18 = 0LL;
     int64_t v21 = 0LL;
     void * v22 = ((void *)(0LL));
@@ -4428,7 +4428,7 @@ int64_t __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, in
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4446,7 +4446,7 @@ void strlen(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4464,7 +4464,7 @@ void strncmp(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4482,7 +4482,7 @@ void __acrt_iob_func(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4500,7 +4500,7 @@ void __p__commode(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4518,7 +4518,7 @@ void __p__fmode(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4536,7 +4536,7 @@ void __stdio_common_vfprintf(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4554,7 +4554,7 @@ void fflush(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4572,7 +4572,7 @@ void setvbuf(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4590,7 +4590,7 @@ void __set_app_type(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4608,7 +4608,7 @@ void __p___argc(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4626,7 +4626,7 @@ void __p___argv(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4644,7 +4644,7 @@ void _cexit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4662,7 +4662,7 @@ void _configure_narrow_argv(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4680,7 +4680,7 @@ void _crt_atexit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4698,7 +4698,7 @@ void _exit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4716,7 +4716,7 @@ void _initialize_narrow_environment(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4734,7 +4734,7 @@ void _initterm(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4752,7 +4752,7 @@ void _initterm_e(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4770,7 +4770,7 @@ void _set_invalid_parameter_handler(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4788,7 +4788,7 @@ void abort(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4806,7 +4806,7 @@ void exit(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4824,7 +4824,7 @@ void signal(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4842,7 +4842,7 @@ void memcpy(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4860,7 +4860,7 @@ void __setusermatherr(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4878,7 +4878,7 @@ void _configthreadlocale(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4896,7 +4896,7 @@ void _set_new_mode(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4914,7 +4914,7 @@ void calloc(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4932,7 +4932,7 @@ void free(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4950,7 +4950,7 @@ void malloc(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */
@@ -4968,21 +4968,21 @@ void __p__environ(void) {
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.85) */
-/* args: rdi,rsi,rdx,rcx,r8,r9 */
+/* convention: ms-x64 (score 0.85) */
+/* args: rcx,rdx,r8,r9 */
 /* return_reg: rax */
 /* stack_locals: 3 */
 /* struct_layouts: pointer=1 stack=0 */
 /* switch_tables: 0 */
-int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     S_140002a60_v1_t * v1 = ((S_140002a60_v1_t *)(0LL));
-    int64_t v2 = arg0;
-    int64_t v3 = arg1;
-    int64_t v4 = arg2;
-    int64_t v5 = arg3;
-    int64_t v6 = arg4;
-    int64_t v7 = arg5;
+    int64_t v2 = 0LL;
+    int64_t v3 = 0LL;
+    int64_t v4 = arg1;
+    int64_t v5 = arg0;
+    int64_t v6 = arg2;
+    int64_t v7 = arg3;
     int64_t v8 = 0LL;
     int64_t v10 = 0LL;
     void * v13 = ((void *)(0LL));
@@ -5015,7 +5015,7 @@ int64_t main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg
 /* goto_count: 0 */
 /* label_count: 0 */
 /* irreducible: false */
-/* convention: sysv-amd64 (score 0.40) */
+/* convention: ms-x64 (score 0.40) */
 /* args: (no register args) */
 /* return_reg: none */
 /* stack_locals: 0 */

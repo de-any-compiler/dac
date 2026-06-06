@@ -3,8 +3,8 @@
 ;; signals:     symbol=8 entry=1 call=2 prologue=2 plt=1
 ;; lift cover.: 81 / 82 (98.78% lifted, 1 opaque)
 ;; body cover.: 9 / 9 (100.00% real bodies, 0 stubs)
-;; recovery:    typed_sigs=7 struct_fields=0 switch_tables=0 user_hints=2
-;; naming:      named_values=1 / 42 (2.38% heuristic coverage, hint=1)
+;; recovery:    typed_sigs=6 struct_fields=0 switch_tables=0 user_hints=2
+;; naming:      named_values=1 / 46 (2.17% heuristic coverage, hint=1)
 ;; simplify:    folded=40 dropped=6
 ;; structuring: fallbacks=6
 

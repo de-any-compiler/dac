@@ -5489,6 +5489,150 @@ from 649 (B3.27) to 663 (+14).
 Closes: B3.23, FR-9 (function discovery), FR-19 (import linking),
 FR-21 (target source quality), I-3 (confidence + source).
 
+#### B3.24 — ABI candidate set gated by binary format (2026-06-06)
+
+ChatGPT's review flagged that any ELF function whose SSA happened to
+read `rcx`, `rdx`, `r8`, or `r9` could be tagged `ms-x64` in the
+convention inference. The CLI's `lift_one` passed
+`dac_knowledge::X86_64_CONVENTIONS` raw, which left every candidate
+on the slate regardless of the binary loader. On `hello-x86_64` that
+manifested as `_init`, `main`, `_start`, and a handful of CRT helpers
+all reporting `/* convention: ms-x64 */` headers with synthesised
+`int64_t arg0, int64_t arg1, …` signatures lifted from registers the
+SysV ABI doesn't pass arguments in. The output was internally
+consistent (the MsX64 scoring rule did fire), but the reading was
+impossible: a Linux ELF loader cannot produce a Windows ABI callsite.
+A reverse engineer reading the source had to mentally undo every
+`ms-x64` tag before trusting the rest of the recovered signature.
+
+The fix is a tiny binary-format gate at the inference seam.
+
+**Behaviour change.** On `hello-x86_64` (ELF):
+
+- Every `/* convention: … */` row in the C output now reads
+  `sysv-amd64`. The MsX64 reading is excluded from the candidate
+  slate up front, so it cannot win on prefix-overlap ties.
+- Functions whose body genuinely reads no SysV arg register surface
+  with `args: (no register args)` instead of a phantom MsX64 arg
+  list. Examples: `_start` (loses spurious `arg0, arg1, arg2`),
+  `main` (loses spurious `arg0` lifted from `rcx`). The B3.28
+  follow-on batch is the canonical signature mechanism that will
+  re-promote those to `int main(int argc, char **argv)` from a
+  curated symbol → signature table; until then, the honest "no
+  inferred args" rendering is the correct degradation (I-6).
+- `--emit-report`'s `;; recovery:` row drops `typed_sigs` by 1 on
+  fixtures that previously scored a phantom MsX64 signature on
+  `_start` (7 → 6 on the unhinted hello fixture; same delta on the
+  `-hints` variant). Functions with a real return-register signature
+  (e.g. `main` keeps `return_reg: rax`) stay counted.
+
+On `hello-x86_64.exe` (PE): every `/* convention: … */` row now
+reads `ms-x64`. The pre-batch SysV reading (which scored higher than
+MsX64 on a handful of CRT helpers) is excluded; PE binaries
+exclusively see `ms-x64` candidates, matching what the Windows ABI
+can actually produce.
+
+On `syscall-hello-x86_64` (ELF): `_start` flips from a spurious
+`ms-x64` reading to `sysv-amd64 (no register args)`, mirroring the
+hello fixture.
+
+**Implementation.**
+
+1. `dac-recovery::convention::candidates_for(format, arch)` returns
+   a format-gated `&'static [&'static CallingConvention]`:
+   - ELF + Mach-O on x86-64 → `&[&SYSV_AMD64, &SYSV_AMD64_SYSCALL]`.
+   - PE on x86-64 → `&[&MS_X64]`. The SysV-syscall candidate is
+     impossible on a Windows loader; dropping it removes a
+     low-confidence ranking entry that could never win.
+   - Non-x86-64 architecture → the full `X86_64_CONVENTIONS` slate
+     as a documentational fallback. dac does not yet lift other
+     architectures end-to-end, so no test exercises this branch
+     today; the choice is to preserve the pre-B3.24 caller behaviour
+     rather than silently returning an empty slate.
+
+   The returned order mirrors `X86_64_CONVENTIONS`'s ordering so a
+   score tie breaks toward the entry that appears first there
+   (SysV before its syscall sibling on ELF; trivially MsX64 on PE).
+
+2. `dac_recovery::candidates_for` re-exported alongside
+   `infer_calling_convention` and `pick_best` for callers that need
+   the same slate.
+
+3. CLI `lift.rs`: `lift_one` calls
+   `infer_calling_convention(&ssa, &stack_frame,
+   candidates_for(ctx.model.format, ctx.model.architecture))` in
+   place of the previous `X86_64_CONVENTIONS` literal. `ctx.model`
+   already carried the format + architecture from
+   `BinaryModel::parse`, so the wiring is a one-line change at the
+   inference call site. The `X86_64_CONVENTIONS` import drops from
+   `lift.rs`.
+
+The helper is `Determinism::Pure` (NFR-9): static dispatch on two
+`Copy` enums returning a `'static` slice.
+
+**Tests added.** Six new unit tests in
+`crates/dac-recovery/src/convention.rs`:
+
+- `b3_24_elf_x86_64_drops_msx64_from_candidate_slate` — direct
+  assertion that ELF + x86-64 returns
+  `["sysv-amd64", "sysv-amd64-syscall"]`.
+- `b3_24_pe_x86_64_keeps_only_msx64` — PE returns `["ms-x64"]`.
+- `b3_24_macho_x86_64_mirrors_elf_slate` — Mach-O treated as
+  SysV-family (Apple's amd64 ABI matches SysV at this layer).
+- `b3_24_non_x86_64_arch_returns_full_x86_64_slate` — Aarch64
+  fallback preserves the full slate (documentational).
+- `b3_24_elf_slate_excludes_msx64_from_ranking` — runs
+  `infer_calling_convention` on a SysV-style three-arg function
+  with the ELF slate and asserts MsX64 is absent from the ranking
+  entirely (not just ranked below SysV).
+- `b3_24_pe_slate_excludes_sysv_from_ranking` — symmetric check on
+  an MsX64-style four-arg function with the PE slate.
+
+**Goldens refreshed.** Six golden outputs across four fixtures
+updated to reflect the format-gated candidate slate:
+
+- `tests/golden/hello-elf-o0-report/report.txt` —
+  `typed_sigs=7 → 6`, `nameable_values=42 → 46` (more eligible
+  values now that no MsX64 reading absorbs the rcx/rdx/r8 reads as
+  parameters).
+- `tests/golden/hello-elf-o1-c/source.c` — `main` and `_start`
+  swap from `ms-x64` to `sysv-amd64`; arg lists shrink to
+  `(void)` where SysV reads no argument prefix.
+- `tests/golden/hello-elf-o1-c-hints/source.c` — same shape; the
+  `user_hint` row's `args_override=1 → 0` because no SysV arg
+  register is read, so the hint catalogue has no first-slot
+  `int_arg` to retype. B3.28 will re-thread hint arity through
+  canonical-signature synthesis.
+- `tests/golden/hello-elf-o1-c-hints/report.txt` —
+  `typed_sigs=7 → 6`.
+- `tests/golden/hello-pe-o1-c/source.c` — one CRT helper flips
+  from a spurious `sysv-amd64 (score 0.40)` to `ms-x64 (score
+  0.40)`. The reading was wrong before — PE callers cannot produce
+  a SysV callsite — and the rename is mechanical at the comment
+  row.
+- `tests/golden/syscall-hello-elf-o1-c/source.c` — `_start` flips
+  from `ms-x64` to `sysv-amd64 (no register args)`.
+
+No PE golden's *function bodies* changed (lifting + structuring are
+upstream of the convention pass); only the per-function comment
+header rows shifted. Listing goldens stayed byte-identical because
+the listing target does not consult the convention pass.
+
+**Done when (PLAN.md).**
+
+- ✓ Every function in `hello-x86_64` reports
+  `convention: sysv-amd64`. Verified via `grep '/* convention:'` on
+  the C output: 8 functions, 8 SysV tags, no other reading.
+- ✓ PE goldens still pass with `ms-x64`. Verified via `grep
+  '/* convention:'` on `hello-x86_64.exe` C output: 60+ functions,
+  every row reads `ms-x64`, none read SysV or syscall.
+- ✓ `cargo xtask ci` green: fmt + clippy + 669 tests pass (6 more
+  than the 663 at B3.23 = the new B3.24 unit tests); 32 goldens
+  across 12 cases match.
+
+Closes: B3.24, FR-12 (calling-convention inference), I-3 (confidence
++ source).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

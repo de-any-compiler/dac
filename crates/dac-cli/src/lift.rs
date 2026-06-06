@@ -48,14 +48,14 @@ use dac_hints::{HintId, Hints};
 use dac_ir::instr::InstructionIr;
 use dac_ir::sem::{Block as SemBlock, SemFunction, Stmt as SemStmt, SwitchArm};
 use dac_ir::ssa::{Operand, SsaFunction, SsaTerminator};
-use dac_knowledge::{lookup_api_signature, ApiSignature, X86_64_CONVENTIONS};
+use dac_knowledge::{lookup_api_signature, ApiSignature};
 use dac_lift::lift_function;
 use dac_recovery::{
-    analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms, recover_names,
-    recover_structs, resolve_switch_entries, simplify, ApiResolver, CallRenameResolver,
-    ConventionMatch, Function, FunctionSet, LoopInfo, LoopShape, NameTable, RecoveredIdioms,
-    RecoveredStructs, SimplifyStats, StackConvention, StackFrame, StringResolver, SwitchTableIdiom,
-    TypeMap, ValueType,
+    analyze_stack_frame, candidates_for, infer_calling_convention, propagate_types, recover_idioms,
+    recover_names, recover_structs, resolve_switch_entries, simplify, ApiResolver,
+    CallRenameResolver, ConventionMatch, Function, FunctionSet, LoopInfo, LoopShape, NameTable,
+    RecoveredIdioms, RecoveredStructs, SimplifyStats, StackConvention, StackFrame, StringResolver,
+    SwitchTableIdiom, TypeMap, ValueType,
 };
 
 /// Per-function outcome of the orchestrator.
@@ -442,9 +442,13 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     // ordering follows the data dependencies — stack frame seeds
     // convention, both seed types, types seeds structs.
     let stack_frame = analyze_stack_frame(&ssa, ctx.stack_convention);
-    let mut convention = infer_calling_convention(&ssa, &stack_frame, X86_64_CONVENTIONS)
-        .into_iter()
-        .next();
+    let mut convention = infer_calling_convention(
+        &ssa,
+        &stack_frame,
+        candidates_for(ctx.model.format, ctx.model.architecture),
+    )
+    .into_iter()
+    .next();
     let signature = convention.as_ref().map(|c| &c.signature);
     let mut types = propagate_types(&ssa, signature, Some(&stack_frame), &ctx.api_resolver);
 
