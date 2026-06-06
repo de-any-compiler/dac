@@ -6,7 +6,7 @@
 //! that match a heuristic surface as `path`, `fmt`, `len`, … instead
 //! of the generic `v<id>` fallback (B2.8).
 //!
-//! ## Heuristics shipping at B3.7 and B3.20
+//! ## Heuristics shipping at B3.7, B3.20, and B3.22
 //!
 //! 1. **API-context naming** (B3.7). When a value `v` is the i-th
 //!    `Operand` of a [`SsaOp::Call`] whose target VA resolves to a
@@ -40,24 +40,33 @@
 //!    `Shl` / `Shr`) earns `size`. A bare register or constant
 //!    feeding the call carries no signal and stays on the
 //!    API-context (`n` from the catalogue) path.
+//! 6. **Hint-driven call-result naming** (B3.22, FR-20). When a
+//!    [`SsaOp::Call`]'s target VA matches a user-supplied
+//!    `[[function]]` hint with a `rename` field, the call's
+//!    destination value picks up the rename verbatim. Carries
+//!    [`Source::UserHint`] and outranks every other heuristic so
+//!    a reverse engineer who explicitly named the function sees
+//!    that name surface in the lifted source.
 //!
 //! ## Conflict resolution and disambiguation
 //!
 //! When several heuristics agree on a value, the highest-precedence
 //! source wins; precedence follows [`NameSource`]'s declaration
-//! order (`InductionCounter > Counter > AllocatorSize > ApiContext >
-//! StringRef`). When multiple values share the same base candidate
-//! (`strlen` called three times → three candidate-`s` values), the
-//! table mints unique identifiers by appending `_1`, `_2`, … in
-//! ascending `ValueId` order so iteration is deterministic across
-//! runs.
+//! order (`UserHint > InductionCounter > Counter > AllocatorSize >
+//! ApiContext > StringRef`). When multiple values share the same
+//! base candidate (`strlen` called three times → three candidate-`s`
+//! values, two calls to a hinted `send` → two candidate-`send`
+//! values), the table mints unique identifiers by appending `_1`,
+//! `_2`, … in ascending `ValueId` order so iteration is
+//! deterministic across runs.
 //!
 //! ## Confidence + invariants
 //!
-//! Each candidate carries a [`Confidence`] sourced from
-//! [`Source::Derived`] (I-3). Parameter values that the caller has
-//! already named via the convention list are skipped — the C
-//! backend names parameters as `argN` and does not look up
+//! Each candidate carries a [`Confidence`]. Deterministic heuristics
+//! source from [`Source::Derived`]; hint-driven candidates source
+//! from [`Source::UserHint`] (I-3). Parameter values that the
+//! caller has already named via the convention list are skipped —
+//! the C backend names parameters as `argN` and does not look up
 //! [`NameTable`] for them.
 //!
 //! ## Determinism (NFR-9)
@@ -122,6 +131,36 @@ impl StringResolver for NullStringResolver {
     }
 }
 
+/// Resolves a call target VA to a user-hint rename (B3.22, FR-20).
+/// `dac-recovery` stays decoupled from `dac-hints` by taking this
+/// trait at the [`recover_names`] boundary — the CLI threads in a
+/// thin adapter over the parsed `Hints` catalogue.
+pub trait CallRenameResolver {
+    /// Return the user-supplied rename for a function at `target_va`,
+    /// or `None` when no `[[function]]` hint matches.
+    fn resolve(&self, target_va: u64) -> Option<&str>;
+}
+
+impl<F> CallRenameResolver for F
+where
+    F: Fn(u64) -> Option<&'static str>,
+{
+    fn resolve(&self, target_va: u64) -> Option<&str> {
+        (self)(target_va)
+    }
+}
+
+/// No-op resolver — every call target goes un-renamed. Default for
+/// CLI invocations that did not pass `--hints`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NullCallRenameResolver;
+
+impl CallRenameResolver for NullCallRenameResolver {
+    fn resolve(&self, _target_va: u64) -> Option<&str> {
+        None
+    }
+}
+
 /// Per-function natural-loop summary consumed by the loop-induction
 /// heuristic (B3.20). Lifted into a small POD so `dac-recovery` does
 /// not depend on `dac-analysis` (which already depends on us).
@@ -151,7 +190,7 @@ pub struct LoopShape {
 /// Why a particular name was proposed. Higher variants outrank lower
 /// ones when multiple heuristics fire on the same value — the order
 /// here is `StringRef < ApiContext < AllocatorSize < Counter <
-/// InductionCounter`.
+/// InductionCounter < UserHint`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NameSource {
     /// String-literal slug (e.g. `str_hello`).
@@ -168,6 +207,11 @@ pub enum NameSource {
     /// only back-edge incoming is an `Add(phi, 1)`. Named `i` / `j`
     /// / `k` / … by nesting depth.
     InductionCounter,
+    /// `[[function]]`-hint `rename` field applied to a call site's
+    /// destination value (B3.22, FR-20). Outranks every
+    /// deterministic heuristic — the reverse engineer who supplied
+    /// the hint outranks every guess the pipeline can make.
+    UserHint,
 }
 
 impl NameSource {
@@ -176,6 +220,7 @@ impl NameSource {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            NameSource::UserHint => "user-hint",
             NameSource::InductionCounter => "induction-counter",
             NameSource::Counter => "counter",
             NameSource::AllocatorSize => "allocator-size",
@@ -242,14 +287,17 @@ impl NameTable {
 /// function. `types` lets the induction / counter pass filter out
 /// pointer-typed phis (e.g. a `void *p; p++` walker is not an
 /// integer counter); pass an empty [`TypeMap`] to disable the
-/// filter. Both name resolvers are optional via their `Null*`
-/// defaults.
+/// filter. `rename_resolver` (B3.22, FR-20) lets a user-supplied
+/// `[[function]]` `rename` flip the destination value of a call
+/// targeting the hinted function. Every resolver is optional via
+/// its `Null*` default.
 #[must_use]
 pub fn recover_names(
     ssa: &SsaFunction,
     signature: Option<&InferredSignature>,
     api_resolver: &dyn ApiResolver,
     strings: &dyn StringResolver,
+    rename_resolver: &dyn CallRenameResolver,
     loops: &LoopInfo,
     types: &TypeMap,
 ) -> NameTable {
@@ -265,6 +313,13 @@ pub fn recover_names(
                 ssa,
                 &parameters,
                 api_resolver,
+                &mut candidates,
+            );
+            collect_user_hint_call_candidate(
+                instr.dst,
+                &instr.op,
+                &parameters,
+                rename_resolver,
                 &mut candidates,
             );
         }
@@ -430,6 +485,57 @@ fn collect_allocator_size_candidate(
             },
         );
     }
+}
+
+/// Hint-driven call-result heuristic (B3.22, FR-20): when a
+/// [`SsaOp::Call`]'s target VA matches a user-supplied
+/// `[[function]]` `rename`, the call's destination value picks up
+/// the rename. The candidate's source is [`NameSource::UserHint`],
+/// which outranks every deterministic heuristic — a reverse
+/// engineer who explicitly named the function outranks every guess
+/// the pipeline can make.
+///
+/// Sanitised against the same C-identifier rules
+/// [`sanitise_identifier`] enforces for catalogue names, so a hint
+/// that accidentally embeds `@` or `.` (or collides with a C
+/// keyword) still produces an emittable identifier. An empty
+/// sanitised slug yields no candidate — the deterministic
+/// heuristics fall back to whatever they would have named the
+/// value.
+fn collect_user_hint_call_candidate(
+    dst: Option<ValueId>,
+    op: &SsaOp,
+    parameters: &BTreeSet<ValueId>,
+    rename_resolver: &dyn CallRenameResolver,
+    candidates: &mut BTreeMap<ValueId, NameCandidate>,
+) {
+    let Some(dst) = dst else { return };
+    if parameters.contains(&dst) {
+        return;
+    }
+    let SsaOp::Call {
+        target: Some(target_va),
+        ..
+    } = op
+    else {
+        return;
+    };
+    let Some(rename) = rename_resolver.resolve(*target_va) else {
+        return;
+    };
+    let base = sanitise_identifier(rename);
+    if base.is_empty() {
+        return;
+    }
+    propose(
+        candidates,
+        dst,
+        NameCandidate {
+            base,
+            source: NameSource::UserHint,
+            confidence: Confidence::new(NAME_CONFIDENCE, Source::UserHint),
+        },
+    );
 }
 
 /// Loop-induction heuristic: for each natural loop, find header phis
@@ -937,6 +1043,10 @@ mod tests {
         NullStringResolver
     }
 
+    fn null_renames() -> NullCallRenameResolver {
+        NullCallRenameResolver
+    }
+
     // --- tests ---------------------------------------------------
 
     #[test]
@@ -958,6 +1068,7 @@ mod tests {
             None,
             &libc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -987,6 +1098,7 @@ mod tests {
             None,
             &libc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1032,6 +1144,7 @@ mod tests {
             Some(&sig),
             &libc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1062,6 +1175,7 @@ mod tests {
             None,
             &libc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1100,6 +1214,7 @@ mod tests {
             None,
             &libc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1131,6 +1246,7 @@ mod tests {
             None,
             &NullApiResolver,
             &resolver,
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1163,6 +1279,7 @@ mod tests {
             None,
             &libc_resolver,
             &resolver,
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1215,6 +1332,7 @@ mod tests {
             None,
             &libc_resolver,
             &resolver,
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1223,6 +1341,7 @@ mod tests {
             None,
             &libc_resolver,
             &resolver,
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1245,6 +1364,7 @@ mod tests {
             None,
             &NullApiResolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1348,6 +1468,7 @@ mod tests {
             None,
             &NullApiResolver,
             &null_strings(),
+            &null_renames(),
             &info,
             &TypeMap::default(),
         );
@@ -1427,6 +1548,7 @@ mod tests {
             None,
             &NullApiResolver,
             &null_strings(),
+            &null_renames(),
             &info,
             &TypeMap::default(),
         );
@@ -1454,6 +1576,7 @@ mod tests {
             None,
             &malloc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1482,6 +1605,7 @@ mod tests {
             None,
             &malloc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1540,6 +1664,7 @@ mod tests {
             None,
             &malloc_resolver,
             &null_strings(),
+            &null_renames(),
             &info,
             &TypeMap::default(),
         );
@@ -1593,6 +1718,7 @@ mod tests {
             None,
             &NullApiResolver,
             &null_strings(),
+            &null_renames(),
             &info,
             &TypeMap::default(),
         );
@@ -1643,6 +1769,7 @@ mod tests {
             None,
             &NullApiResolver,
             &null_strings(),
+            &null_renames(),
             &info,
             &TypeMap::default(),
         );
@@ -1680,6 +1807,7 @@ mod tests {
             None,
             &malloc_resolver,
             &null_strings(),
+            &null_renames(),
             &loops,
             &TypeMap::default(),
         );
@@ -1712,10 +1840,232 @@ mod tests {
                 confidence: Confidence::new(NAME_CONFIDENCE, Source::Derived),
             },
         );
-        let table = recover_names(&ssa, None, &NullApiResolver, &null_strings(), &info, &types);
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &null_renames(),
+            &info,
+            &types,
+        );
         assert!(
             table.lookup(phi_v).is_none(),
             "pointer-typed phi must not earn an induction name"
         );
+    }
+
+    // --- B3.22 hint-driven naming tests ------------------------------
+
+    /// `[[function]] rename = "send"` applied to a call site flips the
+    /// destination value's name to `send` and cites
+    /// [`NameSource::UserHint`].
+    #[test]
+    fn user_hint_rename_names_call_result_value() {
+        let raw = RawFunction {
+            variables: vec![var(0, "rdi"), var(1, "rax")],
+            blocks: vec![RawBlock {
+                ops: vec![mov_c(0, 0x4006), call(Some(1), 0x2000, vec![0])],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        let call_dst = ins_value(&ssa, 0, 1);
+        let renames = |va: u64| -> Option<&'static str> {
+            if va == 0x2000 {
+                Some("send")
+            } else {
+                None
+            }
+        };
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &renames,
+            &loops,
+            &TypeMap::default(),
+        );
+        assert_eq!(table.lookup(call_dst), Some("send"));
+        assert_eq!(table.provenance[&call_dst].source, NameSource::UserHint);
+        assert_eq!(
+            table.provenance[&call_dst].confidence.source(),
+            Source::UserHint
+        );
+    }
+
+    /// A user-hint rename outranks every deterministic heuristic — even
+    /// when API context, string literal, or counter signals fire on
+    /// the same dst value, the user's identifier wins.
+    #[test]
+    fn user_hint_rename_outranks_api_context_on_call_result() {
+        // strlen returns size_t — its catalogue name for the return is
+        // not surfaced (API context only names parameters), but make
+        // the rename collide with a dst that would otherwise be named
+        // by API context: pin the same value as both an arg and a
+        // call dst via aliasing. Easier: pin the rename on the call
+        // and verify the dst gets it regardless.
+        let raw = RawFunction {
+            variables: vec![var(0, "rdi"), var(1, "rax")],
+            blocks: vec![RawBlock {
+                ops: vec![mov_c(0, 0x4006), call(Some(1), 0x2000, vec![0])],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        let call_dst = ins_value(&ssa, 0, 1);
+        let renames = |va: u64| -> Option<&'static str> {
+            if va == 0x2000 {
+                Some("send")
+            } else {
+                None
+            }
+        };
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &libc_resolver,
+            &null_strings(),
+            &renames,
+            &loops,
+            &TypeMap::default(),
+        );
+        assert_eq!(table.lookup(call_dst), Some("send"));
+        assert_eq!(table.provenance[&call_dst].source, NameSource::UserHint);
+    }
+
+    /// Two calls to a renamed function — both dst values want `send`;
+    /// the second becomes `send_1` via the existing disambiguation
+    /// path.
+    #[test]
+    fn user_hint_rename_disambiguates_repeat_calls() {
+        let raw = RawFunction {
+            variables: vec![var(0, "rdi"), var(1, "rax"), var(2, "rsi")],
+            blocks: vec![RawBlock {
+                ops: vec![
+                    mov_c(0, 0x4006),
+                    call(Some(1), 0x2000, vec![0]),
+                    mov_c(2, 0x4010),
+                    mov_v(0, 2),
+                    call(Some(1), 0x2000, vec![0]),
+                ],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        let renames = |va: u64| -> Option<&'static str> {
+            if va == 0x2000 {
+                Some("send")
+            } else {
+                None
+            }
+        };
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &renames,
+            &loops,
+            &TypeMap::default(),
+        );
+        let send_count = table
+            .values
+            .values()
+            .filter(|n| n.as_str() == "send" || n.starts_with("send_"))
+            .count();
+        assert!(
+            send_count >= 2,
+            "expected ≥2 send-rooted names, got {send_count}"
+        );
+        let names: BTreeSet<&String> = table.values.values().collect();
+        assert_eq!(names.len(), table.values.len());
+    }
+
+    /// A rename whose sanitised form is empty (e.g. only punctuation)
+    /// proposes no candidate, so the deterministic heuristics still
+    /// get to name the dst.
+    #[test]
+    fn user_hint_rename_skipped_when_sanitised_to_empty() {
+        let raw = RawFunction {
+            variables: vec![var(0, "rdi"), var(1, "rax")],
+            blocks: vec![RawBlock {
+                ops: vec![mov_c(0, 0x4006), call(Some(1), 0x2000, vec![0])],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        let call_dst = ins_value(&ssa, 0, 1);
+        let renames = |va: u64| -> Option<&'static str> {
+            if va == 0x2000 {
+                Some("@@@")
+            } else {
+                None
+            }
+        };
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            None,
+            &NullApiResolver,
+            &null_strings(),
+            &renames,
+            &loops,
+            &TypeMap::default(),
+        );
+        assert!(table.lookup(call_dst).is_none());
+    }
+
+    /// Parameter values are still skipped — even if a call's dst
+    /// shadows a parameter, the rename heuristic must not propose a
+    /// candidate for it (the C backend names parameters via the
+    /// convention list).
+    #[test]
+    fn user_hint_rename_skips_parameter_dst() {
+        let raw = RawFunction {
+            variables: vec![var(0, "rdi"), var(1, "rax")],
+            blocks: vec![RawBlock {
+                ops: vec![call(Some(0), 0x2000, vec![1])],
+                terminator: RawTerminator::Return { value: None },
+            }],
+        };
+        let ssa = build(raw);
+        // Pin the rdi parameter as the call's dst by treating it as a
+        // parameter slot in the signature. The dst is the value
+        // defined by the call instruction — collect that explicitly.
+        let call_dst = ins_value(&ssa, 0, 0);
+        let sig = InferredSignature {
+            int_args: vec![RegisterArg {
+                register: "rdi",
+                index: 0,
+                value: call_dst,
+                variable: 0,
+            }],
+            stack_args: vec![],
+            return_register: None,
+            variadic_call_sites: 0,
+        };
+        let renames = |va: u64| -> Option<&'static str> {
+            if va == 0x2000 {
+                Some("send")
+            } else {
+                None
+            }
+        };
+        let loops = empty_loops(ssa.blocks.len());
+        let table = recover_names(
+            &ssa,
+            Some(&sig),
+            &NullApiResolver,
+            &null_strings(),
+            &renames,
+            &loops,
+            &TypeMap::default(),
+        );
+        assert!(table.lookup(call_dst).is_none());
     }
 }

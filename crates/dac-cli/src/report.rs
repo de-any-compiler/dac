@@ -184,8 +184,8 @@ pub(crate) fn render_report_text(r: &Report) -> String {
     let name_pct = r.lift.named_value_ratio() * 100.0;
     let _ = writeln!(
         out,
-        ";; naming:      named_values={} / {} ({:.2}% heuristic coverage)",
-        r.lift.named_values, r.lift.nameable_values, name_pct,
+        ";; naming:      named_values={} / {} ({:.2}% heuristic coverage, hint={})",
+        r.lift.named_values, r.lift.nameable_values, name_pct, r.lift.hint_named_values,
     );
     out.push('\n');
     out.push_str("functions:\n");

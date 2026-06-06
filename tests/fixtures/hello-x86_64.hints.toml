@@ -1,4 +1,4 @@
-# Golden-corpus hint fixture for B3.6.
+# Golden-corpus hint fixture for B3.6 + B3.22.
 #
 # Pins the recovered `main` to the canonical C signature so the
 # emitted source under `hello-elf-o1-c-hints` shows the user-hint
@@ -12,3 +12,12 @@ name = "main"
 rename = "user_main"
 return = "int"
 args = ["int", "char**"]
+
+# B3.22 — call-site rename. Renames the PLT stub at 0x1030 (the
+# trampoline to `write@plt`) to `send`. The lifted `user_main`
+# body in the golden then shows the call's destination value bound
+# to `send` (NameSource::UserHint) instead of the previous
+# heuristic / `v<id>` fallback.
+[[function]]
+address = "0x1030"
+rename = "send"

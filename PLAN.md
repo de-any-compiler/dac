@@ -50,21 +50,10 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 The numbered M3 critical-path batches (B3.1 – B3.10) are complete,
-plus B3.11 – B3.21 — see [CHANGELOG.md](./CHANGELOG.md).
-The remaining 1 numbered follow-up batch (B3.22) below
-is pre-M4 work: it closes a specific deferral surfaced in a
-CHANGELOG entry and can land independently. Heavier residue items
-remain in the "B3 residue shelf" at the end of this section.
-
-### B3.22 — Hint-driven naming (B3.7 follow-up, FR-20)
-- Thread `Hints::find_function`'s `rename` into
-  `NameTable::values` for the matching call sites' arguments so a
-  user hint propagates names downstream the way the user expects
-  from the rename field.
-- **Done when:** a `[[function]]` hint with `rename = "send"`
-  applied to a call site flips the SSA value name and the
-  emitted source's identifier to `send`, citing
-  `NameSource::UserHint` in the recovery report.
+plus B3.11 – B3.22 — see [CHANGELOG.md](./CHANGELOG.md). The
+"B3 residue shelf" below tracks heavier residue items that stay
+deferred past M3 and are sized as separate milestones rather than
+numbered batches.
 
 ### B3 residue shelf
 

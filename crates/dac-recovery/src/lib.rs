@@ -72,8 +72,8 @@ pub use idioms::{
     SwitchTableIdiom, MAX_SWITCH_ENTRIES, SWITCH_TABLE_CONFIDENCE,
 };
 pub use names::{
-    recover_names, LoopInfo, LoopShape, NameCandidate, NameSource, NameTable, NullStringResolver,
-    StringResolver, NAME_CONFIDENCE,
+    recover_names, CallRenameResolver, LoopInfo, LoopShape, NameCandidate, NameSource, NameTable,
+    NullCallRenameResolver, NullStringResolver, StringResolver, NAME_CONFIDENCE,
 };
 pub use stack::{
     analyze_stack_frame, FramePointer, StackConvention, StackFrame, StackLocal, StackLocalKind,

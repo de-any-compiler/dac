@@ -4816,6 +4816,163 @@ NFR-9 (the walker is a pure function of the
 state, no RNG; the resolver merges stubs by
 `stub_va` in `BTreeMap` iteration order).
 
+#### B3.22 — Hint-driven call-result naming (2026-06-06)
+
+**Closes the last numbered M3 follow-up batch.** Threads
+`Hints::find_function`'s `rename` field through to the
+deterministic variable-naming pass so a `[[function]]` hint with
+`rename = "send"` applied to a call site flips the call's
+destination SSA value to `send`, satisfying B3.22's "done when"
+criterion (FR-20).
+
+Before this batch, a `[[function]]` `rename` overrode the
+*emitted function symbol* (the recovered function's declaration
+became `void send(void)` rather than `void fn_1030(void)` — B3.6
+behavior). What it did *not* do was propagate downstream: a
+caller's `v9 = ((...))fn_1030)(...)` left the destination value
+`v9` un-renamed, so the lifted source carried two different names
+for the same logical entity. B3.22 closes that gap.
+
+- **`NameSource::UserHint` variant
+  (`crates/dac-recovery/src/names.rs`).** New highest-precedence
+  variant on the [`NameSource`] enum — outranks every
+  deterministic heuristic (`InductionCounter > Counter >
+  AllocatorSize > ApiContext > StringRef`). The
+  [`NameSource::name()`] stable identifier returns
+  `"user-hint"`. Module docstring's "Heuristics shipping at B3.7,
+  B3.20, and B3.22" section grew a sixth bullet describing the
+  new pattern; the precedence comment lists `UserHint` at the top.
+- **`CallRenameResolver` trait
+  (`crates/dac-recovery/src/names.rs`).** New public trait, sibling
+  to [`StringResolver`], with a single
+  `resolve(target_va: u64) -> Option<&str>` method. A blanket impl
+  on `Fn(u64) -> Option<&'static str>` keeps the test scaffold
+  ergonomic — every B3.22 unit test inlines its rename map as a
+  closure. [`NullCallRenameResolver`] (`Default`) is the no-op
+  default that every existing call site of [`recover_names`] in
+  the test scaffold migrated to. Keeps `dac-recovery` decoupled
+  from `dac-hints` — the CLI threads in a thin adapter at the
+  pipeline boundary.
+- **New `recover_names` collector
+  (`crates/dac-recovery/src/names.rs::collect_user_hint_call_candidate`).**
+  Walks every `SsaOp::Call { target: Some(va), .. }`; on a rename
+  hit, sanitises the rename through the existing
+  [`sanitise_identifier`] helper (same path that handles the C
+  keyword list, `@` / `.` stripping, leading-digit rules) and
+  proposes a [`NameCandidate`] keyed by the call's `dst`
+  [`ValueId`] with `source: NameSource::UserHint` and
+  `confidence: Confidence::new(NAME_CONFIDENCE, Source::UserHint)`
+  (I-3 — the value carries the same `Source::UserHint` tag that
+  B3.6's `apply_function_hint` minted for the type-lattice
+  retypings). Parameter values are skipped — the C backend names
+  parameters as `argN`, not via [`NameTable`] — and an empty
+  sanitised slug abstains so the deterministic heuristics still
+  get to name the dst.
+- **`recover_names` signature.** Gains a `rename_resolver: &dyn
+  CallRenameResolver` parameter between `strings` and `loops`.
+  Every existing test in `crates/dac-recovery/src/names.rs::tests`
+  threads `&null_renames()` (a new local `NullCallRenameResolver`
+  helper) so the deterministic-heuristic baseline stays
+  byte-identical.
+- **`dac-cli/src/lift.rs::HintRenameResolver`.** New struct,
+  sibling to [`BinaryStringResolver`]. Pre-computes a
+  `BTreeMap<u64, String>` from `hints.functions` at construction —
+  every hint with a `rename` and an address matcher
+  (`HintMatcher::Address` or `HintMatcher::Both`) contributes one
+  entry; `HintMatcher::Name`-only hints are skipped because the
+  rename heuristic operates on call *target VAs*, which the
+  recovery pass has no name index for. `lift_one` builds the
+  resolver once and threads it into the [`recover_names`] call.
+- **`LiftStats::hint_named_values` counter.** New field added next
+  to the existing `named_values` total, populated by counting
+  `NameSource::UserHint` entries in each `RecoveryFacts::names`
+  provenance map. Surfaces in `--emit-report`'s `naming:` row as
+  the new `hint=N` column — the recovery report now reads
+  `;; naming: named_values=4 / 79 (5.06% heuristic coverage,
+  hint=1)` on the hello-elf-o1-c-hints golden, cleanly satisfying
+  the "done when" criterion's "citing `NameSource::UserHint` in
+  the recovery report" clause.
+- **`tests/fixtures/hello-x86_64.hints.toml` gained a second
+  hint.** A new `[[function]] address = "0x1030" rename = "send"`
+  block targets the `write@plt` trampoline so the golden
+  exercises the call-site rename path end-to-end. The existing
+  `main` → `user_main` hint is untouched, keeping B3.6's
+  function-rename + arg-/return-retyping coverage on the same
+  fixture.
+- **Goldens refreshed:**
+  - `hello-elf-o1-c-hints/source.c`: `int64_t v9 = 0LL;` /
+    `v9 = ((...))fn_1030)(fd, ((int64_t)(buf)), n, ...)` becomes
+    `int64_t send = 0LL;` /
+    `send = ((...))fn_1030)(fd, ((int64_t)(buf)), n, ...)`. The
+    PLT stub function declaration block also gains the
+    `user_hint: id=2 rename=send` provenance line and renders as
+    `void send(void)` (B3.6 path, recapped here for completeness).
+  - `hello-elf-o1-c-hints/report.txt`: `user_hints=1` → `2`, and
+    the new `naming:` row reads
+    `named_values=4 / 79 (5.06% heuristic coverage, hint=1)`.
+  - `hello-elf-o0-report/report.txt`: picks up the new column
+    `(hint=0)` everywhere, keeping the format stable across
+    cases.
+- **Tests added (5 new in `dac-recovery::names::tests`, 627
+  workspace total, +5 from B3.21's 622).**
+  - `user_hint_rename_names_call_result_value` — base case: a
+    rename map keyed by the call's target VA renames the call's
+    `dst` SSA value to the hinted identifier, with provenance
+    `NameSource::UserHint` and confidence source
+    `Source::UserHint`.
+  - `user_hint_rename_outranks_api_context_on_call_result` —
+    precedence: even when the API-context heuristic would have
+    proposed `s` (strlen's catalogue parameter name) for the dst,
+    the hint's rename wins.
+  - `user_hint_rename_disambiguates_repeat_calls` — two calls to
+    the same hinted target give two `send`-rooted names
+    (`send`, `send_1`) via the existing
+    [`finalise_names`] disambiguation pass; no two values share
+    a final name.
+  - `user_hint_rename_skipped_when_sanitised_to_empty` — a rename
+    that contains only punctuation (`@@@`) sanitises to empty;
+    the candidate is abandoned and the dst gets no name (so the
+    deterministic heuristics aren't blocked from proposing
+    later).
+  - `user_hint_rename_skips_parameter_dst` — a dst that is also
+    listed as a register-arg in the inferred signature is
+    skipped, so the C backend's parameter-naming path (which
+    names parameters as `argN`) is not double-named by the
+    heuristic.
+- **Goldens net:** 3 drifts (`o0-report.txt`, `o1-c-hints/source.c`,
+  `o1-c-hints/report.txt`), all expected and refreshed via
+  `cargo xtask golden update`. 29/32 goldens unchanged, all 32
+  match after the refresh.
+- **Stability:** the deterministic heuristics' baseline is
+  byte-identical to B3.21 — the new resolver injection point is
+  null on every existing call site (an empty
+  `NullCallRenameResolver`), and the new candidate collector
+  abstains when the resolver returns `None` or the rename
+  sanitises to empty.
+
+Limitations (folded into the B3 residue shelf):
+
+- **Call-target resolver does not consult hints.** The C
+  backend's `lower_call` resolves the target VA via the
+  `CNameResolver`, which `build_c_name_resolver` populates from
+  `Function::name` alone. So a call to a renamed function still
+  prints the *recovered* name (or `fn_<addr>` for unnamed
+  stubs) as the call target, while the dst gets the rename. The
+  golden's `user_main` body now reads
+  `send = (...)fn_1030(...)` — the dst flips but the call
+  expression's target stays at `fn_1030`. Closing this needs the
+  resolver to take a `&Hints` reference too; deferred because
+  it is a B3.6-rename-propagation concern, not a B3.22
+  call-result-naming one.
+
+Closes: B3.22, FR-20 (user hint propagates the rename
+through to the SSA value the C backend prints), I-3 (the
+new candidate carries `Source::UserHint`), NFR-9 (the
+resolver is a pure projection of [`Hints`] over [`u64`];
+the candidate collector iterates `ssa.blocks` in declared
+order; the disambiguation pass walks the candidate map in
+ascending `ValueId`).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

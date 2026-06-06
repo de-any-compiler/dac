@@ -63,7 +63,8 @@ int64_t _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t ar
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-void fn_1030(void) {
+/* user_hint: id=2 rename=send return_override=false args_override=0 */
+void send(void) {
     /* structurally unreachable: block 0 */
     __builtin_unreachable();
 }
@@ -93,7 +94,7 @@ int32_t user_main(int32_t arg0) {
     int32_t v6 = arg0;
     int64_t v7 = 0LL;
     int64_t v8 = 0LL;
-    int64_t v9 = 0LL;
+    int64_t send = 0LL;
     int32_t v10 = 0LL;
     int64_t v11 = 0LL;
     void * v12 = ((void *)(0LL));
@@ -104,7 +105,7 @@ int32_t user_main(int32_t arg0) {
     n = 6LL;
     fd = 1LL;
     buf = ((void *)(8196LL));
-    v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))fn_1030)(fd, ((int64_t)(buf)), n, v6, v7, v8);
+    send = ((long long (*)(long long, long long, long long, long long, long long, long long))fn_1030)(fd, ((int64_t)(buf)), n, v6, v7, v8);
     v10 = 42LL;
     v11 = (*((int64_t *)(((int64_t)(v1)))));
     v12 = ((void *)((((int64_t)(v1)) + 8LL)));

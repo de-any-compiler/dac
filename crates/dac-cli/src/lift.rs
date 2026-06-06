@@ -52,9 +52,9 @@ use dac_knowledge::{lookup_api_signature, ApiSignature, X86_64_CONVENTIONS};
 use dac_lift::lift_function;
 use dac_recovery::{
     analyze_stack_frame, infer_calling_convention, propagate_types, recover_idioms, recover_names,
-    recover_structs, resolve_switch_entries, ApiResolver, ConventionMatch, Function, FunctionSet,
-    LoopInfo, LoopShape, NameTable, RecoveredIdioms, RecoveredStructs, StackConvention, StackFrame,
-    StringResolver, SwitchTableIdiom, TypeMap, ValueType,
+    recover_structs, resolve_switch_entries, ApiResolver, CallRenameResolver, ConventionMatch,
+    Function, FunctionSet, LoopInfo, LoopShape, NameTable, RecoveredIdioms, RecoveredStructs,
+    StackConvention, StackFrame, StringResolver, SwitchTableIdiom, TypeMap, ValueType,
 };
 
 /// Per-function outcome of the orchestrator.
@@ -218,6 +218,12 @@ pub(crate) struct LiftStats {
     /// "heuristic-name coverage" rubric the B3.7 "done when"
     /// criterion measures.
     pub named_values: u64,
+    /// Subset of [`Self::named_values`] whose
+    /// [`dac_recovery::NameSource`] is `UserHint` (B3.22, FR-20).
+    /// Surfaces in `--emit-report`'s naming row so a reader sees
+    /// how many of the heuristic names came from `--hints` versus
+    /// the deterministic pipeline.
+    pub hint_named_values: u64,
     /// Sum of total non-parameter SSA values across every `Real`
     /// outcome — the denominator for the heuristic-name coverage
     /// fraction.
@@ -244,6 +250,12 @@ impl LiftStats {
                         s.user_hint_functions += 1;
                     }
                     s.named_values += facts.names.named_count() as u64;
+                    s.hint_named_values += facts
+                        .names
+                        .provenance
+                        .values()
+                        .filter(|c| c.source == dac_recovery::NameSource::UserHint)
+                        .count() as u64;
                     s.nameable_values += nameable_value_count(ssa, facts.as_ref()) as u64;
                 }
                 LiftOutcome::Stub { .. } => s.stub += 1,
@@ -384,11 +396,13 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     // deterministic (NFR-9) — same SSA + same resolvers + same
     // summary → same names.
     let loop_info = loop_info_from_forest(&loops);
+    let rename_resolver = HintRenameResolver::new(ctx.hints);
     let names = recover_names(
         &ssa,
         convention.as_ref().map(|c| &c.signature),
         &ctx.api_resolver,
         &ctx.string_resolver,
+        &rename_resolver,
         &loop_info,
         &types,
     );
@@ -902,6 +916,45 @@ impl BinaryStringResolver {
 impl StringResolver for BinaryStringResolver {
     fn resolve(&self, va: u64) -> Option<&str> {
         self.by_va.get(&va).map(String::as_str)
+    }
+}
+
+/// [`CallRenameResolver`] backed by the user-supplied
+/// `[[function]]` hint catalogue (B3.22, FR-20). Pre-computes a
+/// `VA → rename` map at construction so per-call-site lookups stay
+/// `O(log n)` even on hint files that list every binary import.
+///
+/// Hints with no `rename` field, and hints whose matcher is name-
+/// only (no address — the recovery pass has no name index for
+/// arbitrary call targets), contribute no entries: the rename
+/// heuristic abstains for them and the deterministic name pipeline
+/// runs unchanged.
+struct HintRenameResolver {
+    by_va: BTreeMap<u64, String>,
+}
+
+impl HintRenameResolver {
+    fn new(hints: &Hints) -> Self {
+        let mut by_va: BTreeMap<u64, String> = BTreeMap::new();
+        for h in &hints.functions {
+            let Some(rename) = h.rename.as_ref() else {
+                continue;
+            };
+            match &h.matcher {
+                dac_hints::HintMatcher::Address(va)
+                | dac_hints::HintMatcher::Both { address: va, .. } => {
+                    by_va.entry(*va).or_insert_with(|| rename.clone());
+                }
+                dac_hints::HintMatcher::Name(_) => {}
+            }
+        }
+        Self { by_va }
+    }
+}
+
+impl CallRenameResolver for HintRenameResolver {
+    fn resolve(&self, target_va: u64) -> Option<&str> {
+        self.by_va.get(&target_va).map(String::as_str)
     }
 }
 
