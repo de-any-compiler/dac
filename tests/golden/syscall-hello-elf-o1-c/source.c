@@ -55,9 +55,9 @@ int64_t _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t ar
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int64_t main(void) {
+int main(void) {
     (/* opaque: syscall */ 0);
-    return 0LL;
+    return ((int)(0LL));
 }
 
 /* dac-recovered function */

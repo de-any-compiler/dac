@@ -5791,6 +5791,150 @@ Closes: B3.25, FR-21 (recovered source readability), I-3
 `Confidence::Observed` produced by the discovery signals; it does
 not promote a `Speculative` fact).
 
+#### B3.28 — `main` canonical signature + hint-arity follow-up (2026-06-06)
+
+Reverse engineers reading dac's C output flagged the recovered
+`main` as `int64_t main(void)` even though every C compiler in the
+universe wants `int main(void)` or `int main(int argc, char **argv)`.
+The C standard pins `main`'s shape regardless of what the body
+actually reads, but the convention pass has no way to encode that:
+it scores arg-register prefixes from observed SSA reads, and there
+is no read to score for a `main(void)` body. Likewise, when a user
+hint declared 3 arg slots on a function whose convention pass only
+observed 1 register being read, the extra slots silently dropped.
+
+This batch adds a curated entry-point catalogue and a hint-arity
+synthesis pass that, together, drive a per-function C-canonical
+signature override into the C backend:
+
+- New `dac-knowledge::canonical` module with a curated table of
+  entry-point signatures keyed by symbol: `main`, `wmain`, and
+  `WinMain`. Each entry carries C-canonical spellings (`"int"`,
+  `"char **"`, `"HINSTANCE"`, `"LPSTR"`), idiomatic parameter
+  names (`"argc"`, `"argv"`, `"hInstance"`, `"lpCmdLine"`,
+  `"nCmdShow"`), and the matching `dac_ir::Type` lattice elements
+  so the annotation channel reports the same fact the C backend
+  prints.
+- New `dac-backend-c::SynthesizedSignature` override channel on
+  the `Recovered` view. When set, the C backend's `build_params`
+  and `pick_return_type` short-circuit to the override's spellings
+  rather than the convention-derived `arg<i>` / `int64_t`
+  stdint-style fallback. The `parameter_initialisers` helper
+  routes each observed arg-init through the override's name +
+  type so the body's local declarations cast from `argc` /
+  `argv` directly. The override is also a structural surface
+  for hints that mint synthetic params past the convention's
+  observed prefix.
+- New `apply_canonical_entry` overlay in `dac-cli::lift`. Runs
+  after `apply_function_hint` so a user hint that extended the
+  arg-register list feeds the canonical-signature builder. Pins
+  the function's return type to the catalogue's IR spelling at
+  `Source::Derived` confidence (`CANONICAL_ENTRY_CONFIDENCE =
+  0.90`), seeds each kept arg slot's TypeMap entry, promotes the
+  convention's `return_register` so `pick_return_type` activates,
+  and produces a `SynthesizedSignature` for the C backend.
+
+  The overlay declines when the convention pass observed *more*
+  arg registers than the canonical entry permits. A function
+  named `main` reading `rcx, rdx, r8, r9` on PE is either a CRT-
+  side wrapper passing through more registers than the canonical
+  contract describes or a misclassification of caller-saved
+  register reads; either way, truncating the int-arg list to
+  the canonical arity would break the body's existing references
+  to the dropped slots (I-1 — the IR stays ground truth). The
+  PE `main` body therefore stays at its pre-B3.28 shape.
+
+- `apply_function_hint` arity-synthesis extension. When a
+  `[[function]]` hint declares more arg slots than the convention
+  pass observed, the helper mints synthetic `RegisterArg` entries
+  for the missing tail. Each synthetic slot picks the next
+  register in the convention's `int_arg_registers` table (looked
+  up via `x86_64_convention_by_name`) and an unused `ValueId` /
+  `VariableId` in the high-bit reserved range
+  (`0xFFFF_FF00 + i`) so it never collides with an SSA value the
+  lifter produced. The TypeMap is seeded at the synthetic
+  ValueId so the C backend's `parameter_type` lookup resolves
+  to the hint's spelling. `AppliedHint` gains an
+  `args_synthesized: u32` counter alongside the existing
+  `args_overridden` so the report / leading comment surface
+  both numbers.
+
+- `RecoveryFacts` gains a `canonical_signature: Option<SynthesizedSignature>`
+  field that the orchestrator threads into the C backend via the
+  new `CRecovered::with_canonical` builder. The lift step
+  attaches the override; `lower_one_c_function` passes it through.
+
+Per-fixture deltas:
+
+- `tests/golden/hello-elf-o1-c/source.c` — `main` reclassifies
+  from `int64_t main(void) { … return 42LL; }` to
+  `int main(void) { … return ((int)(42LL)); }`. The body is
+  unchanged except for the explicit return-value cast the C
+  backend adds when the return type differs from the lattice's
+  inferred shape.
+- `tests/golden/hello-elf-o1-c-hints/source.c` — `user_main`
+  (renamed `main`) reclassifies from
+  `int64_t user_main(void) { … }` to
+  `int user_main(int argc, char ** argv) { … return ((int)(42LL)); }`.
+  The hint declared `args = ["int", "char**"]`; the arity-
+  synthesis path minted `rdi` and `rsi` slots so the rendered
+  signature carries both. The leading-comment row `args:` now
+  reads `rdi,rsi` instead of `(no register args)` — the
+  convention-derived view of the now-extended arg list.
+- `tests/golden/syscall-hello-elf-o1-c/source.c` — `main`
+  reclassifies the same way: `int main(void) { … return ((int)(0LL)); }`.
+- `tests/golden/hello-pe-o1-c/source.c` — `main` is left
+  untouched. The convention pass observed `rcx, rdx, r8, r9`
+  (4 args, > canonical max of 2); the canonical overlay
+  declines so the body's references to all four slots keep
+  resolving. Pre-B3.28 shape preserved.
+
+Tests:
+
+- 7 new tests in `dac-cli::lift::tests`: `apply_canonical_entry`
+  matches `main` with 0 / 2 observed args (`int main(void)` /
+  `int main(int argc, char **argv)`), skips canonical when
+  observed > catalogue max, skips when the name doesn't match,
+  resolves `wmain` and `WinMain` via the catalogue; hint-arity
+  extension mints synthetic `RegisterArg` entries with TypeMap
+  entries at the reserved high-bit value-id range; hint arity
+  at or below observed does not synthesise.
+- 3 new tests in `dac-backend-c::lower::tests`: a
+  `SynthesizedSignature` with both `return_type` and `params`
+  drives the rendered signature directly; empty `params` renders
+  as `void` and the emit path prints `int main(void)`; a
+  `return_type: None` override leaves the convention-derived
+  return-type path in force.
+- 6 new tests in `dac-knowledge::canonical::tests`: catalogue
+  lookups for `main`, `wmain`, and `WinMain`; case-sensitive
+  lookup rejection of `Main` / `WINMAIN`; unknown-name lookup
+  returns `None`; table-order iteration is stable.
+
+Done-when verification (PLAN.md B3.28):
+
+- ✓ `int main(void)` for the current hello fixture: end-to-end
+  run on `tests/fixtures/hello-x86_64` prints
+  `int main(void) { … }` at the `main` function.
+- ✓ `int main(int argc, char **argv)` when those registers are
+  live: the hints fixture (`hello-x86_64.hints.toml`) hits the
+  arity-synthesis path; output reads
+  `int user_main(int argc, char ** argv) { … }`.
+- ✓ A hint listing more slots than the inferred prefix mints
+  the extra `RegisterArg` entries: covered by
+  `b3_28_hint_arity_extension_mints_missing_register_args`
+  which exercises a 3-arg hint on a zero-observed function and
+  asserts that `int_args.len() == 3` after `apply_function_hint`.
+
+CI verification: `cargo xtask ci` green — fmt + clippy +
+695 tests pass (was 685 at B3.27, +10 net new for B3.28 across
+the three crates); 32 goldens across 12 cases match.
+
+Closes: B3.28, FR-12 (calling-convention recovery), FR-20
+(user-hint catalogue), FR-21 (recovered source readability), I-1
+(IR is ground truth — canonical declines on PE main rather than
+truncating observed arg reads), I-3 (every overlay carries an
+explicit `Confidence` and `Source`).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

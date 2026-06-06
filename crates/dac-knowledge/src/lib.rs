@@ -17,12 +17,14 @@
 #![forbid(unsafe_code)]
 
 pub mod api;
+pub mod canonical;
 pub mod convention;
 
 pub use api::{
     api_signatures, lookup_api_signature, lookup_api_signature_in, ApiLibrary, ApiParameter,
     ApiSignature,
 };
+pub use canonical::{canonical_entries, lookup_canonical_entry, CanonicalArg, CanonicalEntry};
 pub use convention::{
     x86_64_convention_by_name, CallingConvention, ConventionKind, MS_X64, SYSV_AMD64,
     SYSV_AMD64_SYSCALL, X86_64_CONVENTIONS,

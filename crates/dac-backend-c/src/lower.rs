@@ -153,6 +153,16 @@ pub struct Recovered<'a> {
     /// `fmt`, `str_hello`, …) instead of the generic `v<id>`
     /// fallback. Values absent from the table keep `v<id>`.
     pub names: Option<&'a NameTable>,
+    /// Per-function C-canonical signature override (B3.28). When set,
+    /// the C backend replaces the convention-inferred param list and
+    /// return type with the override's spellings — so `main` reads
+    /// as `int main(int argc, char **argv)` rather than the
+    /// stdint-style `int32_t main(int32_t arg0, int8_t **arg1)` the
+    /// type lattice would otherwise produce. The override also
+    /// renames each `arg<i>` to its canonical identifier, which the
+    /// parameter-init descriptors thread through so the body's
+    /// locals reference the same identifier.
+    pub canonical: Option<&'a SynthesizedSignature>,
 }
 
 impl<'a> Recovered<'a> {
@@ -169,8 +179,61 @@ impl<'a> Recovered<'a> {
             types,
             structs,
             names,
+            canonical: None,
         }
     }
+
+    /// Like [`Recovered::new`] but attaches a canonical signature
+    /// override (B3.28).
+    #[must_use]
+    pub fn with_canonical(
+        signature: Option<&'a InferredSignature>,
+        types: Option<&'a TypeMap>,
+        structs: Option<&'a RecoveredStructs>,
+        names: Option<&'a NameTable>,
+        canonical: Option<&'a SynthesizedSignature>,
+    ) -> Self {
+        Self {
+            signature,
+            types,
+            structs,
+            names,
+            canonical,
+        }
+    }
+}
+
+/// Per-function C-canonical signature override (B3.28, FR-12 / FR-21).
+///
+/// Constructed by the CLI's lift step when a canonical entry-point
+/// (`main`, `wmain`, `WinMain`) or a user-hint with explicit arg /
+/// return spellings matches the function. The override carries the
+/// exact spellings the C backend should print, bypassing the
+/// stdint-style mapping that runs from the recovered IR types.
+///
+/// The override's `params` list is the *final* parameter list —
+/// the backend does not re-derive arity from
+/// [`InferredSignature::int_args`] when this override is present.
+/// That lets the user-hint extension path (B3.28) declare unused
+/// parameter slots past the convention-observed prefix without
+/// having to mint synthetic SSA values for them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SynthesizedSignature {
+    /// Final return-type spelling. `None` leaves the convention-
+    /// inferred return type in force.
+    pub return_type: Option<CType>,
+    /// Final parameter list, in source order. Empty renders as `void`.
+    pub params: Vec<SynthesizedParam>,
+}
+
+/// One slot in a [`SynthesizedSignature`]'s parameter list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynthesizedParam {
+    /// C-identifier parameter name (`"argc"`, `"argv"`).
+    pub name: String,
+    /// Type spelling — typically a [`CType::Named`] wrapping the
+    /// canonical literal (`"int"`, `"char **"`).
+    pub ty: CType,
 }
 
 /// Lower one Semantic IR function to a C AST function.
@@ -359,7 +422,22 @@ struct StructTypedef {
 /// The N-th argument register becomes `argN`; its type comes from
 /// the [`TypeMap`] when available, falling back to the SSA variable's
 /// width.
+///
+/// When `recovered.canonical` is `Some` the canonical override
+/// supplies the final parameter list directly — names + spellings as
+/// the entry-point catalogue (or a user-hint with explicit arg
+/// spellings) declared them (B3.28).
 fn build_params(recovered: &Recovered<'_>, structs: &StructTypedefTable) -> Vec<Param> {
+    if let Some(canon) = recovered.canonical {
+        return canon
+            .params
+            .iter()
+            .map(|p| Param {
+                name: p.name.clone(),
+                ty: p.ty.clone(),
+            })
+            .collect();
+    }
     let Some(sig) = recovered.signature else {
         return Vec::new();
     };
@@ -380,14 +458,24 @@ fn parameter_initialisers(
     let Some(sig) = recovered.signature else {
         return m;
     };
-    for arg in &sig.int_args {
-        m.insert(
-            arg.value,
-            ParameterInit {
-                arg_name: parameter_name(arg),
-                arg_type: parameter_type(arg, recovered.types, structs),
-            },
-        );
+    let canon = recovered.canonical;
+    for (i, arg) in sig.int_args.iter().enumerate() {
+        // When a canonical override is present, route each observed
+        // arg's local-init through the override's name + type so the
+        // body's locals reference (and cast to) the canonical
+        // spelling rather than the convention-derived `arg<i>` /
+        // stdint-style type. Slots past the canonical override's
+        // arity get the convention-derived fallback so a hint that
+        // shrinks the arg list (rare; usually the override grows it)
+        // doesn't drop init descriptors for still-observed args.
+        let (arg_name, arg_type) = match canon.and_then(|c| c.params.get(i)) {
+            Some(p) => (p.name.clone(), p.ty.clone()),
+            None => (
+                parameter_name(arg),
+                parameter_type(arg, recovered.types, structs),
+            ),
+        };
+        m.insert(arg.value, ParameterInit { arg_name, arg_type });
     }
     m
 }
@@ -425,7 +513,18 @@ fn parameter_type(
 /// (or no convention was recovered) the B2.8 "any
 /// `Stmt::Return { value: Some(_) }` → `int64_t`" heuristic stays in
 /// force.
+///
+/// A [`SynthesizedSignature`] override with `return_type: Some(_)`
+/// short-circuits the rest of the path — canonical entry-points
+/// (`int main`) and hint-driven return-type pins (B3.28) get exactly
+/// the spelling the catalogue / hint declared, rather than the
+/// stdint-style approximation the type lattice would produce.
 fn pick_return_type(body: &SemBlock, ssa: &SsaFunction, recovered: &Recovered<'_>) -> CType {
+    if let Some(canon) = recovered.canonical {
+        if let Some(ty) = &canon.return_type {
+            return ty.clone();
+        }
+    }
     let conv_has_return = recovered
         .signature
         .and_then(|s| s.return_register)
@@ -1740,6 +1839,108 @@ mod tests {
             ],
             "debug emit must keep the per-block citation + __builtin_unreachable pair",
         );
+    }
+
+    // -----------------------------------------------------------------
+    // B3.28 — Canonical entry-point signature override.
+    // -----------------------------------------------------------------
+
+    /// A `SynthesizedSignature` with `return_type: Some(_)` and a non-
+    /// empty `params` list short-circuits the convention-derived
+    /// signature: the C backend prints the canonical spellings
+    /// instead of the stdint-style ones the lattice would produce.
+    #[test]
+    fn b3_28_canonical_signature_drives_return_and_param_spellings() {
+        let ssa = empty_ssa("main");
+        let sem = empty_sem("main");
+        let canonical = SynthesizedSignature {
+            return_type: Some(CType::Named("int".into())),
+            params: vec![
+                SynthesizedParam {
+                    name: "argc".into(),
+                    ty: CType::Named("int".into()),
+                },
+                SynthesizedParam {
+                    name: "argv".into(),
+                    ty: CType::Named("char **".into()),
+                },
+            ],
+        };
+        let recovered = Recovered::with_canonical(None, None, None, None, Some(&canonical));
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Named("int".into()));
+        assert_eq!(lowered.function.params.len(), 2);
+        assert_eq!(lowered.function.params[0].name, "argc");
+        assert_eq!(lowered.function.params[0].ty, CType::Named("int".into()));
+        assert_eq!(lowered.function.params[1].name, "argv");
+        assert_eq!(
+            lowered.function.params[1].ty,
+            CType::Named("char **".into()),
+        );
+    }
+
+    /// An empty `params` list under the canonical override renders as
+    /// `void` — the `int main(void)` case the B3.28 done-when calls
+    /// out for the hello fixture.
+    #[test]
+    fn b3_28_empty_canonical_params_renders_as_void() {
+        let ssa = empty_ssa("main");
+        let sem = empty_sem("main");
+        let canonical = SynthesizedSignature {
+            return_type: Some(CType::Named("int".into())),
+            params: vec![],
+        };
+        let recovered = Recovered::with_canonical(None, None, None, None, Some(&canonical));
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Named("int".into()));
+        assert!(lowered.function.params.is_empty());
+        // Emit-side check: a parameterless function prints `void` in
+        // the C parameter list (`int main(void)`).
+        let item = Item::Function(lowered.function);
+        let emitted = crate::emit::emit(&TranslationUnit {
+            includes: vec![],
+            items: vec![item],
+        });
+        assert!(
+            emitted.contains("int main(void)"),
+            "expected int main(void), got:\n{emitted}",
+        );
+    }
+
+    /// A `SynthesizedSignature` with `return_type: None` leaves the
+    /// existing `pick_return_type` path in force — the override only
+    /// fires on the fields it sets.
+    #[test]
+    fn b3_28_canonical_override_with_none_return_falls_back() {
+        let ssa = empty_ssa("partial");
+        let sem = empty_sem("partial");
+        let canonical = SynthesizedSignature {
+            return_type: None,
+            params: vec![],
+        };
+        let recovered = Recovered::with_canonical(None, None, None, None, Some(&canonical));
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        // Falls through to the convention-derived path: no convention
+        // → no return register → empty body returns void.
+        assert_eq!(lowered.function.return_type, CType::Void);
     }
 
     #[test]

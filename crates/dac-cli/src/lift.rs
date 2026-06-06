@@ -42,20 +42,23 @@ use dac_analysis::loops::LoopForest;
 use dac_analysis::ssa::construct_ssa;
 use dac_analysis::structuring::structure;
 use dac_arch::{InstructionDecoder, InstructionLifter, RegisterFile};
+use dac_backend_c::{CType, SynthesizedParam, SynthesizedSignature};
 use dac_binfmt::{elf_x86_64_plt_stubs, BinaryFormat, BinaryModel};
 use dac_core::{Confidence, EvidenceGraph, EvidenceNode, Source};
 use dac_hints::{HintId, Hints};
 use dac_ir::instr::InstructionIr;
 use dac_ir::sem::{Block as SemBlock, SemFunction, Stmt as SemStmt, SwitchArm};
 use dac_ir::ssa::{Operand, SsaFunction, SsaTerminator};
-use dac_knowledge::{lookup_api_signature, ApiSignature};
+use dac_knowledge::{
+    lookup_api_signature, lookup_canonical_entry, x86_64_convention_by_name, ApiSignature,
+};
 use dac_lift::lift_function;
 use dac_recovery::{
     analyze_stack_frame, candidates_for, infer_calling_convention, propagate_types, recover_idioms,
     recover_names, recover_structs, resolve_switch_entries, simplify, ApiResolver,
     CallRenameResolver, ConventionMatch, Function, FunctionSet, LoopInfo, LoopShape, NameTable,
-    RecoveredIdioms, RecoveredStructs, SimplifyStats, StackConvention, StackFrame, StringResolver,
-    SwitchTableIdiom, TypeMap, ValueType,
+    RecoveredIdioms, RecoveredStructs, RegisterArg, SimplifyStats, StackConvention, StackFrame,
+    StringResolver, SwitchTableIdiom, TypeMap, ValueType,
 };
 
 /// Per-function outcome of the orchestrator.
@@ -102,6 +105,15 @@ pub(crate) struct RecoveryFacts {
     /// pre-emit pass removed from the function. `Default` zeros for
     /// fixtures and tests that do not run the simplifier.
     pub simplify: SimplifyStats,
+    /// Per-function C-canonical signature override (B3.28). When
+    /// `Some`, the C backend prints the override's spellings instead
+    /// of the convention-inferred shape — so `main` reads as
+    /// `int main(int argc, char **argv)` instead of `int64_t main(…)`.
+    /// Built by [`apply_canonical_entry`] when the function name
+    /// matches the curated entry-point catalogue, and may be amended
+    /// later by [`apply_function_hint`] when the hint declares arg
+    /// slots past the convention-observed prefix (FR-12, FR-20, FR-21).
+    pub canonical_signature: Option<SynthesizedSignature>,
 }
 
 /// Summary of the user hint applied to a function. Surfaces in
@@ -113,6 +125,11 @@ pub(crate) struct AppliedHint {
     pub return_overridden: bool,
     /// Number of argument slots whose type the hint pinned.
     pub args_overridden: u32,
+    /// Number of `RegisterArg` slots minted past the convention-
+    /// observed prefix to satisfy the hint's declared arity (B3.28).
+    /// Zero for hints whose arity is at most what the inference pass
+    /// already observed.
+    pub args_synthesized: u32,
 }
 
 /// Shared per-binary inputs to the orchestrator: bound up so
@@ -472,7 +489,28 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     // convention's `return_register` so the C backend's
     // `pick_return_type` path activates. They never mutate the
     // SSA / Semantic IR — the binary stays ground truth (I-1).
+    //
+    // B3.28 extends this pass with an arity-synthesis step: a hint
+    // declaring more arg slots than the convention pass observed
+    // mints synthetic `RegisterArg` entries for the remaining
+    // registers so the rendered C signature carries the user-
+    // declared arity even when the body doesn't read those slots.
     let user_hint = apply_function_hint(f, ctx.hints, &ssa, &mut convention, &mut types);
+
+    // B3.28: overlay the canonical entry-point catalogue. Runs
+    // *after* the user-hint pass so a hint that extended the
+    // arg-register list (e.g. `args = ["int", "char**"]` on a
+    // function that the convention pass observed reading no
+    // registers) feeds the canonical-signature builder. The
+    // recovered name (e.g. `main`) keys into curated runtime
+    // contracts that pin the return type to `int` and the arg list
+    // to either `(void)` or `(int argc, char **argv)` depending on
+    // the (post-hint) observed arity. The overlay seeds the type
+    // lattice with matching IR types so the annotation channel
+    // agrees, and produces a [`SynthesizedSignature`] the C backend
+    // prints directly — sidestepping the stdint-style spelling the
+    // type lattice would otherwise yield.
+    let canonical_signature = apply_canonical_entry(f, &ssa, &mut convention, &mut types);
 
     // B3.7 + B3.20: deterministic variable-naming heuristics.
     // Consumes the recovered convention + API resolver + extracted
@@ -504,6 +542,7 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
         user_hint,
         names,
         simplify: simplify_stats,
+        canonical_signature,
     });
     LiftOutcome::Real { ssa, sem, facts }
 }
@@ -529,6 +568,7 @@ fn apply_function_hint(
     // so the hint wins even when the propagation pass already
     // seeded a derived type.
     let mut args_overridden: u32 = 0;
+    let mut args_synthesized: u32 = 0;
     if let (Some(hint_args), Some(conv)) = (&hint.args, convention.as_mut()) {
         for (i, arg) in conv.signature.int_args.iter().enumerate() {
             let Some(ty) = hint_args.get(i) else { break };
@@ -540,6 +580,45 @@ fn apply_function_hint(
                 },
             );
             args_overridden += 1;
+        }
+
+        // B3.28 arity extension: when the hint declares more arg
+        // slots than the convention pass observed, mint synthetic
+        // `RegisterArg` entries for the missing tail. Each synthetic
+        // slot picks the next register in the convention's
+        // `int_arg_registers` table and an unused `ValueId` /
+        // `VariableId` (high-bit space so it never collides with an
+        // SSA value the lifter produced). The synthetic ValueId
+        // anchors a `TypeMap` entry so the C backend's
+        // `parameter_type` lookup resolves to the hint's spelling.
+        let observed = conv.signature.int_args.len();
+        if let Some(table) = x86_64_convention_by_name(conv.convention_name) {
+            for (i, ty) in hint_args.iter().enumerate().skip(observed) {
+                let Some(&reg) = table.int_arg_registers.get(i) else {
+                    // Hint asks for more slots than the convention
+                    // has integer-arg registers (>6 on SysV); fall
+                    // back silently — the surplus slots would map
+                    // to stack arguments, which B3.28 does not yet
+                    // synthesise (residue-shelf follow-up).
+                    break;
+                };
+                let synth_value = synthetic_arg_value_id(i);
+                let synth_variable = synthetic_arg_variable_id(i);
+                types.values.insert(
+                    synth_value,
+                    ValueType {
+                        ty: ty.to_ir(),
+                        confidence: conf,
+                    },
+                );
+                conv.signature.int_args.push(RegisterArg {
+                    register: reg,
+                    index: i,
+                    value: synth_value,
+                    variable: synth_variable,
+                });
+                args_synthesized += 1;
+            }
         }
     }
 
@@ -577,8 +656,131 @@ fn apply_function_hint(
         rename: hint.rename.clone(),
         return_overridden,
         args_overridden,
+        args_synthesized,
     })
 }
+
+/// Stable synthetic [`dac_ir::ssa::ValueId`] for the `i`-th hint-
+/// synthesised arg slot. Uses the high half of the `u32` space so it
+/// never collides with a value the SSA constructor allocated
+/// (functions with > ~2^31 SSA values are not representable in the
+/// IR's `ValueDef` index anyway).
+fn synthetic_arg_value_id(i: usize) -> dac_ir::ssa::ValueId {
+    // Reserve `0xFFFF_FF00 + i` for synthetic args. The `0xFF` prefix
+    // keeps the ids visually distinct in `--debug` dumps.
+    (0xFFFF_FF00u32).saturating_add(i as u32)
+}
+
+/// Stable synthetic [`dac_ir::ssa::VariableId`] for the `i`-th hint-
+/// synthesised arg slot. Mirrors [`synthetic_arg_value_id`] in spirit
+/// — distinct high-range id so the SSA's `variables` table stays
+/// untouched.
+fn synthetic_arg_variable_id(i: usize) -> dac_ir::ssa::VariableId {
+    (0xFFFF_FF00u32).saturating_add(i as u32)
+}
+
+/// Look the function name up in the canonical entry-point catalogue
+/// (B3.28, FR-12 / FR-21). When matched, pin the function's return
+/// type to the catalogue's spelling and clip its arg list to the
+/// `min(observed, canonical_arity)` prefix — so `main` reads as
+/// `int main(void)` on a binary whose `main` reads no arguments,
+/// `int main(int argc, char **argv)` when `rdi`/`rsi` (SysV) or
+/// `rcx`/`rdx` (MsX64) are live.
+///
+/// The TypeMap is seeded for both the kept arg slots and every
+/// `Return { value: Some(_) }` operand so the annotation channel
+/// reports the canonical IR types alongside the C backend's
+/// catalogue-spelt rendering. Confidence is `Source::Derived` at
+/// [`CANONICAL_ENTRY_CONFIDENCE`] — the runtime contract is a
+/// curated fact, not an observation of the bytes themselves.
+fn apply_canonical_entry(
+    f: &Function,
+    ssa: &SsaFunction,
+    convention: &mut Option<ConventionMatch>,
+    types: &mut TypeMap,
+) -> Option<SynthesizedSignature> {
+    let name = f.name.as_deref()?;
+    let entry = lookup_canonical_entry(name)?;
+    let conv = convention.as_mut()?;
+    let conf = Confidence::new(CANONICAL_ENTRY_CONFIDENCE, Source::Derived);
+
+    // Arity is liveness-gated: the catalogue declares the maximal
+    // shape (e.g. main has 2 args), but a callee that never reads
+    // `rdi` / `rsi` stays at `(void)`. The convention pass already
+    // computed the observed prefix on `signature.int_args`; the
+    // canonical override fires only when the observed arity fits the
+    // catalogue's contract.
+    //
+    // When the function reads *more* arg registers than the canonical
+    // entry permits, decline to apply the override entirely. A
+    // function named `main` that reads `rcx, rdx, r8, r9` on PE is
+    // either a CRT-side wrapper passing through more registers than
+    // the canonical contract describes or a misclassification of
+    // caller-saved register reads; either way, truncating the int-arg
+    // list to the canonical arity would break the body's existing
+    // references to the dropped slots (I-1 — the IR is ground truth).
+    let observed_arity = conv.signature.int_args.len();
+    if observed_arity > entry.args.len() {
+        return None;
+    }
+    let kept_arity = observed_arity;
+
+    // Pin each kept arg's IR type from the catalogue.
+    for (i, arg) in conv.signature.int_args.iter().enumerate() {
+        let canon = &entry.args[i];
+        types.values.insert(
+            arg.value,
+            ValueType {
+                ty: canon.ir_type.clone(),
+                confidence: conf,
+            },
+        );
+    }
+
+    // Pin the return type and promote the convention's
+    // `return_register` so the C backend's `pick_return_type` path
+    // (and the annotation channel) treats the function as returning
+    // via the conventional integer return register.
+    if conv.signature.return_register.is_none() {
+        conv.signature.return_register = Some(hinted_return_register(conv));
+    }
+    for block in &ssa.blocks {
+        if let SsaTerminator::Return {
+            value: Some(Operand::Value(v)),
+        } = &block.terminator
+        {
+            types.values.insert(
+                *v,
+                ValueType {
+                    ty: entry.return_ir_type.clone(),
+                    confidence: conf,
+                },
+            );
+        }
+    }
+
+    // Build the C-backend signature override. `kept_arity` slots
+    // get the catalogue's name + C-spelling; the return type uses
+    // the catalogue's spelling unconditionally.
+    let params: Vec<SynthesizedParam> = entry.args[..kept_arity]
+        .iter()
+        .map(|a| SynthesizedParam {
+            name: a.name.to_string(),
+            ty: CType::Named(a.c_type.to_string()),
+        })
+        .collect();
+
+    Some(SynthesizedSignature {
+        return_type: Some(CType::Named(entry.return_c_type.to_string())),
+        params,
+    })
+}
+
+/// Confidence value canonical-entry overlay entries carry. The
+/// catalogue is curated knowledge, not an observation of the bytes —
+/// pinned at `Source::Derived` so it sits above the convention pass's
+/// derived facts but below an explicit user hint.
+pub(crate) const CANONICAL_ENTRY_CONFIDENCE: f32 = 0.90;
 
 /// Confidence value `Source::UserHint` overlay entries carry.
 ///
@@ -1096,6 +1298,7 @@ mod tests {
             user_hint: None,
             names: NameTable::default(),
             simplify: SimplifyStats::default(),
+            canonical_signature: None,
         }
     }
 
@@ -1301,5 +1504,383 @@ mod tests {
             })
             .collect();
         assert_eq!(tail_ids, vec![0, 1, 2]);
+    }
+
+    // ---- B3.28 canonical-entry + hint-arity follow-up --------------
+
+    use dac_core::{Confidence, Source};
+    use dac_hints::{FunctionHint, HintMatcher, HintType, Hints};
+    use dac_ir::ssa::SsaTerminator as IrSsaTerminator;
+    use dac_recovery::{Function as RecoveredFunction, FunctionKind, SourceMask};
+
+    fn b328_function_named(name: &str) -> RecoveredFunction {
+        RecoveredFunction {
+            address: 0x1000,
+            end: Some(0x1010),
+            name: Some(name.to_string()),
+            confidence: Confidence::new(1.0, Source::Observed),
+            sources: SourceMask::SYMBOL,
+            evidence: dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+                layer: dac_core::IrLayer::Cfg,
+                id: 0,
+            }),
+            kind: FunctionKind::User,
+        }
+    }
+
+    fn b328_convention(name: &'static str, args: Vec<RegisterArg>) -> ConventionMatch {
+        ConventionMatch {
+            convention_name: name,
+            signature: dac_recovery::InferredSignature {
+                int_args: args,
+                stack_args: vec![],
+                return_register: None,
+                variadic_call_sites: 0,
+            },
+            confidence: Confidence::new(0.5, Source::Derived),
+        }
+    }
+
+    /// SSA with one block whose terminator returns a value of id `rv`.
+    /// `rv` must already be present in `values`.
+    fn b328_ssa_with_return(
+        values: Vec<dac_ir::ssa::ValueDef>,
+        rv: dac_ir::ssa::ValueId,
+    ) -> SsaFunction {
+        SsaFunction {
+            function_address: 0x1000,
+            function_name: Some("main".into()),
+            blocks: vec![dac_ir::ssa::SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![],
+                terminator: IrSsaTerminator::Return {
+                    value: Some(Operand::Value(rv)),
+                },
+            }],
+            entry: 0,
+            variables: vec![dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            }],
+            values,
+            evidence: dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+                layer: dac_core::IrLayer::Ssa,
+                id: 0,
+            }),
+        }
+    }
+
+    /// `main` reading no arg registers resolves to `int main(void)`.
+    /// The canonical override pins the return type to `"int"` and the
+    /// param list to empty even though the lattice would have left
+    /// the return at the i64 fallback.
+    #[test]
+    fn b3_28_main_zero_args_synthesizes_int_main_void() {
+        let f = b328_function_named("main");
+        let rv = 1;
+        let ssa = b328_ssa_with_return(
+            vec![
+                dac_ir::ssa::ValueDef {
+                    id: 0,
+                    variable: 0,
+                    source: dac_ir::ssa::ValueSource::Parameter { variable: 0 },
+                },
+                dac_ir::ssa::ValueDef {
+                    id: rv,
+                    variable: 0,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+                },
+            ],
+            rv,
+        );
+        let mut convention = Some(b328_convention("sysv-amd64", vec![]));
+        let mut types = TypeMap::default();
+        let canon =
+            apply_canonical_entry(&f, &ssa, &mut convention, &mut types).expect("main matches");
+        assert_eq!(canon.return_type, Some(CType::Named("int".into())));
+        assert!(canon.params.is_empty(), "void → 0 params");
+        // Return value got the canonical IR type so the annotation
+        // channel agrees with the C backend's spelling.
+        let ret_ty = types.value_type(rv);
+        assert_eq!(ret_ty, dac_ir::Type::signed_int(32));
+    }
+
+    /// `main` with `rdi` and `rsi` observed → canonical signature is
+    /// `int main(int argc, char ** argv)`. The TypeMap is seeded for
+    /// both args so the annotation channel reports the canonical IR
+    /// types alongside the C backend's catalogue-spelt rendering.
+    #[test]
+    fn b3_28_main_two_args_observed_synthesizes_argc_argv() {
+        let f = b328_function_named("main");
+        // Two parameter values for rdi, rsi.
+        let rdi_val: dac_ir::ssa::ValueId = 0;
+        let rsi_val: dac_ir::ssa::ValueId = 1;
+        let rv: dac_ir::ssa::ValueId = 2;
+        let ssa = b328_ssa_with_return(
+            vec![
+                dac_ir::ssa::ValueDef {
+                    id: rdi_val,
+                    variable: 0,
+                    source: dac_ir::ssa::ValueSource::Parameter { variable: 0 },
+                },
+                dac_ir::ssa::ValueDef {
+                    id: rsi_val,
+                    variable: 0,
+                    source: dac_ir::ssa::ValueSource::Parameter { variable: 0 },
+                },
+                dac_ir::ssa::ValueDef {
+                    id: rv,
+                    variable: 0,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+                },
+            ],
+            rv,
+        );
+        let args = vec![
+            RegisterArg {
+                register: "rdi",
+                index: 0,
+                value: rdi_val,
+                variable: 0,
+            },
+            RegisterArg {
+                register: "rsi",
+                index: 1,
+                value: rsi_val,
+                variable: 0,
+            },
+        ];
+        let mut convention = Some(b328_convention("sysv-amd64", args));
+        let mut types = TypeMap::default();
+        let canon =
+            apply_canonical_entry(&f, &ssa, &mut convention, &mut types).expect("canonical fires");
+        assert_eq!(canon.return_type, Some(CType::Named("int".into())));
+        assert_eq!(canon.params.len(), 2);
+        assert_eq!(canon.params[0].name, "argc");
+        assert_eq!(canon.params[0].ty, CType::Named("int".into()));
+        assert_eq!(canon.params[1].name, "argv");
+        assert_eq!(canon.params[1].ty, CType::Named("char **".into()));
+        // Each kept slot's TypeMap entry agrees with the catalogue.
+        assert_eq!(types.value_type(rdi_val), dac_ir::Type::signed_int(32));
+        let argv_ir = dac_ir::Type::ptr_to(dac_ir::Type::ptr_to(dac_ir::Type::signed_int(8)));
+        assert_eq!(types.value_type(rsi_val), argv_ir);
+    }
+
+    /// When the observed arity exceeds the canonical catalogue
+    /// (e.g. a PE `main` reading `rcx, rdx, r8, r9` — typically a
+    /// CRT-side misclassification), the canonical override declines
+    /// to apply. The convention's `int_args` list is left untouched
+    /// so the body's existing references to all four slots keep
+    /// resolving (I-1 — the IR stays ground truth).
+    #[test]
+    fn b3_28_main_too_many_observed_args_skips_canonical() {
+        let f = b328_function_named("main");
+        let rv: dac_ir::ssa::ValueId = 4;
+        let mut values: Vec<dac_ir::ssa::ValueDef> = (0u32..4)
+            .map(|i| dac_ir::ssa::ValueDef {
+                id: i,
+                variable: 0,
+                source: dac_ir::ssa::ValueSource::Parameter { variable: 0 },
+            })
+            .collect();
+        values.push(dac_ir::ssa::ValueDef {
+            id: rv,
+            variable: 0,
+            source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+        });
+        let ssa = b328_ssa_with_return(values, rv);
+        let args: Vec<RegisterArg> = ["rcx", "rdx", "r8", "r9"]
+            .iter()
+            .enumerate()
+            .map(|(i, &reg)| RegisterArg {
+                register: reg,
+                index: i,
+                value: i as u32,
+                variable: 0,
+            })
+            .collect();
+        let mut convention = Some(b328_convention("ms-x64", args.clone()));
+        let mut types = TypeMap::default();
+        let canon = apply_canonical_entry(&f, &ssa, &mut convention, &mut types);
+        assert!(canon.is_none(), "observed > canonical max → no override");
+        // The convention's int_args list is left exactly as the
+        // inference pass produced it — no truncation, no retyping.
+        assert_eq!(convention.as_ref().unwrap().signature.int_args.len(), 4);
+        // No return-value type was pinned (canonical declined).
+        assert_eq!(types.value_type(rv), dac_ir::Type::Unknown);
+    }
+
+    /// Functions whose name doesn't appear in the canonical catalogue
+    /// (e.g. an ordinary user function `add_widget`) get no override
+    /// — `apply_canonical_entry` returns `None` immediately and the
+    /// type lattice / convention signature stay untouched.
+    #[test]
+    fn b3_28_non_canonical_name_skips_canonical_overlay() {
+        let f = b328_function_named("add_widget");
+        let ssa = b328_ssa_with_return(
+            vec![dac_ir::ssa::ValueDef {
+                id: 0,
+                variable: 0,
+                source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+            }],
+            0,
+        );
+        let mut convention = Some(b328_convention("sysv-amd64", vec![]));
+        let mut types = TypeMap::default();
+        let canon = apply_canonical_entry(&f, &ssa, &mut convention, &mut types);
+        assert!(canon.is_none());
+        assert_eq!(types.value_type(0), dac_ir::Type::Unknown);
+    }
+
+    /// A `[[function]]` hint that declares more arg slots than the
+    /// convention observed mints synthetic `RegisterArg` entries for
+    /// the missing tail. Each minted slot picks the next register in
+    /// the convention's `int_arg_registers` table and seeds the
+    /// `TypeMap` with the hint-specified IR type so the C backend's
+    /// `parameter_type` lookup resolves to the hinted spelling.
+    #[test]
+    fn b3_28_hint_arity_extension_mints_missing_register_args() {
+        let f = b328_function_named("user_function");
+        let ssa = b328_ssa_with_return(
+            vec![dac_ir::ssa::ValueDef {
+                id: 0,
+                variable: 0,
+                source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+            }],
+            0,
+        );
+        let mut hints = Hints::default();
+        hints.functions.push(FunctionHint {
+            id: 1u64,
+            line: 1,
+            matcher: HintMatcher::Address(0x1000),
+            rename: None,
+            return_ty: None,
+            // 3 args declared; convention observed 0.
+            args: Some(vec![
+                HintType::Int {
+                    width_bits: 32,
+                    signed: Some(true),
+                },
+                HintType::Int {
+                    width_bits: 64,
+                    signed: Some(false),
+                },
+                HintType::Ptr(Box::new(HintType::Int {
+                    width_bits: 8,
+                    signed: Some(false),
+                })),
+            ]),
+            evidence: None,
+        });
+        let mut convention = Some(b328_convention("sysv-amd64", vec![]));
+        let mut types = TypeMap::default();
+        let applied = apply_function_hint(&f, &hints, &ssa, &mut convention, &mut types)
+            .expect("hint matched");
+        assert_eq!(applied.args_synthesized, 3, "all 3 slots minted");
+        assert_eq!(applied.args_overridden, 0, "nothing to retype in-place");
+        let int_args = &convention.as_ref().unwrap().signature.int_args;
+        assert_eq!(int_args.len(), 3, "int_args grew to hint arity");
+        assert_eq!(int_args[0].register, "rdi");
+        assert_eq!(int_args[1].register, "rsi");
+        assert_eq!(int_args[2].register, "rdx");
+        // Each minted slot's TypeMap entry matches the hint's
+        // declared IR type.
+        for (i, arg) in int_args.iter().enumerate() {
+            assert!(
+                types.values.contains_key(&arg.value),
+                "minted slot {i} got a TypeMap entry",
+            );
+        }
+        // Synthetic value IDs sit in the high-bit reserved range so
+        // they cannot collide with an SSA-allocated value.
+        assert!(int_args[0].value >= 0xFFFF_FF00);
+        assert!(int_args[1].value >= 0xFFFF_FF00);
+        assert!(int_args[2].value >= 0xFFFF_FF00);
+    }
+
+    /// A hint whose arity matches or shrinks below the observed
+    /// prefix synthesises nothing; only the existing slots get
+    /// retyped. Sanity check that the arity-synthesis path doesn't
+    /// fire when the hint doesn't ask for it.
+    #[test]
+    fn b3_28_hint_arity_at_or_below_observed_does_not_synthesize() {
+        let f = b328_function_named("user_function");
+        let ssa = b328_ssa_with_return(
+            vec![
+                dac_ir::ssa::ValueDef {
+                    id: 0,
+                    variable: 0,
+                    source: dac_ir::ssa::ValueSource::Parameter { variable: 0 },
+                },
+                dac_ir::ssa::ValueDef {
+                    id: 1,
+                    variable: 0,
+                    source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+                },
+            ],
+            1,
+        );
+        let mut hints = Hints::default();
+        hints.functions.push(FunctionHint {
+            id: 1u64,
+            line: 1,
+            matcher: HintMatcher::Address(0x1000),
+            rename: None,
+            return_ty: None,
+            args: Some(vec![HintType::Int {
+                width_bits: 32,
+                signed: Some(true),
+            }]),
+            evidence: None,
+        });
+        let observed = vec![RegisterArg {
+            register: "rdi",
+            index: 0,
+            value: 0,
+            variable: 0,
+        }];
+        let mut convention = Some(b328_convention("sysv-amd64", observed));
+        let mut types = TypeMap::default();
+        let applied = apply_function_hint(&f, &hints, &ssa, &mut convention, &mut types)
+            .expect("hint matched");
+        assert_eq!(applied.args_synthesized, 0);
+        assert_eq!(applied.args_overridden, 1);
+        assert_eq!(
+            convention.as_ref().unwrap().signature.int_args.len(),
+            1,
+            "no synthesis when hint arity <= observed",
+        );
+    }
+
+    /// Stays-untouched: `wmain` and `WinMain` are recognised the
+    /// same way `main` is. Smoke check that the catalogue lookup
+    /// honours every entry we ship in B3.28.
+    #[test]
+    fn b3_28_wmain_and_winmain_resolve_via_catalogue() {
+        let f_wmain = b328_function_named("wmain");
+        let ssa = b328_ssa_with_return(
+            vec![dac_ir::ssa::ValueDef {
+                id: 0,
+                variable: 0,
+                source: dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+            }],
+            0,
+        );
+        let mut convention = Some(b328_convention("sysv-amd64", vec![]));
+        let mut types = TypeMap::default();
+        let canon = apply_canonical_entry(&f_wmain, &ssa, &mut convention, &mut types);
+        let canon = canon.expect("wmain matches catalogue");
+        assert_eq!(canon.return_type, Some(CType::Named("int".into())));
+
+        let f_winmain = b328_function_named("WinMain");
+        let mut convention = Some(b328_convention("ms-x64", vec![]));
+        let mut types = TypeMap::default();
+        let canon = apply_canonical_entry(&f_winmain, &ssa, &mut convention, &mut types);
+        let canon = canon.expect("WinMain matches catalogue");
+        assert_eq!(canon.return_type, Some(CType::Named("int".into())));
     }
 }

@@ -567,11 +567,12 @@ fn lower_one_c_function(
     let sanitized = sanitize_c_identifier(&raw_name);
     match outcome {
         Some(LiftOutcome::Real { ssa, sem, facts }) => {
-            let recovered = CRecovered::new(
+            let recovered = CRecovered::with_canonical(
                 facts.convention.as_ref().map(|c| &c.signature),
                 Some(&facts.types),
                 Some(&facts.structs),
                 Some(&facts.names),
+                facts.canonical_signature.as_ref(),
             );
             let mut lowered = c_lower_function_with_options(
                 ssa,

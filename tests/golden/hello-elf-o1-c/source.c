@@ -62,7 +62,7 @@ int64_t _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t ar
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int64_t main(void) {
+int main(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -76,7 +76,7 @@ int64_t main(void) {
     *((int64_t *)(((int64_t)(v1)))) = v2;
     v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))write)(1LL, 8196LL, 6LL, v6, v7, v8);
     v11 = (*((int64_t *)(((int64_t)(v1)))));
-    return 42LL;
+    return ((int)(42LL));
 }
 
 /* dac-recovered function */
