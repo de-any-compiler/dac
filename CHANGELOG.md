@@ -5935,6 +5935,139 @@ Closes: B3.28, FR-12 (calling-convention recovery), FR-20
 truncating observed arg reads), I-3 (every overlay carries an
 explicit `Confidence` and `Source`).
 
+#### B3.29 — Return-type inference from observed write width (2026-06-07)
+
+Motivation. Pre-B3.29 every recovered function that pinned a
+return register rendered as `int64_t Foo(...)` — the lattice's
+`pick_return_type` path joined per-return-value types and fell
+back to `int64_t` when nothing concrete was inferable. The
+annotation channel's `return_type` carried the stale "default
+void return; calling-convention return-value inference lands
+with B3.6" placeholder regardless of what the C backend actually
+emitted. Two surfaces, two stories. The per-function inference
+the spec asked for — widest write to the return register →
+`int` / `long` / `void` — was never wired.
+
+Behaviour change (FR-18, FR-21, I-3):
+
+- `dac-cli::lift::infer_return_type` runs after the user-hint
+  and canonical-entry overlays. Reads the convention pass's
+  pinned return register, walks every SSA instruction whose
+  `dst` lands in the return register variable, and observes
+  the widest source-op width via `source_op_width`. The pass
+  also probes the `Return { value: Some(_) }` terminator's
+  source op so a function whose Move-into-rax was folded away
+  by B3.26's pre-emit simplifier still publishes the right
+  width.
+- New per-function fact `RecoveryFacts.inferred_return:
+  InferredReturn`, an enum over `Void` / `Width32` / `Width64`.
+  Threaded into the C backend via a new
+  `Recovered.inferred_return: Option<&CType>` channel — the
+  CLI materialises the enum into `CType::Named("int")`,
+  `CType::Named("long")`, or `CType::Void` at the lowering
+  call site.
+- `pick_return_type` precedence becomes: canonical override
+  (B3.28) → B3.29 inferred return → lattice-driven join →
+  `int64_t` fallback. The canonical override still wins so
+  `int main(void)` continues to render as `int`, not `long`.
+- A function whose body carries `Return { value: Some(_) }`
+  but no writes to the return register variable stays at
+  `Width64`, not `Void` — collapsing it to `void` would leave
+  the structurer emitting `return v<id>;` against a void
+  declarator and the round-trip compile gate would refuse
+  the output (I-6: degrade visibly, never invent semantics).
+- Annotation channel rewritten. `AnnotationDoc::build` now
+  takes a parallel `&[Option<InferredReturn>]` slice. The
+  per-function `annotate_return_type` consults it after the
+  user-hint check and surfaces the inferred spelling (`int` /
+  `long` / `void`) with its concrete explanation
+  ("widest observed write to the return register is …
+  bits" / "no writes to the return register observed in the
+  function body"). The stale `"default void return;
+  calling-convention return-value inference lands with B3.6"`
+  string is retired; the unavailable-inference path (the
+  unsupported-arch / orchestrator-skipped branch) now reads
+  `"return-type inference unavailable (orchestrator did not
+  run for this function)"`.
+
+Per-fixture deltas:
+
+- `hello-elf-o1-c/source.c`: every `int64_t Foo(...)`
+  declarator collapses to `long Foo(...)`. The body's
+  `return v<id>;` picks up a `((long)(v<id>))` cast wrapper
+  from `cast_if_needed`. `int main(void)` (canonical
+  override) and the PLT trampoline `extern int64_t write(...)`
+  (still driven by `dac-knowledge::lookup_api_signature`)
+  stay untouched.
+- `hello-elf-o1-c-hints/source.c`: same shape; the
+  `[[function]]` hint still pins `int user_main(int argc,
+  char ** argv)`, sibling functions go `long`.
+- `hello-pe-o1-c/source.c`: 85 hunks. `int32_t __main(void)
+  { … return v0; }` correctly tightens to
+  `int __main(void) { … return ((int)(v0)); }` because the
+  function's only return-flow goes through a `Load { width: 4 }`
+  → `synth_temp` that the simplifier left on the Return
+  value's source path. PE `main(int64_t arg0, …)` and the
+  startup family render as `long` (the B3.28 canonical
+  override declines on PE main; B3.29 publishes the 64-bit
+  fallback).
+- `syscall-hello-elf-o1-c/source.c`: same shape as the regular
+  ELF — every non-main CRT helper goes `long`.
+
+Tests itemised:
+
+- `dac-backend-c::lower::tests` — 4 new B3.29 tests
+  (`b3_29_inferred_return_int_drives_int_spelling`,
+  `b3_29_inferred_return_long_drives_long_spelling`,
+  `b3_29_inferred_return_void_drives_void_spelling`,
+  `b3_29_canonical_outranks_inferred_return`) covering each
+  spelling + the precedence rule.
+- `dac-cli::lift::tests` — 7 new B3.29 tests:
+  - `b3_29_void_when_no_return_register_pinned`,
+    `b3_29_void_when_no_writes_and_no_value_return` for the
+    `Void` path.
+  - `b3_29_load_width_4_into_rax_renders_as_int`,
+    `b3_29_load_width_8_into_rax_renders_as_long` for the
+    direct Move-into-rax shape.
+  - `b3_29_post_simplify_move_into_rax_folded_still_publishes_width32`
+    exercises the post-simplifier shape where the Move-into-rax
+    was folded away and the Return references the Load's dst
+    directly.
+  - `b3_29_returns_value_without_writes_stays_at_long` locks
+    in the "don't collapse to void" rule.
+  - `b3_29_to_c_type_spellings_match_spec` asserts the enum's
+    `to_c_type` outputs (`CType::Void` / `CType::Named("int")` /
+    `CType::Named("long")`).
+- `dac-cli::annotations::tests` — 2 new B3.29 tests
+  (`b3_29_inferred_return_threads_into_annotation_channel`,
+  `b3_29_inferred_void_renders_with_observed_no_writes_explanation`)
+  plus a renamed
+  `return_type_is_void_placeholder_when_inference_unavailable`
+  that asserts the retired-B3.6 placeholder is gone.
+
+Done-when verification (PLAN.md B3.29):
+
+- ✓ C output and annotation JSON agree on every function's
+  return type: both surfaces now read the same
+  `InferredReturn` value — the C backend through
+  `Recovered::with_inferred_return`, the annotation channel
+  through the parallel slice on `AnnotationDoc::build`.
+- ✓ `main` returns `int`: covered by the canonical override
+  (B3.28) for ELF main and `__main` (B3.29 detection of the
+  Load width 4 → `Width32` → `CType::Named("int")`) for PE
+  `__main`.
+
+CI verification: `cargo xtask ci` green — fmt + clippy +
+708 tests pass (was 695 at B3.28, +13 net new for B3.29 across
+the three crates); 32 goldens across 12 cases match after the
+4 affected sources were re-baselined.
+
+Closes: B3.29, FR-18 (signature recovery), FR-21 (recovered
+source readability), I-3 (every recovered fact carries an
+explicit `Confidence` and `Source` — the new inferred-return
+fact publishes at `Source::Derived` with
+`RETURN_INFERENCE_CONFIDENCE` = 0.75).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

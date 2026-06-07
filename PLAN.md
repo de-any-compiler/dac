@@ -49,24 +49,13 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22 and B3.23 – B3.28 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.29 – B3.31 are the M3 "real
+B3.1 – B3.22 and B3.23 – B3.29 are complete — see
+[CHANGELOG.md](./CHANGELOG.md). B3.30 – B3.31 are the M3 "real
 decompiler" follow-on still queued, closing the remaining readability
-and signature-correctness gaps surfaced in review (return-width
-inference, CRT classification, `-O<level>` header). The "B3 residue
-shelf" further down tracks heavier residue items that stay deferred
-past M3 and are sized as separate milestones rather than numbered
-batches.
-
-### B3.29 — Return-type inference from observed write width
-- Per-function pass: observe the widest write to the return register.
-  Promote return type accordingly (`int` for 32-bit-only writes,
-  `long` for 64-bit, `void` for none).
-- Annotation channel and the C backend's `pick_return_type` consume
-  the same single source — the stale `"default void return; ... lands
-  with B3.6"` explanation is retired.
-- **Done when:** C output and annotation JSON agree on every
-  function's return type; `main` returns `int` (FR-18, FR-21, I-3).
+gaps surfaced in review (CRT classification, `-O<level>` header). The
+"B3 residue shelf" further down tracks heavier residue items that
+stay deferred past M3 and are sized as separate milestones rather
+than numbered batches.
 
 ### B3.30 — CRT/startup taxonomy + annotation banner
 - `dac-knowledge::crt`: curated symbol → CRT-role table; `hlt` in
@@ -95,10 +84,7 @@ batches.
 
 B3.26 is the largest single readability lever and is independent of
 the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG → fewer
-fallback blocks to suppress). B3.29 generalises the per-function
-return-width inference; B3.28 already pinned `main`'s return to `int`
-via the canonical catalogue, so B3.29 only has to extend the
-mechanism to non-canonical callees. B3.30's `Thunk` taxonomy entry
+fallback blocks to suppress). B3.30's `Thunk` taxonomy entry
 overlaps with the [`FunctionKind::Thunk { target }`](./CHANGELOG.md)
 that B3.25 already shipped; B3.30 only needs to reconcile the two so
 the taxonomy column reads `Thunk` for the recovered entries and

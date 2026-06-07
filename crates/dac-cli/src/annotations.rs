@@ -65,7 +65,7 @@ use dac_core::{Confidence, EdgeKind, EvidenceGraph, EvidenceId, EvidenceNode, Ir
 use dac_hints::{FunctionHint, Hints};
 use dac_recovery::{FunctionSet, SourceMask, PLT_BINDING_CONFIDENCE, SYMBOL_CONFIDENCE};
 
-use crate::lift::USER_HINT_CONFIDENCE;
+use crate::lift::{InferredReturn, RETURN_INFERENCE_CONFIDENCE, USER_HINT_CONFIDENCE};
 
 /// Top-level annotation document.
 #[derive(Debug, Clone)]
@@ -172,6 +172,15 @@ impl AnnotationDoc {
     /// `level` / `target` / `debug` track the active CLI flags so the
     /// header in the JSON sidecar describes the exact configuration
     /// the artifact came out of.
+    ///
+    /// `inferred_returns` is a parallel slice indexed by position in
+    /// `functions.functions`: entry `i` carries the B3.29 width-derived
+    /// return-type inference for the `i`-th function, or `None` when no
+    /// inference is available (the unsupported-arch path, or any
+    /// function the orchestrator skipped). When `None`, the annotation
+    /// channel degrades to the pre-B3.29 "no inference yet" shape with
+    /// a `void` placeholder.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build(
         tool: ToolStamp,
         input: InputStamp,
@@ -180,24 +189,26 @@ impl AnnotationDoc {
         functions: &FunctionSet,
         graph: &EvidenceGraph,
         hints: &Hints,
+        inferred_returns: &[Option<InferredReturn>],
     ) -> Self {
         let preds = predecessor_index(graph);
         let evidence = summarize_graph(graph);
         let format_label = model.format.name();
         let mut function_annotations = Vec::with_capacity(functions.functions.len());
-        for f in &functions.functions {
+        for (i, f) in functions.functions.iter().enumerate() {
             // B3.19: surface the matched `[[function]]` hint in the
             // sidecar so a reader can see *which* hint pinned the name
             // / return type. The hint catalogue's `evidence` field is
             // populated by `register_hints` (lift.rs) before
             // `AnnotationDoc::build` runs.
             let hint = hints.find_function(f.address, f.name.as_deref());
+            let inferred_return = inferred_returns.get(i).copied().flatten();
             function_annotations.push(FunctionAnnotation {
                 address: f.address,
                 end: f.end,
                 signals: f.sources,
                 name: annotate_name(f, format_label, graph, &preds, hint),
-                return_type: annotate_return_type(hint),
+                return_type: annotate_return_type(hint, inferred_return),
             });
         }
         let mut notes = Vec::new();
@@ -290,7 +301,10 @@ fn annotate_name(
     }
 }
 
-fn annotate_return_type(hint: Option<&FunctionHint>) -> FactAnnotation {
+fn annotate_return_type(
+    hint: Option<&FunctionHint>,
+    inferred_return: Option<InferredReturn>,
+) -> FactAnnotation {
     // B3.19: when a `[[function]]` hint pinned `return`, the C
     // backend's `pick_return_type` consults the hint-seeded TypeMap
     // entry, so the annotation surfaces the hinted type with
@@ -308,11 +322,24 @@ fn annotate_return_type(hint: Option<&FunctionHint>) -> FactAnnotation {
             };
         }
     }
+    // B3.29: the per-function width-derived inference shares its
+    // verdict with the C backend's `pick_return_type` so the sidecar's
+    // `return_type` matches the emitted declarator. When no inference
+    // is available (unsupported-arch path, orchestrator skipped),
+    // degrade to the pre-B3.29 `void` placeholder.
+    if let Some(inferred) = inferred_return {
+        return FactAnnotation {
+            value: inferred.label().to_string(),
+            confidence: Confidence::new(RETURN_INFERENCE_CONFIDENCE, Source::Derived),
+            explanation: inferred.explanation().to_string(),
+            evidence: Vec::new(),
+        };
+    }
     FactAnnotation {
         value: "void".to_string(),
         confidence: Confidence::new(0.0, Source::Derived),
         explanation:
-            "default void return; calling-convention return-value inference lands with B3.6"
+            "return-type inference unavailable (orchestrator did not run for this function)"
                 .to_string(),
         evidence: Vec::new(),
     }
@@ -864,7 +891,7 @@ mod tests {
             h.evidence = Some(graph.add_node(EvidenceNode::UserHint(h.id)));
         }
         let (tool, input, settings) = stamp_pair();
-        AnnotationDoc::build(tool, input, settings, model, &set, &graph, &hints)
+        AnnotationDoc::build(tool, input, settings, model, &set, &graph, &hints, &[])
     }
 
     fn function_hint(
@@ -961,7 +988,16 @@ mod tests {
         let mut graph = EvidenceGraph::new();
         let set = discover_functions(&model, &bytes, &NullDecoder, &mut graph);
         let (tool, input, settings) = stamp_pair();
-        let doc = AnnotationDoc::build(tool, input, settings, &model, &set, &graph, &Hints::new());
+        let doc = AnnotationDoc::build(
+            tool,
+            input,
+            settings,
+            &model,
+            &set,
+            &graph,
+            &Hints::new(),
+            &[],
+        );
         let f = doc
             .functions
             .iter()
@@ -992,8 +1028,13 @@ mod tests {
         assert!(f.name.explanation.contains("synthesized"));
     }
 
+    /// When `build_doc` runs without per-function inference (the
+    /// unsupported-arch / orchestrator-skipped path), the annotation
+    /// channel degrades to a `void` placeholder. The explanation
+    /// retired the pre-B3.29 "lands with B3.6" string and now states
+    /// the actual reason — the inference did not run.
     #[test]
-    fn return_type_is_void_derived_pending_signature_inference() {
+    fn return_type_is_void_placeholder_when_inference_unavailable() {
         let model = base_model();
         let doc = build_doc(&model);
         let f = doc
@@ -1003,8 +1044,92 @@ mod tests {
         assert_eq!(f.return_type.value, "void");
         assert_eq!(f.return_type.confidence.source(), Source::Derived);
         assert_eq!(f.return_type.confidence.value(), 0.0);
-        assert!(f.return_type.explanation.contains("B3.6"));
+        assert!(
+            f.return_type
+                .explanation
+                .contains("return-type inference unavailable"),
+            "expected B3.29 placeholder explanation, got: {}",
+            f.return_type.explanation,
+        );
+        assert!(
+            !f.return_type.explanation.contains("B3.6"),
+            "stale B3.6 explanation should be retired",
+        );
         assert!(f.return_type.evidence.is_empty());
+    }
+
+    /// When an `InferredReturn` is threaded into `build`, the
+    /// annotation channel surfaces the corresponding spelling and the
+    /// concrete explanation the inference produced (B3.29).
+    #[test]
+    fn b3_29_inferred_return_threads_into_annotation_channel() {
+        use crate::lift::{InferredReturn, RETURN_INFERENCE_CONFIDENCE};
+        let mut model = base_model();
+        model.symbols.push(text_symbol("f", 0x1000, 0x10));
+        let mut graph = EvidenceGraph::new();
+        let set = discover_functions(&model, &vec![0u8; 0x100], &NullDecoder, &mut graph);
+        let (tool, input, settings) = stamp_pair();
+        let doc = AnnotationDoc::build(
+            tool,
+            input,
+            settings,
+            &model,
+            &set,
+            &graph,
+            &Hints::new(),
+            &[Some(InferredReturn::Width32)],
+        );
+        let f = doc
+            .functions
+            .iter()
+            .find(|f| f.address == 0x1000)
+            .expect("function at 0x1000");
+        assert_eq!(f.return_type.value, "int");
+        assert_eq!(f.return_type.confidence.source(), Source::Derived);
+        assert!((f.return_type.confidence.value() - RETURN_INFERENCE_CONFIDENCE).abs() < 1e-6);
+        assert!(
+            f.return_type
+                .explanation
+                .contains("widest observed write to the return register is 32 bits"),
+            "expected B3.29 width-32 explanation, got: {}",
+            f.return_type.explanation,
+        );
+    }
+
+    /// `InferredReturn::Void` overrides the placeholder: the function
+    /// renders as `void` with the concrete "no writes observed"
+    /// explanation, not the unavailable-inference placeholder.
+    #[test]
+    fn b3_29_inferred_void_renders_with_observed_no_writes_explanation() {
+        use crate::lift::InferredReturn;
+        let mut model = base_model();
+        model.symbols.push(text_symbol("f", 0x1000, 0x10));
+        let mut graph = EvidenceGraph::new();
+        let set = discover_functions(&model, &vec![0u8; 0x100], &NullDecoder, &mut graph);
+        let (tool, input, settings) = stamp_pair();
+        let doc = AnnotationDoc::build(
+            tool,
+            input,
+            settings,
+            &model,
+            &set,
+            &graph,
+            &Hints::new(),
+            &[Some(InferredReturn::Void)],
+        );
+        let f = doc
+            .functions
+            .iter()
+            .find(|f| f.address == 0x1000)
+            .expect("function at 0x1000");
+        assert_eq!(f.return_type.value, "void");
+        assert!(
+            f.return_type
+                .explanation
+                .contains("no writes to the return register"),
+            "expected B3.29 void explanation, got: {}",
+            f.return_type.explanation,
+        );
     }
 
     #[test]

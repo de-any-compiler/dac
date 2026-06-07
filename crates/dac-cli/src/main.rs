@@ -58,7 +58,7 @@ use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
     InputStamp, SettingsStamp, ToolStamp,
 };
-use crate::lift::{lift_all, register_hints, LiftOutcome, LiftStats};
+use crate::lift::{lift_all, register_hints, InferredReturn, LiftOutcome, LiftStats};
 use crate::listing::{render_listing, ListingOptions};
 use crate::manifest::{
     render_manifest_json, Manifest, ManifestInput, ManifestSettings, ManifestTool,
@@ -248,8 +248,17 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
-            annotations_doc =
-                build_annotations_doc(&input_label, &model, args, &functions, &graph, &hints);
+            let inferred_returns =
+                inferred_returns_from_outcomes(lift_outcomes.as_deref(), functions.functions.len());
+            annotations_doc = build_annotations_doc(
+                &input_label,
+                &model,
+                args,
+                &functions,
+                &graph,
+                &hints,
+                &inferred_returns,
+            );
             source_text = render_source_text(
                 args,
                 &input_label,
@@ -308,6 +317,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 &empty_set,
                 &empty_graph,
                 &empty_hints,
+                &[],
             );
             source_text = render_source_text(
                 args,
@@ -362,6 +372,7 @@ fn build_annotations_doc(
     functions: &FunctionSet,
     graph: &EvidenceGraph,
     hints: &Hints,
+    inferred_returns: &[Option<InferredReturn>],
 ) -> AnnotationDoc {
     AnnotationDoc::build(
         ToolStamp {
@@ -384,7 +395,29 @@ fn build_annotations_doc(
         functions,
         graph,
         hints,
+        inferred_returns,
     )
+}
+
+/// Project lift outcomes to the B3.29 inferred-return slice the
+/// annotation channel expects. Entries are ordered to match
+/// `functions.functions`; stub outcomes (and missing outcomes) carry
+/// `None` so the annotator's hint-then-inference path degrades to
+/// the unavailable-inference placeholder.
+fn inferred_returns_from_outcomes(
+    outcomes: Option<&[LiftOutcome]>,
+    functions_len: usize,
+) -> Vec<Option<InferredReturn>> {
+    match outcomes {
+        Some(os) => os
+            .iter()
+            .map(|o| match o {
+                LiftOutcome::Real { facts, .. } => Some(facts.inferred_return),
+                LiftOutcome::Stub { .. } => None,
+            })
+            .collect(),
+        None => vec![None; functions_len],
+    }
 }
 
 fn unresolved_xrefs_subject_text(subject: &str) -> String {
@@ -567,13 +600,20 @@ fn lower_one_c_function(
     let sanitized = sanitize_c_identifier(&raw_name);
     match outcome {
         Some(LiftOutcome::Real { ssa, sem, facts }) => {
+            // B3.29: materialise the inferred return-type override
+            // here so the borrowed `&CType` survives the lowering
+            // call. The canonical channel still wins at lowering
+            // time when both are set; the inference fallback covers
+            // every non-canonical callee.
+            let inferred_return_ty = facts.inferred_return.to_c_type();
             let recovered = CRecovered::with_canonical(
                 facts.convention.as_ref().map(|c| &c.signature),
                 Some(&facts.types),
                 Some(&facts.structs),
                 Some(&facts.names),
                 facts.canonical_signature.as_ref(),
-            );
+            )
+            .with_inferred_return(Some(&inferred_return_ty));
             let mut lowered = c_lower_function_with_options(
                 ssa,
                 sem,

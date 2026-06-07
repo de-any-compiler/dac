@@ -163,6 +163,22 @@ pub struct Recovered<'a> {
     /// parameter-init descriptors thread through so the body's
     /// locals reference the same identifier.
     pub canonical: Option<&'a SynthesizedSignature>,
+    /// Width-derived return-type override (B3.29, FR-18 / FR-21).
+    /// Set by the CLI's per-function return-type inference pass
+    /// (`infer_return_type`) when no [`Self::canonical`] override
+    /// applies. The pass observes the widest write to the return
+    /// register variable in the SSA: a 32-bit write surfaces as
+    /// `Some(CType::Named("int"))`, a 64-bit write as
+    /// `Some(CType::Named("long"))`, no observed writes as
+    /// `Some(CType::Void)`. `None` falls back to the lattice-driven
+    /// `pick_return_type` path that pre-existed B3.29 — which is the
+    /// `int64_t` default when no narrower type is inferable.
+    ///
+    /// The annotation channel reads the same value so the
+    /// `.annot.json` sidecar's `return_type` agrees with the emitted
+    /// C function declarator (the "single source" the B3.29 spec
+    /// calls for).
+    pub inferred_return: Option<&'a CType>,
 }
 
 impl<'a> Recovered<'a> {
@@ -180,6 +196,7 @@ impl<'a> Recovered<'a> {
             structs,
             names,
             canonical: None,
+            inferred_return: None,
         }
     }
 
@@ -199,7 +216,19 @@ impl<'a> Recovered<'a> {
             structs,
             names,
             canonical,
+            inferred_return: None,
         }
+    }
+
+    /// Field-update setter for the B3.29 width-derived return-type
+    /// override. Pre-existing callers (and tests) keep working by
+    /// either using [`Recovered::new`] / [`Recovered::with_canonical`]
+    /// directly (which set `inferred_return: None`), or by chaining
+    /// `.with_inferred_return(Some(&ty))` to publish the inference.
+    #[must_use]
+    pub fn with_inferred_return(mut self, inferred_return: Option<&'a CType>) -> Self {
+        self.inferred_return = inferred_return;
+        self
     }
 }
 
@@ -514,16 +543,29 @@ fn parameter_type(
 /// `Stmt::Return { value: Some(_) }` → `int64_t`" heuristic stays in
 /// force.
 ///
-/// A [`SynthesizedSignature`] override with `return_type: Some(_)`
-/// short-circuits the rest of the path — canonical entry-points
-/// (`int main`) and hint-driven return-type pins (B3.28) get exactly
-/// the spelling the catalogue / hint declared, rather than the
-/// stdint-style approximation the type lattice would produce.
+/// Precedence (highest first):
+///
+/// 1. [`Recovered::canonical`] override (B3.28) — curated entry-point
+///    spellings (`int main(…)`) and hint-driven return-type pins.
+/// 2. [`Recovered::inferred_return`] override (B3.29) — width-derived
+///    `int` / `long` / `void` from the per-function return-type
+///    inference pass.
+/// 3. Lattice-driven join of every `Return { value: Some(v) }`
+///    operand's recovered IR type, mapped through [`map_ir_type`].
+/// 4. `int64_t` fallback when the lattice produced no concrete type.
+///
+/// The B3.29 channel sits *above* the lattice path so a function the
+/// inference pass classified as `void` no longer renders as the
+/// stale `int64_t` shape carried over from the B2.8 "anything that
+/// returns lands as `int64_t`" heuristic.
 fn pick_return_type(body: &SemBlock, ssa: &SsaFunction, recovered: &Recovered<'_>) -> CType {
     if let Some(canon) = recovered.canonical {
         if let Some(ty) = &canon.return_type {
             return ty.clone();
         }
+    }
+    if let Some(inferred) = recovered.inferred_return {
+        return inferred.clone();
     }
     let conv_has_return = recovered
         .signature
@@ -1941,6 +1983,95 @@ mod tests {
         // Falls through to the convention-derived path: no convention
         // → no return register → empty body returns void.
         assert_eq!(lowered.function.return_type, CType::Void);
+    }
+
+    // -----------------------------------------------------------------
+    // B3.29 — Width-derived return-type override.
+    // -----------------------------------------------------------------
+
+    /// `inferred_return = Some(CType::Named("int"))` short-circuits
+    /// the lattice-driven `pick_return_type` path: the C backend
+    /// prints `int` even though the convention pinned a 64-bit return
+    /// register and the type lattice would otherwise produce
+    /// `int64_t`.
+    #[test]
+    fn b3_29_inferred_return_int_drives_int_spelling() {
+        let ssa = empty_ssa("fn");
+        let sem = empty_sem("fn");
+        let inferred = CType::Named("int".into());
+        let recovered = Recovered::default().with_inferred_return(Some(&inferred));
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Named("int".into()));
+    }
+
+    /// `inferred_return = Some(CType::Named("long"))` is the 64-bit
+    /// shape the inference pass publishes for functions whose source-
+    /// op width could not be observed (conservative default).
+    #[test]
+    fn b3_29_inferred_return_long_drives_long_spelling() {
+        let ssa = empty_ssa("fn");
+        let sem = empty_sem("fn");
+        let inferred = CType::Named("long".into());
+        let recovered = Recovered::default().with_inferred_return(Some(&inferred));
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Named("long".into()));
+    }
+
+    /// `inferred_return = Some(CType::Void)` collapses a function
+    /// whose convention pinned a return register but whose body
+    /// performed no writes to the return register variable into
+    /// `void` — replacing the pre-B3.29 stale `int64_t` shape.
+    #[test]
+    fn b3_29_inferred_return_void_drives_void_spelling() {
+        let ssa = empty_ssa("fn");
+        let sem = empty_sem("fn");
+        let inferred = CType::Void;
+        let recovered = Recovered::default().with_inferred_return(Some(&inferred));
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Void);
+    }
+
+    /// The canonical override (B3.28) outranks the B3.29 inferred
+    /// channel — a function matching the canonical catalogue keeps
+    /// its catalogue spelling even when the width inference
+    /// disagrees.
+    #[test]
+    fn b3_29_canonical_outranks_inferred_return() {
+        let ssa = empty_ssa("main");
+        let sem = empty_sem("main");
+        let canonical = SynthesizedSignature {
+            return_type: Some(CType::Named("int".into())),
+            params: vec![],
+        };
+        let inferred = CType::Named("long".into());
+        let recovered = Recovered::with_canonical(None, None, None, None, Some(&canonical))
+            .with_inferred_return(Some(&inferred));
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Named("int".into()));
     }
 
     #[test]

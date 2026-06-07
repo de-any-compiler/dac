@@ -114,6 +114,18 @@ pub(crate) struct RecoveryFacts {
     /// later by [`apply_function_hint`] when the hint declares arg
     /// slots past the convention-observed prefix (FR-12, FR-20, FR-21).
     pub canonical_signature: Option<SynthesizedSignature>,
+    /// Width-derived return-type inference (B3.29, FR-18 / FR-21).
+    /// Computed by [`infer_return_type`] after the convention pass
+    /// pinned the return register. The C backend's `pick_return_type`
+    /// consults this *after* the canonical override and *before* the
+    /// lattice-driven path: a function the inference pass classified
+    /// as `void` no longer renders as the legacy `int64_t` shape, and
+    /// a function whose widest write to the return register is 32
+    /// bits renders as `int` instead of `int64_t`. The annotation
+    /// channel reads the same value so the `.annot.json` sidecar's
+    /// `return_type` agrees with the emitted C function declarator
+    /// (the "single source" the B3.29 spec calls for).
+    pub inferred_return: InferredReturn,
 }
 
 /// Summary of the user hint applied to a function. Surfaces in
@@ -512,6 +524,17 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
     // type lattice would otherwise yield.
     let canonical_signature = apply_canonical_entry(f, &ssa, &mut convention, &mut types);
 
+    // B3.29: per-function return-type inference. Observes the widest
+    // write to the convention's return register variable in the SSA
+    // and publishes `void` / `int` / `long`. Runs *after* the
+    // canonical / hint overlays so a function whose return register
+    // was synthesised at hint time (e.g. a `[[function]]` hint
+    // pinned `return`) is observed under the post-overlay convention.
+    // The canonical override still wins at lowering time when both
+    // channels publish — the inference is a fallback for non-canonical
+    // callees (FR-18, FR-21).
+    let inferred_return = infer_return_type(&ssa, convention.as_ref());
+
     // B3.7 + B3.20: deterministic variable-naming heuristics.
     // Consumes the recovered convention + API resolver + extracted
     // strings, plus a per-function loop summary derived from the
@@ -543,6 +566,7 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
         names,
         simplify: simplify_stats,
         canonical_signature,
+        inferred_return,
     });
     LiftOutcome::Real { ssa, sem, facts }
 }
@@ -797,6 +821,217 @@ fn hinted_return_register(c: &ConventionMatch) -> &'static str {
     match c.convention_name {
         "ms-x64" => "rax",
         _ => "rax",
+    }
+}
+
+/// Per-function return-type inference result (B3.29, FR-18 / FR-21).
+///
+/// Computed by [`infer_return_type`] from the SSA layer: the function's
+/// return register variable is read out of the convention pass's
+/// inferred signature, every write to that variable in the SSA body
+/// is inspected, and the widest source-op width wins.
+///
+/// Variants:
+///
+/// - [`InferredReturn::Void`] — the convention pass pinned no return
+///   register, or no writes to the return register variable were
+///   observed in the body. The C backend renders the function as
+///   `void`.
+/// - [`InferredReturn::Width32`] — the widest observed write to the
+///   return register is 32 bits — typically a `mov eax, …` (canonicalised
+///   to a Move whose source is a 4-byte `Load`) or a [`SsaOp::Compare`]
+///   result. The C backend renders the function as `int`.
+/// - [`InferredReturn::Width64`] — the widest observed write is 64
+///   bits, or the source-op width could not be observed (conservative
+///   default; covers Move-from-Const, arithmetic, indirect Call). The
+///   C backend renders the function as `long`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InferredReturn {
+    Void,
+    Width32,
+    Width64,
+}
+
+impl InferredReturn {
+    /// C-canonical type spelling consumed by
+    /// [`dac_backend_c::Recovered::inferred_return`]. The C backend
+    /// uses this to fill `Function::return_type` when no canonical
+    /// override applies.
+    pub(crate) fn to_c_type(self) -> CType {
+        match self {
+            InferredReturn::Void => CType::Void,
+            InferredReturn::Width32 => CType::Named("int".into()),
+            InferredReturn::Width64 => CType::Named("long".into()),
+        }
+    }
+
+    /// Plain-text label consumed by the annotation channel — the
+    /// `.annot.json` sidecar's `return_type` field.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            InferredReturn::Void => "void",
+            InferredReturn::Width32 => "int",
+            InferredReturn::Width64 => "long",
+        }
+    }
+
+    /// Single-line explanation rendered into the annotation channel's
+    /// "Why this type?" trail. Retires the stale "default void return;
+    /// calling-convention return-value inference lands with B3.6"
+    /// message the pre-B3.29 annotator carried.
+    pub(crate) fn explanation(self) -> &'static str {
+        match self {
+            InferredReturn::Void => {
+                "no writes to the return register observed in the function body"
+            }
+            InferredReturn::Width32 => "widest observed write to the return register is 32 bits",
+            InferredReturn::Width64 => {
+                "widest observed write to the return register is 64 bits \
+                 (or the source-op width could not be observed)"
+            }
+        }
+    }
+}
+
+/// Confidence value B3.29's width-derived return-type inference carries.
+///
+/// `Source::Derived` — the value comes from observing the SSA, not
+/// from an explicit user statement or a curated knowledge entry; pinned
+/// just under the type-propagation tier so a hint or canonical entry
+/// still outranks it.
+pub(crate) const RETURN_INFERENCE_CONFIDENCE: f32 = 0.75;
+
+/// Per-function return-type inference pass (B3.29, FR-18 / FR-21).
+///
+/// The pass:
+///
+/// 1. Reads the convention pass's pinned return register from
+///    `convention.signature.return_register`. When no register is
+///    pinned, the function returns void — degrade to
+///    [`InferredReturn::Void`] without examining the body.
+/// 2. Looks the return register up in `ssa.variables` (matched
+///    case-insensitively, so the convention's `"rax"` finds the
+///    `Variable` whose name the lifter recorded in any case).
+/// 3. Walks every SSA instruction whose `dst` lands in the return
+///    register variable, and every phi whose dst variable is the
+///    return register. Tracks whether any write was observed and
+///    the widest [`source_op_width`] across them.
+/// 4. Returns [`InferredReturn::Void`] when no writes were observed,
+///    [`InferredReturn::Width32`] when the widest observation is at
+///    most 32 bits, [`InferredReturn::Width64`] otherwise (or when
+///    no width was extractable from any observed write).
+///
+/// Determinism: the pass walks the SSA in block / instruction order,
+/// which is itself byte-stable. `Pure` (NFR-9).
+fn infer_return_type(ssa: &SsaFunction, convention: Option<&ConventionMatch>) -> InferredReturn {
+    let Some(return_reg) = convention.and_then(|c| c.signature.return_register) else {
+        return InferredReturn::Void;
+    };
+    let Some(return_var) = ssa
+        .variables
+        .iter()
+        .find(|v| v.name.eq_ignore_ascii_case(return_reg))
+    else {
+        return InferredReturn::Void;
+    };
+    let return_var_id = return_var.id;
+
+    // Stop B3.29 from collapsing a function whose body still carries
+    // `Return { value: Some(_) }` into `void` — the structurer would
+    // keep emitting `return v<id>;` against the void declarator and
+    // the round-trip compile gate would refuse the output. The
+    // narrower-than-64 inference only fires when we actually observed
+    // a sub-64-bit write to the return register; the fallback for any
+    // function that returns a value stays at 64 bits (= `long`).
+    let mut any_return_value: Option<Operand> = None;
+    for block in &ssa.blocks {
+        if let dac_ir::ssa::SsaTerminator::Return { value: Some(v) } = &block.terminator {
+            any_return_value = Some(*v);
+            break;
+        }
+    }
+
+    let mut any_write_to_return_reg = false;
+    let mut max_observed: u16 = 0;
+    for block in &ssa.blocks {
+        for ins in &block.instructions {
+            let Some(dst) = ins.dst else { continue };
+            if ssa.value(dst).variable != return_var_id {
+                continue;
+            }
+            any_write_to_return_reg = true;
+            if let Some(w) = source_op_width(ssa, &ins.op) {
+                if w > max_observed {
+                    max_observed = w;
+                }
+            }
+        }
+        for phi in &block.phis {
+            if ssa.value(phi.dst).variable == return_var_id {
+                any_write_to_return_reg = true;
+            }
+        }
+    }
+
+    // B3.26's simplifier folds the lifter's Move-into-rax sequence, so
+    // a function whose only write to the return register was a Move
+    // from a Load gets the Move dropped and the Return reads the
+    // Load's dst directly. Probe the Return value's defining op width
+    // here so the inference doesn't miss the signal the simplifier
+    // collapsed.
+    if let Some(Operand::Value(v)) = any_return_value {
+        let def = ssa.value(v);
+        if let dac_ir::ssa::ValueSource::Instruction { block, index } = def.source {
+            let op = &ssa.block(block).instructions[index as usize].op;
+            if let Some(w) = source_op_width(ssa, op) {
+                if w > max_observed {
+                    max_observed = w;
+                }
+            }
+        }
+    }
+
+    if any_return_value.is_none() && !any_write_to_return_reg {
+        return InferredReturn::Void;
+    }
+
+    if max_observed > 0 && max_observed <= 32 {
+        InferredReturn::Width32
+    } else {
+        InferredReturn::Width64
+    }
+}
+
+/// Width of the source operation that produces the value written into
+/// the return register. The lifter erases the source-width signal on
+/// 32-bit register writes (`mov eax, …` becomes a Move into the rax
+/// parent variable), so the inference walks through one Move hop to
+/// reach the underlying Load / Compare whose width is encoded on the
+/// op itself.
+///
+/// Returns `None` when no width can be extracted — Move-from-Const,
+/// Move-from-Parameter, arithmetic, indirect Call, and Opaque ops all
+/// lose the signal. Callers default to 64-bit.
+fn source_op_width(ssa: &SsaFunction, op: &dac_ir::ssa::SsaOp) -> Option<u16> {
+    use dac_ir::ssa::SsaOp;
+    match op {
+        SsaOp::Load { width, .. } => {
+            let bits = u16::from(*width).saturating_mul(8);
+            (bits > 0).then_some(bits)
+        }
+        SsaOp::Compare { .. } => Some(8),
+        SsaOp::Move {
+            src: Operand::Value(v),
+        } => {
+            let def = ssa.value(*v);
+            if let dac_ir::ssa::ValueSource::Instruction { block, index } = def.source {
+                let inner = &ssa.block(block).instructions[index as usize].op;
+                source_op_width(ssa, inner)
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 
@@ -1299,6 +1534,7 @@ mod tests {
             names: NameTable::default(),
             simplify: SimplifyStats::default(),
             canonical_signature: None,
+            inferred_return: InferredReturn::Void,
         }
     }
 
@@ -1853,6 +2089,357 @@ mod tests {
             convention.as_ref().unwrap().signature.int_args.len(),
             1,
             "no synthesis when hint arity <= observed",
+        );
+    }
+
+    // ---- B3.29 return-type inference -------------------------------
+
+    fn b329_value(
+        id: u32,
+        variable: u32,
+        source: dac_ir::ssa::ValueSource,
+    ) -> dac_ir::ssa::ValueDef {
+        dac_ir::ssa::ValueDef {
+            id,
+            variable,
+            source,
+        }
+    }
+
+    fn b329_block_with_terminator(
+        instructions: Vec<dac_ir::ssa::SsaInstruction>,
+        terminator: IrSsaTerminator,
+    ) -> dac_ir::ssa::SsaBlock {
+        dac_ir::ssa::SsaBlock {
+            id: 0,
+            predecessors: vec![],
+            phis: vec![],
+            instructions,
+            terminator,
+        }
+    }
+
+    fn b329_ssa(
+        variables: Vec<dac_ir::ssa::Variable>,
+        values: Vec<dac_ir::ssa::ValueDef>,
+        block: dac_ir::ssa::SsaBlock,
+    ) -> SsaFunction {
+        SsaFunction {
+            function_address: 0x1000,
+            function_name: Some("fn".into()),
+            blocks: vec![block],
+            entry: 0,
+            variables,
+            values,
+            evidence: dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+                layer: dac_core::IrLayer::Ssa,
+                id: 0,
+            }),
+        }
+    }
+
+    fn b329_convention_with_rax_return() -> ConventionMatch {
+        ConventionMatch {
+            convention_name: "sysv-amd64",
+            signature: dac_recovery::InferredSignature {
+                int_args: vec![],
+                stack_args: vec![],
+                return_register: Some("rax"),
+                variadic_call_sites: 0,
+            },
+            confidence: Confidence::new(0.5, Source::Derived),
+        }
+    }
+
+    /// No convention return register, no return value → `Void`.
+    #[test]
+    fn b3_29_void_when_no_return_register_pinned() {
+        let ssa = b329_ssa(
+            vec![dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            }],
+            vec![],
+            b329_block_with_terminator(vec![], IrSsaTerminator::Return { value: None }),
+        );
+        let convention = ConventionMatch {
+            convention_name: "sysv-amd64",
+            signature: dac_recovery::InferredSignature {
+                int_args: vec![],
+                stack_args: vec![],
+                return_register: None,
+                variadic_call_sites: 0,
+            },
+            confidence: Confidence::new(0.0, Source::Derived),
+        };
+        assert_eq!(
+            infer_return_type(&ssa, Some(&convention)),
+            InferredReturn::Void,
+        );
+    }
+
+    /// Convention pins rax but no `Return { Some(_) }` and no writes
+    /// to rax in the body → `Void` (the spec's "void for none" case).
+    #[test]
+    fn b3_29_void_when_no_writes_and_no_value_return() {
+        let ssa = b329_ssa(
+            vec![dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            }],
+            vec![],
+            b329_block_with_terminator(vec![], IrSsaTerminator::Return { value: None }),
+        );
+        assert_eq!(
+            infer_return_type(&ssa, Some(&b329_convention_with_rax_return())),
+            InferredReturn::Void,
+        );
+    }
+
+    /// A single Load width 4 written into rax (`mov eax, [mem]` shape)
+    /// → `Width32` → `int` return spelling.
+    #[test]
+    fn b3_29_load_width_4_into_rax_renders_as_int() {
+        // values:
+        //   0 = Load { width: 4 } → temp (variable 1)
+        //   1 = Move { src: Value(0) } → rax (variable 0)
+        // Terminator returns value 1.
+        let variables = vec![
+            dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            },
+            dac_ir::ssa::Variable {
+                id: 1,
+                name: "t0".into(),
+                width_bits: 32,
+            },
+            dac_ir::ssa::Variable {
+                id: 2,
+                name: "rsp".into(),
+                width_bits: 64,
+            },
+        ];
+        let values = vec![
+            // rsp parameter (used as address)
+            b329_value(0, 2, dac_ir::ssa::ValueSource::Parameter { variable: 2 }),
+            // Load dst
+            b329_value(
+                1,
+                1,
+                dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+            ),
+            // Move dst (writes rax)
+            b329_value(
+                2,
+                0,
+                dac_ir::ssa::ValueSource::Instruction { block: 0, index: 1 },
+            ),
+        ];
+        let instructions = vec![
+            dac_ir::ssa::SsaInstruction {
+                dst: Some(1),
+                op: dac_ir::ssa::SsaOp::Load {
+                    address: Operand::Value(0),
+                    width: 4,
+                },
+            },
+            dac_ir::ssa::SsaInstruction {
+                dst: Some(2),
+                op: dac_ir::ssa::SsaOp::Move {
+                    src: Operand::Value(1),
+                },
+            },
+        ];
+        let ssa = b329_ssa(
+            variables,
+            values,
+            b329_block_with_terminator(
+                instructions,
+                IrSsaTerminator::Return {
+                    value: Some(Operand::Value(2)),
+                },
+            ),
+        );
+        assert_eq!(
+            infer_return_type(&ssa, Some(&b329_convention_with_rax_return())),
+            InferredReturn::Width32,
+        );
+    }
+
+    /// A single Load width 8 written into rax → `Width64` → `long`.
+    #[test]
+    fn b3_29_load_width_8_into_rax_renders_as_long() {
+        let variables = vec![
+            dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            },
+            dac_ir::ssa::Variable {
+                id: 1,
+                name: "t0".into(),
+                width_bits: 64,
+            },
+            dac_ir::ssa::Variable {
+                id: 2,
+                name: "rsp".into(),
+                width_bits: 64,
+            },
+        ];
+        let values = vec![
+            b329_value(0, 2, dac_ir::ssa::ValueSource::Parameter { variable: 2 }),
+            b329_value(
+                1,
+                1,
+                dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+            ),
+            b329_value(
+                2,
+                0,
+                dac_ir::ssa::ValueSource::Instruction { block: 0, index: 1 },
+            ),
+        ];
+        let instructions = vec![
+            dac_ir::ssa::SsaInstruction {
+                dst: Some(1),
+                op: dac_ir::ssa::SsaOp::Load {
+                    address: Operand::Value(0),
+                    width: 8,
+                },
+            },
+            dac_ir::ssa::SsaInstruction {
+                dst: Some(2),
+                op: dac_ir::ssa::SsaOp::Move {
+                    src: Operand::Value(1),
+                },
+            },
+        ];
+        let ssa = b329_ssa(
+            variables,
+            values,
+            b329_block_with_terminator(
+                instructions,
+                IrSsaTerminator::Return {
+                    value: Some(Operand::Value(2)),
+                },
+            ),
+        );
+        assert_eq!(
+            infer_return_type(&ssa, Some(&b329_convention_with_rax_return())),
+            InferredReturn::Width64,
+        );
+    }
+
+    /// A function whose body returns a value but performs no
+    /// observable writes to the return register (e.g. the lifter
+    /// reads rax as a Parameter and returns it directly) stays at
+    /// `Width64` rather than collapsing to Void — the structurer
+    /// would otherwise emit `return v<id>;` against a `void`
+    /// declarator and the compile gate would fail.
+    #[test]
+    fn b3_29_returns_value_without_writes_stays_at_long() {
+        let variables = vec![dac_ir::ssa::Variable {
+            id: 0,
+            name: "rax".into(),
+            width_bits: 64,
+        }];
+        let values = vec![
+            // rax entry-value parameter.
+            b329_value(0, 0, dac_ir::ssa::ValueSource::Parameter { variable: 0 }),
+        ];
+        let ssa = b329_ssa(
+            variables,
+            values,
+            b329_block_with_terminator(
+                vec![],
+                IrSsaTerminator::Return {
+                    value: Some(Operand::Value(0)),
+                },
+            ),
+        );
+        assert_eq!(
+            infer_return_type(&ssa, Some(&b329_convention_with_rax_return())),
+            InferredReturn::Width64,
+        );
+    }
+
+    /// After [`dac_recovery::simplify`] folds the lifter's
+    /// Move-into-rax sequence, the SSA carries no instruction whose
+    /// dst variable is rax — the Return references the Load's dst
+    /// (a synth temp) directly. The inference must still publish
+    /// `Width32` by probing the Return value's source op.
+    #[test]
+    fn b3_29_post_simplify_move_into_rax_folded_still_publishes_width32() {
+        // values:
+        //   0 = rsp parameter (used as address)
+        //   1 = Load { width: 4, address: v0 } → synth_temp (variable 1)
+        // Terminator returns value 1 directly — no Move-into-rax (the
+        // simplifier collapsed it). Conventions still pin `rax` as the
+        // return register.
+        let variables = vec![
+            dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            },
+            dac_ir::ssa::Variable {
+                id: 1,
+                name: "t0".into(),
+                width_bits: 32,
+            },
+            dac_ir::ssa::Variable {
+                id: 2,
+                name: "rsp".into(),
+                width_bits: 64,
+            },
+        ];
+        let values = vec![
+            b329_value(0, 2, dac_ir::ssa::ValueSource::Parameter { variable: 2 }),
+            b329_value(
+                1,
+                1,
+                dac_ir::ssa::ValueSource::Instruction { block: 0, index: 0 },
+            ),
+        ];
+        let instructions = vec![dac_ir::ssa::SsaInstruction {
+            dst: Some(1),
+            op: dac_ir::ssa::SsaOp::Load {
+                address: Operand::Value(0),
+                width: 4,
+            },
+        }];
+        let ssa = b329_ssa(
+            variables,
+            values,
+            b329_block_with_terminator(
+                instructions,
+                IrSsaTerminator::Return {
+                    value: Some(Operand::Value(1)),
+                },
+            ),
+        );
+        assert_eq!(
+            infer_return_type(&ssa, Some(&b329_convention_with_rax_return())),
+            InferredReturn::Width32,
+        );
+    }
+
+    /// `Width32` mints `CType::Named("int")`; `Width64` mints
+    /// `CType::Named("long")`; `Void` mints `CType::Void`.
+    #[test]
+    fn b3_29_to_c_type_spellings_match_spec() {
+        assert_eq!(InferredReturn::Void.to_c_type(), CType::Void);
+        assert_eq!(
+            InferredReturn::Width32.to_c_type(),
+            CType::Named("int".into()),
+        );
+        assert_eq!(
+            InferredReturn::Width64.to_c_type(),
+            CType::Named("long".into()),
         );
     }
 
