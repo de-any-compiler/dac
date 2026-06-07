@@ -1,13 +1,14 @@
-//! End-to-end test for `dac -O1 --target cpp` (B3.5, FR-21).
+//! End-to-end test for `dac -O<n> --target cpp` (B3.5, FR-21).
 //!
 //! Closes the B3.5 done-when: "a sample C++ binary with a small class
 //! hierarchy decompiles to C++ that compiles". Runs the CLI against
 //! the `cpp-hierarchy-x86_64` ELF fixture and asserts:
 //!
 //! 1. A `<output>.cpp` sidecar is written.
-//! 2. The sidecar contains the canonical dac C++ banner comment plus
-//!    `class Dog`, `class Cat`, and `class Animal` definitions — the
-//!    three classes the fixture's source declares.
+//! 2. The sidecar contains the canonical dac C++ banner comment whose
+//!    `-O<n>` level matches the invocation (B3.31 — was hardcoded to
+//!    `-O1`) plus `class Dog`, `class Cat`, and `class Animal`
+//!    definitions — the three classes the fixture's source declares.
 //! 3. Each polymorphic class carries a `virtual ~Class` declaration
 //!    (every `_ZTV*` symbol promotes its class to polymorphic and the
 //!    lowering pass synthesises the dtor when none was recovered).
@@ -34,11 +35,11 @@ fn fixture_path(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn run_o1_cpp(output: &PathBuf) {
+fn run_cpp(opt: &str, output: &PathBuf) {
     let path = fixture_path("cpp-hierarchy-x86_64");
     Command::cargo_bin("dac")
         .expect("dac binary present")
-        .arg("-O1")
+        .arg(opt)
         .arg("--target")
         .arg("cpp")
         .arg("--output")
@@ -46,6 +47,10 @@ fn run_o1_cpp(output: &PathBuf) {
         .arg(&path)
         .assert()
         .success();
+}
+
+fn run_o1_cpp(output: &PathBuf) {
+    run_cpp("-O1", output);
 }
 
 fn sidecar(base: &Path, suffix: &str) -> PathBuf {
@@ -100,6 +105,27 @@ fn o1_target_cpp_emits_cpp_sidecar_with_recovered_classes() {
         source.contains("std::int32_t main()"),
         "expected `std::int32_t main()` in:\n{source}"
     );
+}
+
+/// B3.31: the C++ reconstruction banner reflects the active `-O<n>`
+/// invocation rather than the historical hardcoded `-O1`. The done-when
+/// for B3.31 is "invocation at `-O3` prints `-O3` in the header"
+/// (FR-21). We also assert `-O2` to confirm every non-`-O1` level
+/// reaches the format string the same way.
+#[test]
+fn b3_31_cpp_banner_reflects_active_opt_level() {
+    for opt in ["-O2", "-O3"] {
+        let dir = TempDir::new().expect("tempdir");
+        let out = dir.path().join("a.listing");
+        run_cpp(opt, &out);
+        let source = fs::read_to_string(sidecar(&out, ".cpp")).expect("cpp sidecar");
+        let banner = format!("dac --target cpp {opt} reconstruction");
+        assert!(source.contains(&banner), "missing `{banner}` in:\n{source}");
+        assert!(
+            !source.contains("dac --target cpp -O1 reconstruction"),
+            "stale -O1 banner leaked at {opt}:\n{source}"
+        );
+    }
 }
 
 #[test]

@@ -6235,6 +6235,91 @@ the four crates); 32 goldens across 12 cases match after the
 Closes: B3.30, FR-21 (recovered source readability), FR-25
 (unresolved-construct reporting).
 
+#### B3.31 — Header honors `-O<level>` and corpus refresh (2026-06-07)
+
+Threads the active `OptLevel` setting into the reconstruction
+banner the `--target c` and `--target cpp` backends emit at the
+top of every sidecar. Prior to this batch the banner was
+hardcoded to `-O1` regardless of the invocation level — running
+`dac -O3 --target c …` emitted a `/* dac --target c -O1
+reconstruction … */` header that contradicted the level the user
+actually requested. The fix is mechanical: pass
+`args.opt: OptLevel` through `render_source_text` into
+`render_c_unit` / `render_cpp_unit`, format the active level via
+`OptLevel::as_str()` (which already returns `O0` / `O1` / `O2` /
+`O3`), and drop the dash-prefix `-` directly in the format string
+so the rendered banner reads `-O<n>` matching the invocation.
+
+Motivation. The B3 review surfaced this as a small readability /
+trust gap: a reviewer skimming a sidecar that says `-O1
+reconstruction` while the invocation was `-O3` rightly distrusts
+every claim downstream — the header is the first signal of pass
+provenance and contradicting the invocation undercuts the whole
+report. PLAN.md called the fix out as the M3 "real decompiler"
+follow-on: "replace the hardcoded `-O1` header string with the
+active `opt` setting" (PLAN B3.31).
+
+Behaviour change.
+- `dac-cli::main::render_c_unit` gained an `opt: OptLevel`
+  parameter and its format-string templates the active level
+  via `opt.as_str()`. The banner now reads
+  `/* dac --target c -<level> reconstruction … */` instead of
+  the historical `-O1` constant. `#[allow(clippy::too_many_arguments)]`
+  on the function — the 8th argument is the
+  readability-tradeoff cost of keeping the C-unit renderer a
+  single function rather than introducing a struct just for
+  this batch.
+- `dac-cli::main::render_cpp_unit` gained the same `opt`
+  parameter on the same contract; the C++ banner template
+  mirrors the C path.
+- `dac-cli::main::render_source_text` forwards `args.opt` into
+  both renderers — the existing call sites in `main()` already
+  pass `args` through, so no further plumbing was needed.
+- No change to `OptLevel` itself; its `as_str()` already returned
+  the right strings (`O0` / `O1` / `O2` / `O3`).
+
+Goldens. All five `*-o1-*/source.{c,cpp}` goldens already cover
+the `-O1` invocation path and continue to assert the `-O1`
+banner unchanged. No golden refresh was needed because every
+golden in `tests/golden/` runs at `-O1`; the bug only manifested
+when a caller chose a non-`-O1` level.
+
+Tests. Two new end-to-end tests, mirroring the existing B2.8 /
+B3.5 banner assertions:
+- `crates/dac-cli/tests/o1_target_c.rs::b3_31_banner_reflects_active_opt_level`
+  runs the CLI against the hello-x86_64 ELF at `-O2` and `-O3`,
+  asserts the banner reads `dac --target c -O2 reconstruction`
+  / `dac --target c -O3 reconstruction` respectively, and
+  asserts the historical `-O1` literal does not leak when the
+  invocation level is different.
+- `crates/dac-cli/tests/o1_target_cpp.rs::b3_31_cpp_banner_reflects_active_opt_level`
+  mirrors the contract against the `cpp-hierarchy-x86_64`
+  fixture with `--target cpp`.
+
+The existing `o1_target_c_emits_c_sidecar_with_banner` and
+`o1_target_cpp_emits_cpp_sidecar_with_recovered_classes` tests
+continue to assert the `-O1` banner verbatim and demonstrate
+that the level-aware format string still renders `-O1` when the
+run is at `-O1` — the regression test for the dash and the
+literal `O1` substring.
+
+Done-when verification (PLAN.md).
+- "invocation at `-O3` prints `-O3` in the header" — verified:
+  the new `b3_31_banner_reflects_active_opt_level` test
+  asserts the banner reads `dac --target c -O3 reconstruction`
+  after a `-O3` invocation, and `cargo xtask ci` confirms it
+  passes against the freshly-built CLI. End-to-end smoke check
+  on `tests/fixtures/hello-x86_64` with `-O3 --target c`
+  emits `/* dac --target c -O3 reconstruction\n   input: …\n
+  arch:  x86-64 */` as the first banner line.
+
+CI verification: `cargo xtask ci` green — fmt + clippy +
+731 tests pass (was 729 at B3.30, +2 net new for B3.31 across
+the two integration test files); 32 goldens across 12 cases
+match unchanged.
+
+Closes: B3.31, FR-21 (recovered source readability).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

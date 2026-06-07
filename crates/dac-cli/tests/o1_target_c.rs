@@ -1,12 +1,13 @@
-//! End-to-end test for `dac -O1 --target c` (B2.8, FR-21).
+//! End-to-end test for `dac -O<n> --target c` (B2.8, FR-21).
 //!
 //! Runs the CLI against the shared x86-64 ELF fixture with the
-//! `-O1 --target c` flag combination and asserts:
+//! `-O<n> --target c` flag combination and asserts:
 //!
 //! 1. The CLI exits successfully.
 //! 2. A `<output>.c` sidecar appears.
 //! 3. The sidecar starts with the canonical dac C-reconstruction
-//!    banner comment.
+//!    banner comment whose `-O<n>` level matches the invocation
+//!    (B3.31 — the banner was previously hardcoded to `-O1`).
 //! 4. The sidecar compiles cleanly when `cc` is on PATH; the test is
 //!    silently skipped otherwise (matching the round-trip helper's
 //!    skip-when-no-compiler contract).
@@ -29,11 +30,11 @@ fn fixture_path(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn run_o1_c(output: &PathBuf) {
+fn run_c(opt: &str, output: &PathBuf) {
     let path = fixture_path("hello-x86_64");
     Command::cargo_bin("dac")
         .expect("dac binary present")
-        .arg("-O1")
+        .arg(opt)
         .arg("--target")
         .arg("c")
         .arg("--output")
@@ -41,6 +42,10 @@ fn run_o1_c(output: &PathBuf) {
         .arg(&path)
         .assert()
         .success();
+}
+
+fn run_o1_c(output: &PathBuf) {
+    run_c("-O1", output);
 }
 
 #[test]
@@ -61,6 +66,29 @@ fn o1_target_c_emits_c_sidecar_with_banner() {
         source.contains("(void) {"),
         "no function definition in:\n{source}"
     );
+}
+
+/// B3.31: the reconstruction banner reflects the active `-O<n>`
+/// invocation rather than the historical hardcoded `-O1`. The done-when
+/// for B3.31 is "invocation at `-O3` prints `-O3` in the header"
+/// (FR-21). We also assert `-O2` to confirm every non-`-O1` level
+/// reaches the format string the same way.
+#[test]
+fn b3_31_banner_reflects_active_opt_level() {
+    for opt in ["-O2", "-O3"] {
+        let dir = TempDir::new().expect("tempdir");
+        let out = dir.path().join("a.listing");
+        run_c(opt, &out);
+        let source = fs::read_to_string(sidecar_with_suffix(&out, ".c")).expect("source sidecar");
+        let banner = format!("dac --target c {opt} reconstruction");
+        assert!(source.contains(&banner), "missing `{banner}` in:\n{source}");
+        // And the previously hardcoded level must not leak when the
+        // run is at a different level.
+        assert!(
+            !source.contains("dac --target c -O1 reconstruction"),
+            "stale -O1 banner leaked at {opt}:\n{source}"
+        );
+    }
 }
 
 #[test]

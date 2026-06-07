@@ -49,27 +49,16 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22 and B3.23 – B3.30 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.31 is the M3 "real decompiler"
-follow-on still queued, closing the remaining readability gap
-surfaced in review (`-O<level>` header). The "B3 residue shelf"
-further down tracks heavier residue items that stay deferred past
-M3 and are sized as separate milestones rather than numbered
-batches.
-
-### B3.31 — Header honors `-O<level>` and corpus refresh
-- `crates/dac-cli/src/main.rs:485` and `:740`: replace the hardcoded
-  `-O1` header string with the active `opt` setting.
-- Refresh `crates/dac-cli/tests/o1_target_*.rs` to assert the level
-  matches the run instead of asserting `-O1`.
-- **Done when:** invocation at `-O3` prints `-O3` in the header
-  (FR-21).
+B3.1 – B3.22 and B3.23 – B3.31 are complete — see
+[CHANGELOG.md](./CHANGELOG.md). The "B3 residue shelf" further
+down tracks heavier residue items that stay deferred past M3 and
+are sized as separate milestones rather than numbered batches.
 
 ### Sequencing
 
 B3.26 is the largest single readability lever and is independent of
 the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG → fewer
-fallback blocks to suppress). B3.31 can land at any point.
+fallback blocks to suppress).
 
 ### B3 residue shelf
 

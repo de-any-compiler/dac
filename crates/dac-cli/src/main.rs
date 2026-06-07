@@ -469,6 +469,7 @@ fn render_source_text(
             annotations,
             args.debug,
             args.hide_crt,
+            args.opt,
         )),
         Target::Cpp => Some(render_cpp_unit(
             input_label,
@@ -476,10 +477,12 @@ fn render_source_text(
             functions,
             graph,
             args.debug,
+            args.opt,
         )),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_c_unit(
     input_label: &str,
     model: &BinaryModel,
@@ -488,6 +491,7 @@ fn render_c_unit(
     annotations: &AnnotationDoc,
     debug: bool,
     hide_crt: bool,
+    opt: OptLevel,
 ) -> String {
     let resolver = build_c_name_resolver(functions);
     // The orchestrator returns outcomes in the same order as
@@ -551,7 +555,8 @@ fn render_c_unit(
     includes.insert(
         0,
         format!(
-            "/* dac --target c -O1 reconstruction\n   input: {input_label}\n   arch:  {} */",
+            "/* dac --target c -{} reconstruction\n   input: {input_label}\n   arch:  {} */",
+            opt.as_str(),
             model.architecture.name()
         ),
     );
@@ -1120,6 +1125,7 @@ fn render_cpp_unit(
     functions: &FunctionSet,
     graph: Option<&mut EvidenceGraph>,
     _debug: bool,
+    opt: OptLevel,
 ) -> String {
     let mut local_graph = EvidenceGraph::new();
     let g: &mut EvidenceGraph = match graph {
@@ -1132,7 +1138,8 @@ fn render_cpp_unit(
     includes.insert(
         0,
         format!(
-            "/* dac --target cpp -O1 reconstruction\n   input: {input_label}\n   arch:  {}\n   classes: {} (polymorphic: {}) members: {} free: {} */",
+            "/* dac --target cpp -{} reconstruction\n   input: {input_label}\n   arch:  {}\n   classes: {} (polymorphic: {}) members: {} free: {} */",
+            opt.as_str(),
             model.architecture.name(),
             classes.stats.classes,
             classes.stats.polymorphic_classes,
