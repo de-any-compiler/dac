@@ -27,6 +27,8 @@ Output:
       --emit-annotations    Export annotations alongside the source.
       --callgraph           Export the whole-program call graph (DOT).
       --xrefs <subject>     Print xrefs for <subject> (symbol or hex VA).
+      --hide-crt            Collapse CRT / startup function bodies to
+                            forward declarations (FR-21).
 
 AI:
       --no-ai               Disable all AI providers.

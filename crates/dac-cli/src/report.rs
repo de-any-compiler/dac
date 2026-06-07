@@ -23,7 +23,7 @@ use std::fmt::Write as _;
 
 use dac_arch::{Coverage, InstructionDecoder, InstructionLifter};
 use dac_binfmt::{BinaryModel, Section};
-use dac_recovery::{Function, FunctionSet, SourceMask};
+use dac_recovery::{Function, FunctionSet, FunctionTaxonomy, SourceMask};
 
 use crate::lift::LiftStats;
 
@@ -52,9 +52,34 @@ pub(crate) struct Report {
     /// Functions reclassified as forwarding thunks by
     /// `dac_recovery::detect_thunks` (B3.25).
     pub from_thunk: u64,
+    /// Per-[`FunctionTaxonomy`] histogram (B3.30, FR-21). Drives the
+    /// `;; taxonomy:` row so a reviewer can see at a glance how many
+    /// emitted bodies are user code vs runtime scaffolding.
+    pub taxonomy: TaxonomyHistogram,
     pub coverage: Coverage,
     pub lift: LiftStats,
     pub functions: Vec<FunctionSummary>,
+}
+
+/// Per-[`FunctionTaxonomy`] count rolled up from the discovered
+/// function set (B3.30).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TaxonomyHistogram {
+    pub user: u64,
+    pub crt_support: u64,
+    pub thunk: u64,
+    pub imported: u64,
+}
+
+impl TaxonomyHistogram {
+    fn record(&mut self, t: FunctionTaxonomy) {
+        match t {
+            FunctionTaxonomy::User => self.user += 1,
+            FunctionTaxonomy::CrtSupport => self.crt_support += 1,
+            FunctionTaxonomy::Thunk => self.thunk += 1,
+            FunctionTaxonomy::Imported => self.imported += 1,
+        }
+    }
 }
 
 impl Report {
@@ -76,8 +101,10 @@ impl Report {
             .collect();
         let mut coverage = Coverage::default();
         let mut summaries = Vec::with_capacity(functions.functions.len());
+        let mut taxonomy = TaxonomyHistogram::default();
         for f in &functions.functions {
             fold_function_coverage(&mut coverage, f, &exec_sections, bytes, decoder, lifter);
+            taxonomy.record(f.taxonomy());
             summaries.push(summarize(f));
         }
         Self {
@@ -88,6 +115,7 @@ impl Report {
             from_prologue: functions.stats.from_prologue,
             from_plt: functions.stats.from_plt,
             from_thunk: functions.stats.from_thunk,
+            taxonomy,
             coverage,
             lift,
             functions: summaries,
@@ -204,6 +232,11 @@ pub(crate) fn render_report_text(r: &Report) -> String {
         out,
         ";; structuring: fallbacks={}",
         r.lift.structuring_fallbacks,
+    );
+    let _ = writeln!(
+        out,
+        ";; taxonomy:    user={} crt_support={} thunk={} imported={}",
+        r.taxonomy.user, r.taxonomy.crt_support, r.taxonomy.thunk, r.taxonomy.imported,
     );
     out.push('\n');
     out.push_str("functions:\n");
@@ -408,6 +441,30 @@ mod tests {
         assert!(
             s.contains(";; signals:     symbol=0 entry=1 call=0 prologue=0 plt=0 thunk=0"),
             "expected thunk= column in signals row of:\n{s}",
+        );
+    }
+
+    #[test]
+    fn b3_30_report_text_includes_taxonomy_row() {
+        // B3.30: the `taxonomy:` row is unconditional (zero in every
+        // bucket when no functions discovered) and grep-able so the
+        // analyst can ask "how many CRT helpers in this binary?"
+        // without diff'ing source files.
+        let model = empty_model();
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
+        let s = render_report_text(&r);
+        assert!(
+            s.contains(";; taxonomy:    user=1 crt_support=0 thunk=0 imported=0"),
+            "expected taxonomy row in:\n{s}",
         );
     }
 

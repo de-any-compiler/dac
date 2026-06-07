@@ -67,7 +67,7 @@ pub use convention::{
 };
 pub use functions::{
     detect_thunks, discover_functions, DiscoveryStats, Function, FunctionKind, FunctionSet,
-    SourceMask, CALL_EDGE_CONFIDENCE, ENTRY_CONFIDENCE, PLT_BINDING_CONFIDENCE,
+    FunctionTaxonomy, SourceMask, CALL_EDGE_CONFIDENCE, ENTRY_CONFIDENCE, PLT_BINDING_CONFIDENCE,
     PROLOGUE_CONFIDENCE, SYMBOL_CONFIDENCE,
 };
 pub use idioms::{

@@ -49,28 +49,13 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22 and B3.23 – B3.29 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.30 – B3.31 are the M3 "real
-decompiler" follow-on still queued, closing the remaining readability
-gaps surfaced in review (CRT classification, `-O<level>` header). The
-"B3 residue shelf" further down tracks heavier residue items that
-stay deferred past M3 and are sized as separate milestones rather
-than numbered batches.
-
-### B3.30 — CRT/startup taxonomy + annotation banner
-- `dac-knowledge::crt`: curated symbol → CRT-role table; `hlt` in
-  `_start` annotated as "process-termination after
-  `__libc_start_main` returns".
-- `FunctionTaxonomy::{ User, CrtSupport, Thunk, Imported }` on
-  `Function`.
-- Backend prints a one-line banner
-  `/* runtime support (glibc startup) — not user code */` on matched
-  functions.
-- Report adds `crt_support=N`.
-- New flag `--hide-crt` collapses CRT bodies to forward declarations.
-- **Done when:** all 7 CRT helpers in `hello-x86_64` are tagged;
-  report shows `crt_support=7`; `--hide-crt` reduces output by ~70%
-  (FR-21, FR-25).
+B3.1 – B3.22 and B3.23 – B3.30 are complete — see
+[CHANGELOG.md](./CHANGELOG.md). B3.31 is the M3 "real decompiler"
+follow-on still queued, closing the remaining readability gap
+surfaced in review (`-O<level>` header). The "B3 residue shelf"
+further down tracks heavier residue items that stay deferred past
+M3 and are sized as separate milestones rather than numbered
+batches.
 
 ### B3.31 — Header honors `-O<level>` and corpus refresh
 - `crates/dac-cli/src/main.rs:485` and `:740`: replace the hardcoded
@@ -84,11 +69,7 @@ than numbered batches.
 
 B3.26 is the largest single readability lever and is independent of
 the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG → fewer
-fallback blocks to suppress). B3.30's `Thunk` taxonomy entry
-overlaps with the [`FunctionKind::Thunk { target }`](./CHANGELOG.md)
-that B3.25 already shipped; B3.30 only needs to reconcile the two so
-the taxonomy column reads `Thunk` for the recovered entries and
-`CrtSupport` for the new ones. B3.31 can land at any point.
+fallback blocks to suppress). B3.31 can land at any point.
 
 ### B3 residue shelf
 

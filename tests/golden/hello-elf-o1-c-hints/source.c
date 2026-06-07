@@ -11,6 +11,7 @@
 /* import: write (signature: dac-knowledge) */
 extern int64_t write(int32_t fd, void * buf, uint64_t n);
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1000 */
 /* end: 0x101b */
@@ -80,6 +81,7 @@ int user_main(int argc, char ** argv) {
     return ((int)(42LL));
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1060 */
 /* end: 0x1086 */
@@ -120,6 +122,7 @@ void _start(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1090 */
 /* end: 0x10c0 */
@@ -156,6 +159,7 @@ L0:;
     }
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x10c0 */
 /* end: 0x1100 */
@@ -178,6 +182,7 @@ long register_tm_clones(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1100 */
 /* end: 0x1150 */
@@ -224,6 +229,7 @@ long __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg
     }
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered forwarding thunk */
 /* address: 0x1150 */
 /* end: 0x1159 */
@@ -233,6 +239,7 @@ void frame_dummy(void) {
     register_tm_clones();
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x115c */
 /* end: 0x1169 */

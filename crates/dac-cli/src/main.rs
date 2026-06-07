@@ -52,7 +52,7 @@ use dac_backend_cpp::{
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph};
 use dac_hints::{HintError, Hints};
-use dac_recovery::{detect_thunks, discover_functions, FunctionSet};
+use dac_recovery::{detect_thunks, discover_functions, FunctionSet, FunctionTaxonomy};
 
 use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
@@ -468,6 +468,7 @@ fn render_source_text(
             lift_outcomes,
             annotations,
             args.debug,
+            args.hide_crt,
         )),
         Target::Cpp => Some(render_cpp_unit(
             input_label,
@@ -486,6 +487,7 @@ fn render_c_unit(
     lift_outcomes: Option<&[LiftOutcome]>,
     annotations: &AnnotationDoc,
     debug: bool,
+    hide_crt: bool,
 ) -> String {
     let resolver = build_c_name_resolver(functions);
     // The orchestrator returns outcomes in the same order as
@@ -519,16 +521,27 @@ fn render_c_unit(
             extern_items.push(CItem::ExternDecl(lower_plt_stub_extern(f, import, debug)));
             continue;
         }
-        if let dac_recovery::FunctionKind::Thunk { target } = &f.kind {
-            function_items.push(CItem::Function(lower_thunk_function(
-                f, *target, &resolver, debug,
-            )));
+        // B3.30: `--hide-crt` collapses every CRT-tagged body (whether
+        // it lowered as a thunk or a real body) to an `extern <sig>
+        // name(...);` forward declaration so the rendered translation
+        // unit is dominated by user code (FR-21). The recovered
+        // signature still drives the extern's return type and
+        // parameter list, so callers continue to type-check.
+        if hide_crt && f.taxonomy() == FunctionTaxonomy::CrtSupport {
+            extern_items.push(CItem::ExternDecl(hidden_crt_extern_decl(f, outcome, debug)));
             continue;
         }
-        let lowered = lower_one_c_function(f, outcome, annot, &resolver, debug);
+        if let dac_recovery::FunctionKind::Thunk { target } = &f.kind {
+            let mut thunk = lower_thunk_function(f, *target, &resolver, debug);
+            thunk.leading_comment = prepend_crt_banner(thunk.leading_comment, f);
+            function_items.push(CItem::Function(thunk));
+            continue;
+        }
+        let mut lowered = lower_one_c_function(f, outcome, annot, &resolver, debug);
         for decl in lowered.struct_decls {
             typedefs.entry(decl.name.clone()).or_insert(decl);
         }
+        lowered.function.leading_comment = prepend_crt_banner(lowered.function.leading_comment, f);
         function_items.push(CItem::Function(lowered.function));
     }
     let mut items: Vec<CItem> = extern_items;
@@ -710,6 +723,107 @@ fn lower_plt_stub_extern(f: &dac_recovery::Function, import: &str, debug: bool) 
     }
 }
 
+/// Lower a CRT-tagged function (B3.30, FR-21) to an `extern <sig>
+/// name(...);` forward declaration when `--hide-crt` is set.
+///
+/// The signature comes from the orchestrator's recovered facts: when
+/// a real body lifted the canonical / convention / inferred-return
+/// pipeline produces a [`CRecovered`] the same way the body-lowering
+/// path consumes, so the hidden declaration's return type and
+/// parameter list match what the body would have rendered. The
+/// leading comment carries the CRT banner ("runtime support
+/// (<runtime>) — not user code") followed by the recovered address
+/// range so a reviewer running `-Ohide-crt` can still trace the
+/// elided body back to its bytes.
+fn hidden_crt_extern_decl(
+    f: &dac_recovery::Function,
+    outcome: Option<&LiftOutcome>,
+    debug: bool,
+) -> CExternDecl {
+    let raw_name = f
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("fn_{:x}", f.address));
+    let sanitized = sanitize_c_identifier(&raw_name);
+    // Default `int64_t name(void);` shape covers thunks (no recovered
+    // signature) and the unsupported-arch path. Real-body outcomes
+    // overwrite both fields with the convention-inferred / canonical
+    // signature.
+    let mut return_type = CType::Int {
+        width_bits: 64,
+        signed: true,
+    };
+    let mut params: Vec<CParam> = Vec::new();
+    if let Some(LiftOutcome::Real { facts, .. }) = outcome {
+        if let Some(canon) = facts.canonical_signature.as_ref() {
+            if let Some(ty) = canon.return_type.clone() {
+                return_type = ty;
+            }
+            params = canon
+                .params
+                .iter()
+                .map(|p| CParam {
+                    name: p.name.clone(),
+                    ty: p.ty.clone(),
+                })
+                .collect();
+        } else if let Some(c) = facts.convention.as_ref() {
+            params = c
+                .signature
+                .int_args
+                .iter()
+                .enumerate()
+                .map(|(i, _)| CParam {
+                    name: format!("arg{i}"),
+                    ty: CType::Int {
+                        width_bits: 64,
+                        signed: true,
+                    },
+                })
+                .collect();
+            return_type = facts.inferred_return.to_c_type();
+        }
+    }
+    let mut leading = format!(
+        "runtime support ({label}) — not user code\n\
+         dac-recovered CRT helper (body hidden by --hide-crt)\n\
+         address: {addr:#x}\n\
+         end: {end}\n\
+         confidence: {conf:.2} ({src:?})",
+        label = f
+            .name
+            .as_deref()
+            .and_then(dac_knowledge::lookup_crt_entry)
+            .map(|e| e.runtime.label())
+            .unwrap_or("CRT scaffolding"),
+        addr = f.address,
+        end = f
+            .end
+            .map(|e| format!("{e:#x}"))
+            .unwrap_or_else(|| "?".to_string()),
+        conf = f.confidence.value(),
+        src = f.confidence.source(),
+    );
+    if let Some(role) = f
+        .name
+        .as_deref()
+        .and_then(dac_knowledge::lookup_crt_entry)
+        .map(|e| e.role)
+    {
+        leading.push_str(&format!("\nrole: {role}"));
+    }
+    if debug {
+        leading.push_str("\nsignal: CRT");
+    }
+    CExternDecl {
+        name: sanitized,
+        return_type,
+        params,
+        is_variadic: false,
+        leading_comment: Some(leading),
+    }
+}
+
 /// Build the `/* … */` block that precedes a PLT-stub `extern`
 /// declaration. Mirrors the shape of [`stub_body_leading_comment`]
 /// so the rendered translation unit stays uniform: address range,
@@ -798,6 +912,43 @@ fn lower_thunk_function(
             debug,
         )),
     }
+}
+
+/// Build the CRT banner line for a function classified as
+/// [`FunctionTaxonomy::CrtSupport`]. Returns `None` for every other
+/// taxonomy so callers can prepend without branching.
+///
+/// The banner reads `runtime support (<runtime>) — not user code`
+/// where `<runtime>` comes from [`dac_knowledge::CrtRuntime::label`]
+/// — `glibc startup` on ELF, `mingw-w64 startup` on PE. A function
+/// classified `CrtSupport` whose catalogue entry is no longer
+/// resolvable (renamed, removed) degrades to the generic
+/// `CRT scaffolding` label so the banner stays informative without
+/// the catalogue having to be exhaustive (I-6).
+fn crt_banner_line(f: &dac_recovery::Function) -> Option<String> {
+    if f.taxonomy() != FunctionTaxonomy::CrtSupport {
+        return None;
+    }
+    let runtime_label = f
+        .name
+        .as_deref()
+        .and_then(dac_knowledge::lookup_crt_entry)
+        .map(|e| e.runtime.label())
+        .unwrap_or("CRT scaffolding");
+    Some(format!("runtime support ({runtime_label}) — not user code"))
+}
+
+/// Prepend the B3.30 CRT banner to a function's leading comment when
+/// the recovered taxonomy is [`FunctionTaxonomy::CrtSupport`]. Other
+/// taxonomies pass through unchanged.
+fn prepend_crt_banner(existing: Option<String>, f: &dac_recovery::Function) -> Option<String> {
+    let Some(banner) = crt_banner_line(f) else {
+        return existing;
+    };
+    Some(match existing {
+        Some(rest) => format!("{banner}\n{rest}"),
+        None => banner,
+    })
 }
 
 /// Build the `/* … */` block that precedes a forwarding-thunk
@@ -1333,6 +1484,10 @@ struct Args {
     debug: bool,
     plugin: Option<PathBuf>,
     hints: Option<PathBuf>,
+    /// B3.30: collapse CRT-tagged function bodies to `extern <sig>
+    /// name(...);` forward declarations so the rendered translation
+    /// unit is dominated by user code (FR-21).
+    hide_crt: bool,
     show_help: bool,
     show_version: bool,
 }
@@ -1377,6 +1532,7 @@ where
             "--debug" => args.debug = true,
             "--plugin" => args.plugin = Some(PathBuf::from(take_os_value("--plugin", &mut it)?)),
             "--hints" => args.hints = Some(PathBuf::from(take_os_value("--hints", &mut it)?)),
+            "--hide-crt" => args.hide_crt = true,
             "--version" | "-V" => args.show_version = true,
             "--help" | "-h" => args.show_help = true,
             other if other.starts_with('-') => {
@@ -1631,5 +1787,150 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("signal: THUNK"));
+    }
+
+    // ---- B3.30 CRT taxonomy + banner + --hide-crt ----------------
+
+    fn user_function(name: &str, address: u64) -> dac_recovery::Function {
+        let mut g = EvidenceGraph::new();
+        let ev = g.add_node(EvidenceNode::IrNode {
+            layer: IrLayer::Cfg,
+            id: 0,
+        });
+        dac_recovery::Function {
+            address,
+            end: Some(address + 0x40),
+            name: Some(name.to_string()),
+            confidence: Confidence::new(1.0, Source::Observed),
+            sources: dac_recovery::SourceMask::SYMBOL,
+            evidence: ev,
+            kind: dac_recovery::FunctionKind::User,
+        }
+    }
+
+    /// A glibc CRT helper gets the runtime-specific banner line. The
+    /// label tracks [`dac_knowledge::CrtRuntime::label`] so a PE-side
+    /// fixture rendered the same way reads `mingw-w64 startup`.
+    #[test]
+    fn b3_30_crt_banner_line_uses_runtime_label_for_glibc_helper() {
+        let f = user_function("_init", 0x1000);
+        let line = crt_banner_line(&f).expect("CRT banner present");
+        assert_eq!(line, "runtime support (glibc startup) — not user code");
+    }
+
+    /// A MinGW CRT helper gets the matching banner. The runtime label
+    /// is the user-facing differentiator between the two glibc /
+    /// MinGW startup families.
+    #[test]
+    fn b3_30_crt_banner_line_uses_runtime_label_for_mingw_helper() {
+        let f = user_function("__tmainCRTStartup", 0x140001000);
+        let line = crt_banner_line(&f).expect("CRT banner present");
+        assert_eq!(line, "runtime support (mingw-w64 startup) — not user code");
+    }
+
+    /// A user-code function has no CRT banner; the helper returns
+    /// `None` so call sites can prepend unconditionally without
+    /// extra branching.
+    #[test]
+    fn b3_30_crt_banner_line_returns_none_for_user_function() {
+        let f = user_function("my_business_logic", 0x4000);
+        assert!(crt_banner_line(&f).is_none());
+    }
+
+    /// The prepend helper threads the banner ahead of every other
+    /// line so the runtime-support marker is the first thing a
+    /// reviewer sees when scrolling the source.
+    #[test]
+    fn b3_30_prepend_crt_banner_inserts_banner_at_top_of_existing_comment() {
+        let f = user_function("_start", 0x1060);
+        let prepended =
+            prepend_crt_banner(Some("dac-recovered function\naddress: 0x1060".into()), &f)
+                .expect("non-None");
+        let mut lines = prepended.lines();
+        assert_eq!(
+            lines.next(),
+            Some("runtime support (glibc startup) — not user code")
+        );
+        assert_eq!(lines.next(), Some("dac-recovered function"));
+        assert_eq!(lines.next(), Some("address: 0x1060"));
+    }
+
+    /// A user-code prepend is a no-op: the helper returns the
+    /// original comment so an unrelated batch tweaking the leading
+    /// block does not have to special-case the CRT path.
+    #[test]
+    fn b3_30_prepend_crt_banner_is_noop_for_user_function() {
+        let f = user_function("main", 0x1040);
+        let original = Some("dac-recovered function\naddress: 0x1040".to_string());
+        let result = prepend_crt_banner(original.clone(), &f);
+        assert_eq!(result, original);
+    }
+
+    /// `hidden_crt_extern_decl` collapses a thunk-shaped CRT body
+    /// (`frame_dummy` in the hello-x86_64 fixture) into a single
+    /// `extern <ret> name(<params>);` forward declaration with the
+    /// CRT banner prepended to its leading comment.
+    #[test]
+    fn b3_30_hidden_crt_extern_decl_collapses_thunk_helper_to_extern() {
+        let f = thunk_function("frame_dummy", 0x1150, 0x10c0);
+        let e = hidden_crt_extern_decl(&f, None, false);
+        assert_eq!(e.name, "frame_dummy");
+        // No recovered facts → default `int64_t name(void);` shape.
+        assert!(matches!(
+            e.return_type,
+            CType::Int {
+                width_bits: 64,
+                signed: true
+            }
+        ));
+        assert!(e.params.is_empty());
+        assert!(!e.is_variadic);
+        let comment = e.leading_comment.expect("leading comment present");
+        assert!(
+            comment.contains("runtime support (glibc startup) — not user code"),
+            "expected CRT banner in:\n{comment}"
+        );
+        assert!(
+            comment.contains("body hidden by --hide-crt"),
+            "expected hide-crt marker in:\n{comment}"
+        );
+        assert!(comment.contains("address: 0x1150"));
+        // The catalogue role line gives a reader the *why* behind
+        // the elision without re-running with `--debug`.
+        assert!(
+            comment.contains("role: "),
+            "expected role line in:\n{comment}"
+        );
+    }
+
+    /// MinGW startup helpers collapse with the matching banner label.
+    /// `__tmainCRTStartup` is the shared CRT entry on PE binaries and
+    /// must read "mingw-w64 startup".
+    #[test]
+    fn b3_30_hidden_crt_extern_decl_uses_mingw_label_for_pe_helper() {
+        let f = user_function("__tmainCRTStartup", 0x140001000);
+        let e = hidden_crt_extern_decl(&f, None, false);
+        let comment = e.leading_comment.expect("leading comment present");
+        assert!(comment.contains("runtime support (mingw-w64 startup) — not user code"));
+    }
+
+    /// `--debug` appends the `signal: CRT` row to the elided helper's
+    /// leading comment so a reviewer running with both `--hide-crt`
+    /// and `--debug` still sees which detector pinned the elision.
+    #[test]
+    fn b3_30_hidden_crt_extern_decl_debug_appends_signal_row() {
+        let f = user_function("_init", 0x1000);
+        let default = hidden_crt_extern_decl(&f, None, false);
+        let debug = hidden_crt_extern_decl(&f, None, true);
+        assert!(!default
+            .leading_comment
+            .as_deref()
+            .unwrap()
+            .contains("signal: CRT"));
+        assert!(debug
+            .leading_comment
+            .as_deref()
+            .unwrap()
+            .contains("signal: CRT"));
     }
 }

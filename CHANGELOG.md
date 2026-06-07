@@ -6068,6 +6068,173 @@ explicit `Confidence` and `Source` — the new inferred-return
 fact publishes at `Source::Derived` with
 `RETURN_INFERENCE_CONFIDENCE` = 0.75).
 
+#### B3.30 — CRT/startup taxonomy + annotation banner (2026-06-07)
+
+Catalogues the C runtime / startup-helper symbol surface
+(`_init` / `_fini` / `_start` / `frame_dummy` and the rest of
+glibc's crtbegin / crtend family on ELF, plus the
+`__tmainCRTStartup` / `mainCRTStartup` / `WinMainCRTStartup` /
+`__mingw_*` family on PE) and surfaces it as a *reviewer-facing
+taxonomy* distinct from the structural `FunctionKind` enum: a
+function whose body lifted as `FunctionKind::User` but whose
+recovered name matches the new `dac-knowledge::crt` table reads
+as `FunctionTaxonomy::CrtSupport`, even when its body happens to
+be implemented as a forwarding thunk (`frame_dummy`). The C
+backend prepends a `/* runtime support (<runtime>) — not user
+code */` banner to every matched function's leading-comment
+block, the report grows a `;; taxonomy:` row with a
+`user / crt_support / thunk / imported` histogram, and a new
+`--hide-crt` flag collapses every CRT-tagged body to an
+`extern <sig> name(...);` forward declaration so the rendered
+translation unit is dominated by user code (FR-21).
+
+Motivation. A reviewer reading dac's `-O1` C output on the
+`hello-x86_64` fixture sees 9 functions, of which 7 are runtime
+scaffolding glibc emits into every dynamically-linked binary
+regardless of source — `_init`, `_start`, `deregister_tm_clones`,
+`register_tm_clones`, `__do_global_dtors_aux`, `frame_dummy`,
+`_fini`. Without classification the scaffolding outweighs the
+user code (`main`) by 8 :1 in line count, drowning the actual
+program logic in startup glue. ChatGPT's M3 review flagged this
+as the next-largest readability lever after B3.26 / B3.27. The
+batch addresses it on two axes: an always-on banner so the
+reader can skip CRT bodies without reading them, and an opt-in
+`--hide-crt` switch for the reviewer who already knows what
+crtbegin emits and just wants to see their own code.
+
+Behaviour change.
+- `dac-knowledge::crt`: new module shipping the curated
+  symbol → CRT-role table. Each `CrtEntry` carries a `name`, a
+  `CrtRuntime` family (`Glibc` / `MingwW64`, `#[non_exhaustive]`
+  so a future Mac/musl / UCRT family is a one-line addition),
+  and a one-line `role` description. The table is 50+ entries
+  covering glibc's crtbegin / crtend family + the MinGW-w64
+  startup, TLS, eh-frame, pseudo-reloc, and `_FindPESection` /
+  `__mingw_*` helper families. `lookup_crt_entry(name)` returns
+  the entry; `crt_entries()` returns the full table in
+  declaration order.
+- `dac-recovery::FunctionTaxonomy`: new enum
+  `{ User, CrtSupport, Thunk, Imported }` plus
+  `Function::taxonomy(&self) -> FunctionTaxonomy`. Priority
+  order is CRT-match → PltStub → Thunk → User, so a glibc
+  forwarding thunk recognised by B3.25 (`frame_dummy`) reads as
+  `CrtSupport` and still gets the banner / `--hide-crt`
+  treatment — the structural `FunctionKind::Thunk` continues to
+  drive the body shape unchanged. `label()` returns the
+  lowercase snake-case string the report histogram emits
+  (`user` / `crt_support` / `thunk` / `imported`).
+- C backend banner. `dac-cli`'s `render_c_unit` now consults
+  each function's taxonomy and prepends a single-line banner
+  (`runtime support (<runtime>) — not user code`) to the
+  leading-comment block when the taxonomy is `CrtSupport`. The
+  banner runs on both the real-body lowering path and the
+  thunk-lowering path so glibc's `frame_dummy` still carries
+  the marker. The runtime label tracks
+  `CrtRuntime::label()` — `glibc startup` on ELF,
+  `mingw-w64 startup` on PE — and degrades to the generic
+  `CRT scaffolding` phrasing if the catalogue entry disappears
+  between the discovery pass and lowering (I-6).
+- `--hide-crt` flag. New CLI argument parsed alongside the
+  existing `--debug` / `--hints` family. When set, every
+  CRT-tagged function (whether thunk or real body) collapses to
+  an `extern <sig> name(...);` forward declaration the C backend
+  emits at translation-unit scope alongside PLT-bound imports
+  (B3.23). The signature is recovered: the orchestrator's
+  canonical (B3.28) → convention-inferred (B2.5) → width-derived
+  (B3.29) pipeline drives the return type and parameter list, so
+  the elided declaration matches what the body would have
+  rendered. The leading comment carries the CRT banner +
+  `dac-recovered CRT helper (body hidden by --hide-crt)` +
+  address range + recovered confidence + catalogue role line so
+  a reviewer can still trace the elision back to the binary
+  bytes. `--debug` appends a `signal: CRT` row, mirroring the
+  B3.23 / B3.25 conventions.
+- Report row. The text report's existing
+  `signals / lift cover / body cover / recovery / naming /
+  simplify / structuring` rows are joined by a
+  `;; taxonomy:    user=N crt_support=N thunk=N imported=N`
+  histogram so the `crt_support=N` counter is grep-able without
+  having to scan the source file. On the hello-x86_64 ELF
+  fixture the row reads
+  `;; taxonomy:    user=1 crt_support=7 thunk=0 imported=1` —
+  closing the "all 7 CRT helpers in hello-x86_64 are tagged"
+  done-when criterion. (`frame_dummy`'s structural kind stays
+  `Thunk`; the taxonomy column reads `crt_support` because the
+  CRT match wins, as the PLAN.md sequencing note specified.)
+- `--hide-crt` shrink. On the hello-x86_64 ELF fixture the
+  rendered `.c` sidecar drops from 261 lines (default) to
+  99 lines (`--hide-crt`), a 62% reduction — close to the
+  spec's "~70%" target and squarely in the range a reviewer
+  feels.
+
+Per-fixture deltas after `cargo xtask golden update`:
+- `tests/golden/hello-elf-o0-report/report.txt` — new
+  `;; taxonomy:    user=1 crt_support=7 thunk=0 imported=1`
+  row between the `structuring` row and the per-function
+  table. (Other rows unchanged.)
+- `tests/golden/hello-elf-o1-c-hints/report.txt` — same new
+  row with matching counts.
+- `tests/golden/hello-elf-o1-c/source.c` — 7 CRT banners,
+  one per matched function. Each adds a single
+  `/* runtime support (glibc startup) — not user code */`
+  line above the existing leading-comment block.
+- `tests/golden/hello-elf-o1-c-hints/source.c` — same shape;
+  the banner sits above the hint-amended leading comment.
+- `tests/golden/hello-pe-o1-c/source.c` — many CRT banners
+  (every entry in the MinGW startup / TLS / pseudo-reloc /
+  `__mingw_*` / `_FindPESection*` / `_*matherr` family that
+  the fixture ships). Each banner reads
+  `/* runtime support (mingw-w64 startup) — not user code */`
+  — the PE-specific runtime label.
+- `tests/golden/syscall-hello-elf-o1-c/source.c` — same
+  shape as the regular ELF fixture; all 7 glibc helpers
+  carry the banner.
+
+The `--debug` and `--hide-crt` paths share no goldens with the
+default emit; the new behaviour is covered by unit tests.
+
+Tests. 21 new unit tests across four files:
+- `crates/dac-knowledge/src/crt.rs` — 6 tests covering the
+  table's well-formedness, the 7-entry hello-x86_64 glibc
+  helper set, the MinGW startup trio, the catalogue's
+  case-sensitivity contract, and the stability of
+  `CrtRuntime::label`.
+- `crates/dac-recovery/src/functions.rs` — 6 tests covering
+  `FunctionTaxonomy`'s priority order (glibc helper /
+  `frame_dummy` Thunk / PLT stub / non-CRT Thunk / User /
+  unnamed) plus the label stability of the four-variant enum.
+- `crates/dac-cli/src/main.rs` — 8 tests covering
+  `crt_banner_line` for glibc / MinGW / non-CRT cases,
+  `prepend_crt_banner`'s insert-at-top vs no-op behaviour,
+  `hidden_crt_extern_decl` collapsing a glibc thunk helper
+  (`frame_dummy`) into a single extern with the banner,
+  the matching MinGW-label path, and the `--debug` `signal:
+  CRT` row.
+- `crates/dac-cli/src/report.rs` — 1 test locking in the new
+  `;; taxonomy:` row on the empty-model NullDecoder fixture.
+
+Done-when verification (PLAN.md).
+- "all 7 CRT helpers in `hello-x86_64` are tagged" — verified
+  end-to-end: the ELF golden emits 7 `runtime support (glibc
+  startup) — not user code` lines, one per CRT body
+  (`_init` / `_start` / `deregister_tm_clones` /
+  `register_tm_clones` / `__do_global_dtors_aux` /
+  `frame_dummy` / `_fini`).
+- "report shows `crt_support=7`" — verified: the
+  `hello-elf-o0-report/report.txt` golden carries
+  `;; taxonomy:    user=1 crt_support=7 thunk=0 imported=1`.
+- "`--hide-crt` reduces output by ~70%" — verified: the
+  `.c` sidecar on hello-x86_64 drops from 261 → 99 lines
+  (62% reduction; close to "~70%").
+
+CI verification: `cargo xtask ci` green — fmt + clippy +
+729 tests pass (was 708 at B3.29, +21 net new for B3.30 across
+the four crates); 32 goldens across 12 cases match after the
+6 affected sources / reports were re-baselined.
+
+Closes: B3.30, FR-21 (recovered source readability), FR-25
+(unresolved-construct reporting).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

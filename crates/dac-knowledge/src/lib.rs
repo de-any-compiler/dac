@@ -13,12 +13,19 @@
 //!   signature catalogue. Consumed by `dac_recovery::types` to seed
 //!   the type lattice at known call sites (FR-14, FR-16).
 //! - **B3.3.** Pattern catalogue for idiom recognition.
+//! - **B3.30 (this batch).** [`crt`] — CRT / startup helper catalogue.
+//!   Consumed by `dac_recovery::Function::taxonomy` to classify
+//!   `_init` / `_start` / `__tmainCRTStartup` and the rest of the
+//!   glibc + MinGW-w64 startup family as `FunctionTaxonomy::CrtSupport`
+//!   so the C backend prints a "runtime support — not user code"
+//!   banner and the report carries a `crt_support=N` counter (FR-21).
 
 #![forbid(unsafe_code)]
 
 pub mod api;
 pub mod canonical;
 pub mod convention;
+pub mod crt;
 
 pub use api::{
     api_signatures, lookup_api_signature, lookup_api_signature_in, ApiLibrary, ApiParameter,
@@ -29,3 +36,4 @@ pub use convention::{
     x86_64_convention_by_name, CallingConvention, ConventionKind, MS_X64, SYSV_AMD64,
     SYSV_AMD64_SYSCALL, X86_64_CONVENTIONS,
 };
+pub use crt::{crt_entries, lookup_crt_entry, CrtEntry, CrtRuntime};

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1000 */
 /* end: 0x101b */
@@ -60,6 +61,7 @@ int main(void) {
     return ((int)(0LL));
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1040 */
 /* end: 0x1066 */
@@ -100,6 +102,7 @@ void _start(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1070 */
 /* end: 0x10a0 */
@@ -136,6 +139,7 @@ L0:;
     }
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x10a0 */
 /* end: 0x10e0 */
@@ -158,6 +162,7 @@ long register_tm_clones(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x10e0 */
 /* end: 0x1130 */
@@ -204,6 +209,7 @@ long __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg
     }
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered forwarding thunk */
 /* address: 0x1130 */
 /* end: 0x1139 */
@@ -213,6 +219,7 @@ void frame_dummy(void) {
     register_tm_clones();
 }
 
+/* runtime support (glibc startup) — not user code */
 /* dac-recovered function */
 /* address: 0x113c */
 /* end: 0x1149 */

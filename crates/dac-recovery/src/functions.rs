@@ -193,6 +193,81 @@ impl Function {
     pub fn size(&self) -> Option<u64> {
         self.end.map(|e| e.saturating_sub(self.address))
     }
+
+    /// Coarse human-readable classification (B3.30, FR-21).
+    ///
+    /// Distinct from [`FunctionKind`], which records the *structural*
+    /// fact ("this body is a PLT trampoline / a forwarding thunk /
+    /// ordinary code"). [`FunctionTaxonomy`] is the *intent* a
+    /// reviewer cares about ("this function is runtime scaffolding I
+    /// can skip / it's imported / it's a thunk / it's user code").
+    ///
+    /// Priority order, highest first:
+    /// 1. **`CrtSupport`** when the recovered name matches an entry in
+    ///    [`dac_knowledge::lookup_crt_entry`]. Wins over the
+    ///    structural classifications because a CRT helper that
+    ///    happens to be implemented as a thunk (e.g. glibc's
+    ///    `frame_dummy`, recovered by [`detect_thunks`] as
+    ///    [`FunctionKind::Thunk`]) is still runtime scaffolding from
+    ///    the reviewer's point of view.
+    /// 2. **`Imported`** for [`FunctionKind::PltStub`]. The body is a
+    ///    PLT trampoline; the import lives in another image.
+    /// 3. **`Thunk`** for [`FunctionKind::Thunk`] not matched by the
+    ///    CRT catalogue. Forwarding shape that is not runtime
+    ///    scaffolding (e.g. compiler-emitted same-image thunks).
+    /// 4. **`User`** for everything else.
+    #[must_use]
+    pub fn taxonomy(&self) -> FunctionTaxonomy {
+        if let Some(name) = self.name.as_deref() {
+            if dac_knowledge::lookup_crt_entry(name).is_some() {
+                return FunctionTaxonomy::CrtSupport;
+            }
+        }
+        match &self.kind {
+            FunctionKind::PltStub { .. } => FunctionTaxonomy::Imported,
+            FunctionKind::Thunk { .. } => FunctionTaxonomy::Thunk,
+            FunctionKind::User => FunctionTaxonomy::User,
+        }
+    }
+}
+
+/// Reviewer-facing classification of a recovered function (B3.30,
+/// FR-21).
+///
+/// Derived from a [`Function`]'s name + [`FunctionKind`] through
+/// [`Function::taxonomy`]; this enum exists so the C backend and the
+/// report agree on a single classification axis when deciding what
+/// banner to print and how to count "this is runtime scaffolding"
+/// versus "this is user code".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionTaxonomy {
+    /// Ordinary user-program function. The default classification.
+    User,
+    /// Runtime / startup helper recognised by
+    /// [`dac_knowledge::lookup_crt_entry`]. The C backend prints a
+    /// "runtime support — not user code" banner above the body and
+    /// the `--hide-crt` flag collapses it to a forward declaration.
+    CrtSupport,
+    /// In-binary forwarding thunk (B3.25). The body is a one-line
+    /// tail call to the recovered target.
+    Thunk,
+    /// PLT-bound import (B3.23). The body lives in another image; the
+    /// source file just states the signature.
+    Imported,
+}
+
+impl FunctionTaxonomy {
+    /// Lowercase snake-case label used by the report's `;; taxonomy:`
+    /// histogram row. Stable across versions of this crate.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            FunctionTaxonomy::User => "user",
+            FunctionTaxonomy::CrtSupport => "crt_support",
+            FunctionTaxonomy::Thunk => "thunk",
+            FunctionTaxonomy::Imported => "imported",
+        }
+    }
 }
 
 /// Per-signal contribution counts. Each counter is incremented at most
@@ -1314,5 +1389,89 @@ mod tests {
             FunctionKind::PltStub { .. }
         ));
         assert_eq!(set.stats.from_thunk, 0);
+    }
+
+    // ---- B3.30 ----
+
+    fn function_with(name: Option<&str>, kind: FunctionKind) -> Function {
+        let mut g = EvidenceGraph::new();
+        let ev = g.add_node(EvidenceNode::IrNode {
+            layer: IrLayer::Cfg,
+            id: 0,
+        });
+        Function {
+            address: 0x1000,
+            end: Some(0x1040),
+            name: name.map(|s| s.to_string()),
+            confidence: Confidence::new(1.0, Source::Observed),
+            sources: SourceMask::SYMBOL,
+            evidence: ev,
+            kind,
+        }
+    }
+
+    /// A glibc startup helper resolves to `CrtSupport` regardless of
+    /// its structural kind. `frame_dummy` lives in the hello-x86_64
+    /// fixture as a recovered thunk; the CRT classification wins.
+    #[test]
+    fn b3_30_glibc_helper_taxonomy_is_crt_support() {
+        let user = function_with(Some("_init"), FunctionKind::User);
+        assert_eq!(user.taxonomy(), FunctionTaxonomy::CrtSupport);
+        let thunk_helper =
+            function_with(Some("frame_dummy"), FunctionKind::Thunk { target: 0x10c0 });
+        assert_eq!(thunk_helper.taxonomy(), FunctionTaxonomy::CrtSupport);
+    }
+
+    /// A MinGW startup helper resolves to `CrtSupport`. `mainCRTStartup`
+    /// is the entry point on Windows PE binaries built with MinGW-w64.
+    #[test]
+    fn b3_30_mingw_helper_taxonomy_is_crt_support() {
+        let f = function_with(Some("mainCRTStartup"), FunctionKind::User);
+        assert_eq!(f.taxonomy(), FunctionTaxonomy::CrtSupport);
+    }
+
+    /// A PLT stub falls into `Imported`. The CRT catalogue does not
+    /// include imported symbols.
+    #[test]
+    fn b3_30_plt_stub_taxonomy_is_imported() {
+        let f = function_with(
+            Some("write"),
+            FunctionKind::PltStub {
+                import: "write".to_string(),
+            },
+        );
+        assert_eq!(f.taxonomy(), FunctionTaxonomy::Imported);
+    }
+
+    /// A forwarding thunk that is *not* a CRT helper falls into the
+    /// `Thunk` bucket; the recovered structural fact stays visible.
+    #[test]
+    fn b3_30_non_crt_thunk_taxonomy_is_thunk() {
+        let f = function_with(
+            Some("my_user_thunk"),
+            FunctionKind::Thunk { target: 0x2000 },
+        );
+        assert_eq!(f.taxonomy(), FunctionTaxonomy::Thunk);
+    }
+
+    /// A user-named `User`-kind function with no CRT match stays
+    /// `User`. The default case the report's histogram counts.
+    #[test]
+    fn b3_30_user_function_taxonomy_is_user() {
+        let f = function_with(Some("main"), FunctionKind::User);
+        assert_eq!(f.taxonomy(), FunctionTaxonomy::User);
+        let unnamed = function_with(None, FunctionKind::User);
+        assert_eq!(unnamed.taxonomy(), FunctionTaxonomy::User);
+    }
+
+    /// Labels are the stable strings the report histogram emits and
+    /// `--hide-crt` diagnostics quote. Lock them in here so a rename
+    /// of the variant does not silently shift the rendered string.
+    #[test]
+    fn b3_30_function_taxonomy_labels_are_stable() {
+        assert_eq!(FunctionTaxonomy::User.label(), "user");
+        assert_eq!(FunctionTaxonomy::CrtSupport.label(), "crt_support");
+        assert_eq!(FunctionTaxonomy::Thunk.label(), "thunk");
+        assert_eq!(FunctionTaxonomy::Imported.label(), "imported");
     }
 }

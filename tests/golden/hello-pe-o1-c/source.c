@@ -553,6 +553,7 @@ typedef struct __attribute__((packed)) {
     int32_t field_4c;
 } S_140002a60_v1_t;
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001000 */
 /* end: 0x140001010 */
@@ -573,6 +574,7 @@ long __mingw_invalidParameterHandler(void) {
     return ((long)(v0));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001010 */
 /* end: 0x140001020 */
@@ -593,6 +595,7 @@ void safe_flush(int64_t arg0) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001020 */
 /* end: 0x140001420 */
@@ -1053,6 +1056,7 @@ L1:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001420 */
 /* end: 0x140001440 */
@@ -1084,6 +1088,7 @@ long WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     return ((long)(v10));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001440 */
 /* end: 0x140001460 */
@@ -1124,6 +1129,7 @@ void atexit(void) {
     _crt_atexit();
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001490 */
 /* end: 0x140001540 */
@@ -1210,6 +1216,7 @@ L0:;
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001540 */
 /* end: 0x140001580 */
@@ -1268,6 +1275,7 @@ long __gcc_deregister_frame(void) {
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001580 */
 /* end: 0x1400015d0 */
@@ -1323,6 +1331,7 @@ long __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     return ((long)(v25));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400015d0 */
 /* end: 0x140001650 */
@@ -1427,6 +1436,7 @@ void __do_global_ctors(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001650 */
 /* end: 0x140001670 */
@@ -1455,6 +1465,7 @@ int __main(void) {
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001670 */
 /* end: 0x140001680 */
@@ -1475,6 +1486,7 @@ long _setargv(void) {
     return ((long)(0LL));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001680 */
 /* end: 0x1400016a0 */
@@ -1509,6 +1521,7 @@ L0:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400016a0 */
 /* end: 0x140001720 */
@@ -1621,6 +1634,7 @@ L0:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001720 */
 /* end: 0x140001730 */
@@ -1641,6 +1655,7 @@ long __tlregdtor(void) {
     return ((long)(0LL));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001730 */
 /* end: 0x140001830 */
@@ -1725,6 +1740,7 @@ long _matherr(S_140001730_v6_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3)
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001830 */
 /* end: 0x140001890 */
@@ -1786,6 +1802,7 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001890 */
 /* end: 0x140001a00 */
@@ -2008,6 +2025,7 @@ L1:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001a00 */
 /* end: 0x140001d90 */
@@ -2427,6 +2445,7 @@ L4:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001d90 */
 /* end: 0x140001dd0 */
@@ -2476,6 +2495,7 @@ long __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg
     return ((long)(v17));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001dd0 */
 /* end: 0x140001de0 */
@@ -2497,6 +2517,7 @@ void __mingw_setusermatherr(int64_t arg0) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001de0 */
 /* end: 0x140001f80 */
@@ -2623,6 +2644,7 @@ L3:;
 L4:;
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140001f80 */
 /* end: 0x140002140 */
@@ -2879,6 +2901,7 @@ void __mingwthr_run_key_dtors_part_0(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400021b0 */
 /* end: 0x140002240 */
@@ -2959,6 +2982,7 @@ L0:;
     return ((long)(v10));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002240 */
 /* end: 0x1400022d0 */
@@ -3034,6 +3058,7 @@ long ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2, i
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400022d0 */
 /* end: 0x1400023e0 */
@@ -3094,6 +3119,7 @@ long __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3)
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400023e0 */
 /* end: 0x1400023f0 */
@@ -3115,6 +3141,7 @@ long _fpreset(void) {
     return ((long)(v0));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400023f0 */
 /* end: 0x140002420 */
@@ -3164,6 +3191,7 @@ L0:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002420 */
 /* end: 0x140002470 */
@@ -3258,6 +3286,7 @@ L0:;
     return ((long)(v39));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002470 */
 /* end: 0x140002510 */
@@ -3406,6 +3435,7 @@ L0:;
     return ((long)(v56));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002510 */
 /* end: 0x140002590 */
@@ -3532,6 +3562,7 @@ L1:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002590 */
 /* end: 0x1400025d0 */
@@ -3591,6 +3622,7 @@ L0:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400025d0 */
 /* end: 0x140002650 */
@@ -3717,6 +3749,7 @@ L1:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002650 */
 /* end: 0x140002690 */
@@ -3767,6 +3800,7 @@ L0:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002690 */
 /* end: 0x140002720 */
@@ -3899,6 +3933,7 @@ L1:;
     }
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002720 */
 /* end: 0x1400027e0 */
@@ -4249,6 +4284,7 @@ long fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     return ((long)(v26));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400028b0 */
 /* end: 0x1400028c0 */
@@ -4290,6 +4326,7 @@ long __p___initenv(void) {
     return ((long)(v2));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400028d0 */
 /* end: 0x140002900 */
@@ -4609,6 +4646,7 @@ void __p___argv(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x1400029b8 */
 /* end: 0x1400029c0 */
@@ -4825,6 +4863,7 @@ void memcpy(void) {
     /* dac: structuring fallback */
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered function */
 /* address: 0x140002a20 */
 /* end: 0x140002a28 */
@@ -4998,6 +5037,7 @@ long main(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     return ((long)(42LL));
 }
 
+/* runtime support (mingw-w64 startup) — not user code */
 /* dac-recovered forwarding thunk */
 /* address: 0x140002ac0 */
 /* end: 0x140002ad0 */
