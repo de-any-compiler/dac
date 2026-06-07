@@ -50,15 +50,85 @@ disassembly-style listing.
 Goal: dac is genuinely useful to a reverse engineer.
 
 B3.1 – B3.22 and B3.23 – B3.31 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). The "B3 residue shelf" further
-down tracks heavier residue items that stay deferred past M3 and
-are sized as separate milestones rather than numbered batches.
+[CHANGELOG.md](./CHANGELOG.md). B3.32 – B3.35 are a polish wave
+that lifts the most visible non-residue gaps before M3 closes:
+string-literal surfacing, canonical typedef preservation in
+extern decls, void-return inference for runtime helpers, and i386
+dispatch wiring. The "B3 residue shelf" further down tracks
+heavier residue items that stay deferred past M3 and are sized as
+separate milestones rather than numbered batches.
 
 ### Sequencing
 
-B3.26 is the largest single readability lever and is independent of
-the format/ABI batches. B3.27 depends on B3.26 (cleaner CFG → fewer
-fallback blocks to suppress).
+Within the B3.32 – B3.35 wave, B3.32 (string literals) is the
+highest user-visible impact and has no upstream dependencies.
+B3.33 (typedef preservation in extern decls) is independent of
+the others. B3.34 (void-return inference) is also independent of
+B3.32 / B3.33. B3.35 (i386 dispatch wiring) unblocks the
+GOTHIC.EXE-class of PE fixtures and is independent of the other
+three but lower-priority for hello-fixture polish.
+
+### B3.32 — String literal surfacing
+
+- `BinaryModel::strings` (`StringRef` index → section/offset/value)
+  already carries every extracted literal. A new lowering pass
+  cross-references constant pointer operands against this index
+  and replaces the bare address with a `StringLit("…")` carrying
+  the recovered text.
+- The pass runs on the SSA, not the structurer, so it benefits
+  every backend simultaneously.
+- Confidence is `Derived` (FR-23): the recovered value is the
+  literal bytes, but whether the call uses it as a string is a
+  caller-side judgment. The original constant remains in the
+  evidence graph as `Observed`.
+- **Done when:** `dac --target c -O1 tests/fixtures/hello-x86_64`
+  emits the fixture's `.rodata` string (the one whose pointer is
+  passed to `write`) as a `"…"` literal in the C source instead
+  of a bare `0x…` address. (FR-21, FR-23, FR-25)
+
+### B3.33 — Canonical typedef preservation in extern decls
+
+- `CType::Typedef(name, underlying)` and `CType::Const(Box<CType>)`
+  variants added so the C printer can render `ssize_t`, `size_t`,
+  `const void *`, etc., verbatim instead of collapsing to
+  `int64_t` / `uint64_t` / `void *`.
+- The lowering pass consults `dac-knowledge` for known API
+  signatures and opts the extern decl into the canonical typedefs.
+- Adds `#include <sys/types.h>` (or equivalent) when the rendered
+  decl uses a typedef outside `stddef.h` / `stdint.h`.
+- **Done when:** the extern declaration for `write` on the
+  `hello-x86_64` fixture reads exactly
+  `extern ssize_t write(int fd, const void *buf, size_t n);` and
+  the emitted source still compiles round-trip. (FR-21)
+
+### B3.34 — Void-return inference for unobserved-rax helpers
+
+- New whole-callgraph pass (`Pure` determinism class): for every
+  function whose return value is dropped by every caller (no SSA
+  use of the returned register across the callgraph), the
+  recovered signature's return type is demoted to `void`.
+- Confidence `Derived`; the original return-type evidence remains
+  in the graph.
+- **Done when:** `_init`, `_fini`, `register_tm_clones`,
+  `deregister_tm_clones`, `__do_global_dtors_aux` emit with a
+  `void` return type on the `hello-x86_64` fixture; no behaviour
+  change for functions whose return value is observed by at least
+  one caller. (FR-21)
+
+### B3.35 — i386 dispatch wiring (PE focus)
+
+- `Architecture::I386 => Some(Backend { … })` added to the dispatch
+  in `dac-cli::main.rs` so the existing `I386` zero-sized type,
+  its decoder, and its register file (all already present in
+  `dac-arch-x86`) route through the same pipeline as `X86_64`.
+- 32-bit ABI plumbing (cdecl / stdcall on i386 PE) where the
+  existing x86-64 SysV / Win64 conventions don't already cover it.
+- The compile round-trip gate is *not* a done-when for this batch
+  — i386 corpus quality is a residue-shelf concern.
+- **Done when:** `dac --target c <i386 PE fixture>` produces a
+  listing with at least one recovered function instead of the
+  current "no architecture backend available" stub, and the
+  manifest correctly reports `architecture: i386`. (FR-3, FR-21)
 
 ### B3 residue shelf
 
@@ -160,10 +230,13 @@ Goal: dac is contributable, extensible, and integratable.
 - **Done when:** corpus includes an AArch64 ELF that decompiles end-to-end.
 
 ### B5.3 — Additional target language backend
-- Pick one of: Rust-like, Zig, Go, pseudocode (spec §6).
-- Implements the full `Backend` contract.
-- **Done when:** at least one new language emits compilable output on a
-  toy corpus.
+Promoted to its own milestone — see
+[Milestone 6](#milestone-6--additional-target-language-backend-go).
+B5.3 stayed a one-batch placeholder for too long; honest scoping
+showed a new-language backend is milestone-sized (type-system
+bridge + lowering + idiom mapping + compile gate + golden
+coverage), not a single PR. Numbering kept stable so existing
+references survive.
 
 ### B5.4 — Public scripted analysis API
 - Stable `dac-api` surface; `0.x` → `1.0` policy.
@@ -176,6 +249,82 @@ Goal: dac is contributable, extensible, and integratable.
   for editor display (spec §15 M5).
 - **Done when:** a minimal VS Code extension renders an annotation overlay
   on emitted source.
+
+---
+
+## Milestone 6 — Additional target language backend (Go)
+
+Goal: a `--target go` mode that produces Go source from recovered IR
+with the same evidence-grounding and determinism guarantees as
+`--target c`. The Go backend stresses the language-neutrality of
+the IR (every assumption that leaked C-isms into the IR shows up
+here).
+
+### B6.1 — Go AST + emit skeleton
+- New `dac-backend-go` crate: `TranslationUnit`, `Item`, `Stmt`,
+  `Expr` AST mirroring `dac-backend-c::ast`'s shape; per-node
+  provenance via `EvidenceId` (I-2).
+- Deterministic printer (NFR-9): stable iteration order, no
+  hashmap leak into output ordering.
+- **Done when:** an empty `dac --target go <fixture>` invocation
+  produces a valid `package main` translation unit with the dac
+  banner and zero recovered functions.
+
+### B6.2 — Type system mapping (C ↔ Go)
+- `CType → GoType` bridge: physical-width ints become `int8` /
+  `uint16` / `int32` / `uint64` / …; pointers become `*T` where
+  `T` is a Go-friendly element; opaque/recovered structs become
+  `struct { … }` with field names preserved.
+- Canonical typedef preservation: `size_t` → `uintptr`,
+  `ssize_t` → `int`, `const T *` → `*T` (Go has no const) with a
+  doc comment recording the loss. ADR in
+  [DECISIONS.md](./DECISIONS.md) capturing the const-loss
+  decision.
+- **Done when:** every type the C printer emits has a defined Go
+  counterpart, and the bridge ships with goldens covering
+  primitives, pointers, structs, and arrays.
+
+### B6.3 — Function signature + body lowering
+- `SemFunction → GoFunction` reusing the structurer's output
+  (the structured tree is language-agnostic; this batch is what
+  proves that).
+- `if` / `for` / `switch` lower to native Go forms. The
+  structurer's fallback `goto` blocks survive verbatim (Go
+  supports `goto`).
+- **Done when:** the `hello-x86_64` fixture decompiles to Go
+  that `gofmt`s cleanly and invokes a `syscall.Write(1, buf, 6)`
+  (or `os.Stdout.Write`) equivalent.
+
+### B6.4 — Idiom mapping (defer, error returns)
+- Recognise C error-return idioms (`errno`-style negative-return,
+  `NULL`-return-on-failure) and surface them as Go `(T, error)`
+  return shapes where the evidence supports it.
+- Stack-cleanup patterns (e.g. `free` at every function exit)
+  surface as `defer`.
+- **Done when:** at least one corpus fixture demonstrates each
+  idiom translation with provenance preserved.
+
+### B6.5 — Compile round-trip gate
+- `go vet` + `go build` gate on every emitted unit in CI.
+- Silently skipped when `go` is not on PATH (mirrors B3.5's C++
+  skip contract).
+- **Done when:** every corpus fixture round-trips through
+  `go build` on CI hosts that have Go installed.
+
+### B6.6 — Determinism + golden coverage
+- Two-run determinism diff for the Go backend.
+- Golden files mirror the C backend's coverage for the same
+  fixtures.
+- **Done when:** `cargo xtask ci` reports zero divergence across
+  two runs of any Go-backend golden case, and the golden corpus
+  covers every fixture the C backend covers.
+
+### B6.7 — Go-specific recovery (optional follow-up)
+- Surfacing recovered shapes in their idiomatic Go forms once the
+  M4 AI work has landed: e.g. lifting recovered C `Result`-style
+  tagged unions into `(T, error)` pairs with AI-provided naming.
+- **Done when:** at least one fixture demonstrates an AI-driven
+  Go-only idiom surfacing not present in the C output.
 
 ---
 
