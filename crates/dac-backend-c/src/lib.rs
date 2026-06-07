@@ -69,6 +69,6 @@ pub use compile::{try_compile, CompileResult};
 pub use emit::{emit, emit_function};
 pub use lower::{
     default_includes, lower_function, lower_function_with_options, lower_function_with_typedefs,
-    lower_unit, map_ir_type, LowerOptions, LoweredFunction, NameResolver, Recovered,
+    lower_unit, map_ir_type, LowerOptions, LoweredFunction, NameResolver, Recovered, StringTable,
     SynthesizedParam, SynthesizedSignature,
 };

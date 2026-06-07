@@ -49,42 +49,23 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22 and B3.23 – B3.31 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.32 – B3.35 are a polish wave
-that lifts the most visible non-residue gaps before M3 closes:
-string-literal surfacing, canonical typedef preservation in
-extern decls, void-return inference for runtime helpers, and i386
-dispatch wiring. The "B3 residue shelf" further down tracks
-heavier residue items that stay deferred past M3 and are sized as
+B3.1 – B3.22, B3.23 – B3.31, and B3.32 are complete — see
+[CHANGELOG.md](./CHANGELOG.md). B3.33 – B3.35 are the remaining
+polish-wave batches that lift the most visible non-residue gaps
+before M3 closes: canonical typedef preservation in extern decls,
+void-return inference for runtime helpers, and i386 dispatch
+wiring. The "B3 residue shelf" further down tracks heavier
+residue items that stay deferred past M3 and are sized as
 separate milestones rather than numbered batches.
 
 ### Sequencing
 
-Within the B3.32 – B3.35 wave, B3.32 (string literals) is the
-highest user-visible impact and has no upstream dependencies.
-B3.33 (typedef preservation in extern decls) is independent of
-the others. B3.34 (void-return inference) is also independent of
-B3.32 / B3.33. B3.35 (i386 dispatch wiring) unblocks the
-GOTHIC.EXE-class of PE fixtures and is independent of the other
-three but lower-priority for hello-fixture polish.
-
-### B3.32 — String literal surfacing
-
-- `BinaryModel::strings` (`StringRef` index → section/offset/value)
-  already carries every extracted literal. A new lowering pass
-  cross-references constant pointer operands against this index
-  and replaces the bare address with a `StringLit("…")` carrying
-  the recovered text.
-- The pass runs on the SSA, not the structurer, so it benefits
-  every backend simultaneously.
-- Confidence is `Derived` (FR-23): the recovered value is the
-  literal bytes, but whether the call uses it as a string is a
-  caller-side judgment. The original constant remains in the
-  evidence graph as `Observed`.
-- **Done when:** `dac --target c -O1 tests/fixtures/hello-x86_64`
-  emits the fixture's `.rodata` string (the one whose pointer is
-  passed to `write`) as a `"…"` literal in the C source instead
-  of a bare `0x…` address. (FR-21, FR-23, FR-25)
+Within the remaining B3.33 – B3.35 wave, B3.33 (typedef
+preservation in extern decls) is independent of the others. B3.34
+(void-return inference) is also independent of B3.33. B3.35 (i386
+dispatch wiring) unblocks the GOTHIC.EXE-class of PE fixtures and
+is independent of the other two but lower-priority for
+hello-fixture polish.
 
 ### B3.33 — Canonical typedef preservation in extern decls
 

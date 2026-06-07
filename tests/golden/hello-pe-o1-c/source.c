@@ -1182,7 +1182,7 @@ void __gcc_register_frame(void) {
     *((int64_t *)(((int64_t)(v3)))) = v4;
     v5 = ((void *)((((int64_t)(v3)) - 56LL)));
     v6 = ((void *)((((int64_t)(v5)) + 48LL)));
-    v14 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, v11, 5368725504LL, v12, v13);
+    v14 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, v11, ((int64_t)("libgcc_s_dw2-1.dll")), v12, v13);
     v17 = (v14 == 0LL);
     if (v17) {
         *((int64_t *)(5368721408LL)) = 5368714368LL;
@@ -1191,15 +1191,15 @@ L0:;
         /* phi v36 <- (bb5: v20) (bb8: v13) */
         v39 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, 5368741984LL, 5368729600LL, v35, v36);
     } else {
-        v19 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, v11, 5368725504LL, v12, v13);
+        v19 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, v11, ((int64_t)("libgcc_s_dw2-1.dll")), v12, v13);
         v20 = (*((int64_t *)(5368746672LL)));
         *((int64_t *)(5368741952LL)) = v19;
         v24 = ((void *)((((int64_t)(v6)) + -16LL)));
         *((int64_t *)(((int64_t)(v24)))) = v20;
-        v25 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, 5368725523LL, v14, v12, v20);
+        v25 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, ((int64_t)("__register_frame_info")), v14, v12, v20);
         v28 = ((void *)((((int64_t)(v6)) + -8LL)));
         *((int64_t *)(((int64_t)(v28)))) = v25;
-        v29 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, 5368725545LL, v14, v12, v20);
+        v29 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v9, v10, ((int64_t)("__deregister_frame_info")), v14, v12, v20);
         v30 = ((void *)((((int64_t)(v6)) + -8LL)));
         v31 = (*((int64_t *)(((int64_t)(v30)))));
         *((int64_t *)(5368721408LL)) = v29;
@@ -1717,7 +1717,7 @@ long _matherr(S_140001730_v6_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3)
         (/* opaque: movsd */ 0);
         (/* opaque: movsd */ 0);
         (/* opaque: movsd */ 0);
-        v31 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v22, v19, 5368725944LL, v26, 5368725926LL, v19);
+        v31 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v22, v19, ((int64_t)("_matherr(): %s in %s(%g, %g)  (retval=%g)\n")), v26, ((int64_t)("Unknown error")), v19);
         (/* opaque: movaps */ 0);
         (/* opaque: movaps */ 0);
         (/* opaque: movaps */ 0);
@@ -1793,10 +1793,10 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v17 = ((void *)((((int64_t)(v5)) + 40LL)));
     v5->field_28 = ((int64_t)(v8));
     v19 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v18, v2, v16, 2LL, v12, v14);
-    v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v18, v2, 5368726016LL, v19, v12, v14);
+    v22 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v18, v2, ((int64_t)("Mingw-w64 runtime failure:\n")), v19, v12, v14);
     v23 = ((void *)((((int64_t)(v5)) + 40LL)));
     v24 = v5->field_28;
-    v27 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v18, v24, 5368726016LL, 2LL, v12, v14);
+    v27 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v18, v24, ((int64_t)("Mingw-w64 runtime failure:\n")), 2LL, v12, v14);
     v31 = ((long long (*)(long long, long long, long long, long long, long long, long long))vfprintf)(v18, v24, v6, v27, v24, v14);
     v32 = ((long long (*)(long long, long long, long long, long long, long long, long long))abort)(v18, v24, v6, v27, v24, v14);
     /* dac: structuring fallback */
@@ -1942,7 +1942,7 @@ L2:;
 L0:;
             /* phi v118 <- (bb6: v42) (bb21: v56) */
             /* phi v119 <- (bb6: v44) (bb21: v115) */
-            v122 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(((int64_t)(v47)), v41, v118, 5368726048LL, v119, v43);
+            v122 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(((int64_t)(v47)), v41, v118, ((int64_t)("Address %p has no image-section")), v119, v43);
             /* dac: structuring fallback */
         } else {
             v51 = (*((int64_t *)(5368742152LL)));
@@ -1971,7 +1971,7 @@ L0:;
                 v113 = (v107 + 24LL);
                 v114 = ((void *)((v113 + v56)));
                 v115 = (*((int64_t *)(((int64_t)(v114)))));
-                v117 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(((int64_t)(v47)), v41, v110, 5368726080LL, v115, v43);
+                v117 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(((int64_t)(v47)), v41, v110, ((int64_t)("  VirtualQuery failed for %d bytes at address %p")), v115, v43);
                 goto L0;
             } else {
                 v75 = ((void *)((((int64_t)(v7)) + 68LL)));
@@ -2380,7 +2380,7 @@ L3:;
                                 /* phi v199 <- (bb8: v93) (bb67: v106) */
                                 /* phi v200 <- (bb8: v90) (bb67: v115) */
                                 /* phi v201 <- (bb8: v91) (bb67: v113) */
-                                v203 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(dst, src, v199, 5368726176LL, v200, v201);
+                                v203 = ((long long (*)(long long, long long, long long, long long, long long, long long))__report_error)(dst, src, v199, ((int64_t)("  Unknown pseudo relocation protocol version %d.\n")), v200, v201);
                                 /* dac: structuring fallback */
                             } else {
                                 v96 = (v88 + 12LL);
@@ -4358,8 +4358,8 @@ void _amsg_exit(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v1 = ((void *)((v0 - 8LL)));
     *((int64_t *)(((int64_t)(v1)))) = v2;
     v12 = ((long long (*)(long long, long long, long long, long long, long long, long long))__acrt_iob_func)(v7, v8, v9, 2LL, v10, v11);
-    v16 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v7, v8, 5368726448LL, v12, v4, v11);
-    v18 = ((long long (*)(long long, long long, long long, long long, long long, long long))_exit)(v7, v8, 5368726448LL, 255LL, v4, v11);
+    v16 = ((long long (*)(long long, long long, long long, long long, long long, long long))fprintf)(v7, v8, ((int64_t)("runtime error %d\n")), v12, v4, v11);
+    v18 = ((long long (*)(long long, long long, long long, long long, long long, long long))_exit)(v7, v8, ((int64_t)("runtime error %d\n")), 255LL, v4, v11);
     /* dac: structuring fallback */
 }
 

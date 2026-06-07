@@ -328,6 +328,15 @@ pub enum Expr {
     /// parameter type doesn't match the local's width-based type
     /// (B3.10).
     Cast { ty: CType, expr: Box<Expr> },
+    /// `"…"` — recovered string literal (B3.32, FR-21 / FR-23).
+    /// Produced when a constant pointer operand falls inside a
+    /// `BinaryModel::strings` entry. The payload is the raw recovered
+    /// text; the emitter handles C-source escaping (`\`, `"`, `\n`,
+    /// `\t`, `\r`, control bytes via `\xHH`). Confidence is `Derived`
+    /// — the original constant is still on the evidence graph as
+    /// `Observed`; surfacing it as a literal is a caller-side
+    /// judgment that the pointer is read as text.
+    StringLit(String),
     /// `(/* opaque: <text> */ 0)` — opaque operation whose semantics
     /// the lowering pass can't faithfully render. The compile pipeline
     /// degrades by emitting a comment-wrapped zero so the C compiler
@@ -500,6 +509,7 @@ mod tests {
             | Expr::AddrLit(_)
             | Expr::Field { .. }
             | Expr::Cast { .. }
+            | Expr::StringLit(_)
             | Expr::Opaque(_) => {}
         }
     }

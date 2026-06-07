@@ -505,22 +505,27 @@ fn scan_strings(bytes: &[u8], sections: &[Section]) -> Vec<StringRef> {
 fn scan_section_strings(data: &[u8], section: usize, out: &mut Vec<StringRef>) {
     let mut run_start: Option<usize> = None;
     for (i, &b) in data.iter().enumerate() {
-        let is_printable = (0x20..=0x7E).contains(&b);
-        if is_printable {
+        // ASCII printable plus common formatting whitespace (`\t`,
+        // `\n`, `\r`). Including the whitespace bytes is what lets the
+        // scanner find runs like `"hello\n"` that the format-spec
+        // dump tools (`readelf -p`) also report as a single string;
+        // restricting to 0x20..=0x7E only would split the run at the
+        // newline byte and drop the entire literal because the next
+        // byte is not the NUL terminator the rule requires (B3.32).
+        let is_string_byte = (0x20..=0x7E).contains(&b) || b == b'\t' || b == b'\n' || b == b'\r';
+        if is_string_byte {
             if run_start.is_none() {
                 run_start = Some(i);
             }
-        } else {
-            if let Some(start) = run_start.take() {
-                let run = &data[start..i];
-                if b == 0 && run.len() >= MIN_STRING_LEN {
-                    if let Ok(value) = std::str::from_utf8(run) {
-                        out.push(StringRef {
-                            section,
-                            offset: start as u64,
-                            value: value.to_owned(),
-                        });
-                    }
+        } else if let Some(start) = run_start.take() {
+            let run = &data[start..i];
+            if b == 0 && run.len() >= MIN_STRING_LEN {
+                if let Ok(value) = std::str::from_utf8(run) {
+                    out.push(StringRef {
+                        section,
+                        offset: start as u64,
+                        value: value.to_owned(),
+                    });
                 }
             }
         }
@@ -547,5 +552,62 @@ fn malformed(format_tag: &'static str, reason: &str, e: object::Error) -> Error 
     Error::MalformedBinary {
         format: format_tag,
         reason: format!("{reason}: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{scan_section_strings, StringRef};
+
+    fn extract(data: &[u8]) -> Vec<(u64, String)> {
+        let mut out: Vec<StringRef> = Vec::new();
+        scan_section_strings(data, 0, &mut out);
+        out.into_iter().map(|s| (s.offset, s.value)).collect()
+    }
+
+    #[test]
+    fn b3_32_scanner_accepts_newline_inside_run() {
+        // `hello\n\0` mirrors the `.rodata` layout that the
+        // `hello-x86_64` fixture lays down at offset 4 (the `printf`
+        // -free libc `write(1, "hello\n", 6)` style). Pre-B3.32 the
+        // scanner dropped this run at the `\n` because it required
+        // every byte to be ASCII-printable.
+        let data = b"hello\n\0";
+        let out = extract(data);
+        assert_eq!(out, vec![(0, "hello\n".to_string())]);
+    }
+
+    #[test]
+    fn b3_32_scanner_accepts_tab_and_carriage_return() {
+        let data = b"a\tb\rc\nd\0";
+        let out = extract(data);
+        assert_eq!(out, vec![(0, "a\tb\rc\nd".to_string())]);
+    }
+
+    #[test]
+    fn b3_32_scanner_still_requires_nul_terminator() {
+        // Run terminated by a non-printable, non-whitespace byte
+        // (e.g. `0x01`) is *not* a C string and must not be stored.
+        let data = b"hello\x01world\0";
+        let out = extract(data);
+        assert_eq!(out, vec![(6, "world".to_string())]);
+    }
+
+    #[test]
+    fn b3_32_scanner_still_enforces_min_length() {
+        // `abc\0` is 3 bytes — below `MIN_STRING_LEN = 4`. Dropped.
+        let data = b"abc\0";
+        let out = extract(data);
+        assert!(out.is_empty(), "expected no strings, got {out:?}");
+    }
+
+    #[test]
+    fn b3_32_scanner_records_offset_within_section() {
+        // Leading non-printable bytes (`01 00 02 00`) match the
+        // `hello-x86_64` `.rodata` header. The scanner skips them
+        // and reports the run at the byte offset where it starts.
+        let data = b"\x01\x00\x02\x00hello\n\0";
+        let out = extract(data);
+        assert_eq!(out, vec![(4, "hello\n".to_string())]);
     }
 }

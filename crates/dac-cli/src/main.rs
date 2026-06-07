@@ -44,6 +44,7 @@ use dac_backend_c::{
     default_includes as c_default_includes, emit as c_emit,
     lower_function_with_options as c_lower_function_with_options, LowerOptions as CLowerOptions,
     LoweredFunction, NameResolver as CNameResolver, Recovered as CRecovered,
+    StringTable as CStringTable,
 };
 use dac_backend_cpp::{
     class_recovery::recover_classes as recover_cpp_classes,
@@ -494,6 +495,13 @@ fn render_c_unit(
     opt: OptLevel,
 ) -> String {
     let resolver = build_c_name_resolver(functions);
+    // B3.32: build the absolute-address → recovered-text index from
+    // the per-section `StringRef` entries the binfmt scanner already
+    // populated. The C lowering pass consults this through
+    // `Recovered::strings` to swap call-arg constants whose value
+    // matches a known string pointer with the literal text the
+    // pointer references.
+    let string_table: CStringTable = build_c_string_table(model);
     // The orchestrator returns outcomes in the same order as
     // `functions.functions`; the zip below guarantees the i-th entry
     // pairs with the i-th function. When the orchestrator was skipped
@@ -541,7 +549,7 @@ fn render_c_unit(
             function_items.push(CItem::Function(thunk));
             continue;
         }
-        let mut lowered = lower_one_c_function(f, outcome, annot, &resolver, debug);
+        let mut lowered = lower_one_c_function(f, outcome, annot, &resolver, &string_table, debug);
         for decl in lowered.struct_decls {
             typedefs.entry(decl.name.clone()).or_insert(decl);
         }
@@ -583,6 +591,28 @@ fn build_c_name_resolver(functions: &FunctionSet) -> CNameResolver {
     r
 }
 
+/// Build the [`CStringTable`] from `BinaryModel::strings` (B3.32).
+///
+/// Each `StringRef` is keyed by its absolute virtual address
+/// (`section.address + offset`). The C lowering pass reads through
+/// `Recovered::strings` and rewrites `Operand::Const(c)` operands
+/// whose `c` matches a key into [`CExpr::StringLit`] so the
+/// recovered text surfaces next to the call instead of the bare
+/// integer the SSA carries. Entries whose `section` index is out
+/// of range (defensive — the binfmt scanner only populates from
+/// the `sections` array it built) are dropped silently.
+fn build_c_string_table(model: &BinaryModel) -> CStringTable {
+    let mut t = CStringTable::new();
+    for sref in &model.strings {
+        let Some(section) = model.sections.get(sref.section) else {
+            continue;
+        };
+        let address = section.address.saturating_add(sref.offset);
+        t.entry(address).or_insert_with(|| sref.value.clone());
+    }
+    t
+}
+
 /// Lower a single recovered function to a C AST [`CFunction`].
 ///
 /// `outcome` is the per-function orchestrator result (B3.9). On
@@ -595,11 +625,13 @@ fn build_c_name_resolver(functions: &FunctionSet) -> CNameResolver {
 /// `lifter→SSA bridge pending` comment — and surface the degradation
 /// reason in the leading comment so a reader knows *why* the body is
 /// stubbed (I-6).
+#[allow(clippy::too_many_arguments)]
 fn lower_one_c_function(
     f: &dac_recovery::Function,
     outcome: Option<&LiftOutcome>,
     annot: Option<&FunctionAnnotation>,
     resolver: &CNameResolver,
+    strings: &CStringTable,
     debug: bool,
 ) -> LoweredFunction {
     // B3.6: an applied `rename` hint takes precedence over the
@@ -631,7 +663,8 @@ fn lower_one_c_function(
                 Some(&facts.names),
                 facts.canonical_signature.as_ref(),
             )
-            .with_inferred_return(Some(&inferred_return_ty));
+            .with_inferred_return(Some(&inferred_return_ty))
+            .with_strings(Some(strings));
             let mut lowered = c_lower_function_with_options(
                 ssa,
                 sem,

@@ -75,7 +75,7 @@ int main(void) {
 
     v1 = ((void *)((v0 - 8LL)));
     *((int64_t *)(((int64_t)(v1)))) = v2;
-    v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))write)(1LL, 8196LL, 6LL, v6, v7, v8);
+    v9 = ((long long (*)(long long, long long, long long, long long, long long, long long))write)(1LL, ((int64_t)("hello\n")), 6LL, v6, v7, v8);
     v11 = (*((int64_t *)(((int64_t)(v1)))));
     return ((int)(42LL));
 }

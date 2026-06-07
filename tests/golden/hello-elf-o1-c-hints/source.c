@@ -76,7 +76,7 @@ int user_main(int argc, char ** argv) {
 
     v1 = ((void *)((v0 - 8LL)));
     *((int64_t *)(((int64_t)(v1)))) = v2;
-    send = ((long long (*)(long long, long long, long long, long long, long long, long long))write)(1LL, 8196LL, 6LL, v6, v7, v8);
+    send = ((long long (*)(long long, long long, long long, long long, long long, long long))write)(1LL, ((int64_t)("hello\n")), 6LL, v6, v7, v8);
     v11 = (*((int64_t *)(((int64_t)(v1)))));
     return ((int)(42LL));
 }

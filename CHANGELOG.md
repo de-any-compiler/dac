@@ -6320,6 +6320,149 @@ match unchanged.
 
 Closes: B3.31, FR-21 (recovered source readability).
 
+#### B3.32 — String literal surfacing (2026-06-07)
+
+Constant pointer operands whose value matches an extracted
+`BinaryModel::strings` entry now surface in the C output as the
+literal text the pointer references rather than as a bare integer
+address. The recovered `write(1, 0x2004, 6)` on the `hello-x86_64`
+fixture now reads `write(1, ((int64_t)("hello\n")), 6, …)` —
+ChatGPT's review of the M3 surface called this the single biggest
+"strings are missing from the output" gap, and the new path
+threads the existing string-scanner output into the C lowering
+where the constant lives. Confidence is `Derived` (FR-23): the
+original constant remains in the evidence graph as `Observed`;
+surfacing the bytes as a literal is a caller-side judgment that
+the pointer is read as text.
+
+Motivation. The B3 review chain — both the ChatGPT side and the
+internal "what's missing from M3" audit — surfaced the missing
+literal as the highest-impact readability gap. The binfmt scanner
+already extracts `.rodata` strings into `BinaryModel::strings`,
+and the constant pointer is already on the SSA, so the only
+missing piece was the cross-reference at the lowering layer. The
+batch is also the first time the C printer carries a string-typed
+expression form — the AST grew an `Expr::StringLit` variant
+specifically for this batch (FR-21 / FR-23 / FR-25).
+
+Behaviour change.
+- `dac-binfmt::bridge::scan_section_strings` now accepts ASCII
+  printable bytes *plus* the common whitespace bytes `\t`, `\n`,
+  `\r` inside runs. Pre-B3.32 the scanner stopped any run at the
+  first whitespace byte, which silently dropped `"hello\n"` (the
+  exact string the `hello-x86_64` fixture's `write` call
+  references). NUL-termination + the `MIN_STRING_LEN = 4` floor
+  still gate storage; the change is purely "what counts as a
+  string byte". `readelf -p .rodata` already reports these runs
+  as single strings, so the scanner is now agreeing with the
+  format-spec tooling.
+- `dac-backend-c::ast::Expr` gained a `StringLit(String)`
+  variant. The exhaustive-match test at the end of `ast.rs` was
+  extended to cover it.
+- `dac-backend-c::emit::render_expr` learned to render
+  `StringLit` as a properly-escaped C double-quoted literal
+  (`\\`, `\"`, `\n`, `\t`, `\r`, plus `\xHH` for any byte
+  outside ASCII printable — so the scanner's whitespace
+  allowance can survive the trip without producing a stray
+  literal newline that would split the source line and break
+  the round-trip compile gate).
+- `dac-backend-c::lower::StringTable` (`BTreeMap<u64, String>`)
+  introduced as the canonical absolute-address → recovered-text
+  index. `Recovered<'a>` gained an `Option<&'a StringTable>`
+  field and a `.with_strings(…)` chainer for symmetry with
+  `.with_canonical` / `.with_inferred_return`.
+- `dac-backend-c::lower::lower_operand` now takes the optional
+  `StringTable`. When `Operand::Const(c)` matches a key, the
+  lowering returns `Cast { ty: int64_t, expr: StringLit(text) }`
+  instead of the historical `IntLit { value: c, signed: true }`.
+  The explicit `(int64_t)` wrapper keeps the integer slot the
+  surrounding call cast expects — modern gcc escalates
+  `-Wint-conversion` to an error when a `char *` literal lands
+  in a `long long`-typed call parameter, so the cast keeps the
+  round-trip compile gate green while leaving the literal
+  readable in the source.
+- `dac-cli::main::render_c_unit` builds the `StringTable` from
+  `BinaryModel::strings` + `BinaryModel::sections` (the section
+  base address plus the per-`StringRef` offset gives the
+  absolute virtual address the SSA constant carries). The
+  `lower_one_c_function` call site threads the table into every
+  per-function `Recovered` view.
+
+Goldens. Three sources drifted under the new substitution; all
+three diffs are exact intentional swaps of integer constants for
+the matching string literal, with the rest of the file
+unchanged:
+- `tests/golden/hello-elf-o1-c/source.c` — the `write(1, 8196,
+  6)` call site now reads `write(1, ((int64_t)("hello\n")),
+  6, …)`.
+- `tests/golden/hello-elf-o1-c-hints/source.c` — same change at
+  the same call site; the hint surface is independent of the
+  literal substitution.
+- `tests/golden/hello-pe-o1-c/source.c` — five separate
+  call sites in the mingw-w64 CRT helpers (`__gcc_register_frame`,
+  `_matherr`, `__report_error`) now read `"libgcc_s_dw2-1.dll"`,
+  `"__register_frame_info"`, `"__deregister_frame_info"`,
+  `"_matherr(): %s in %s(%g, %g)  (retval=%g)\n"`,
+  `"Unknown error"`, `"Mingw-w64 runtime failure:\n"`, and
+  `"Address %p has no image-section"` instead of the prior bare
+  PE virtual addresses. Each is exactly the literal the
+  recovered call references.
+
+Tests. Five `b3_32_*` unit tests plus one integration test, for
++12 net new tests over B3.31:
+- `dac-binfmt::bridge::tests::b3_32_scanner_accepts_newline_inside_run`
+  / `b3_32_scanner_accepts_tab_and_carriage_return` —
+  confirms the whitespace allowance fires on the `hello\n\0`
+  layout the `hello-x86_64` fixture uses, and on tab / CR
+  variants.
+- `dac-binfmt::bridge::tests::b3_32_scanner_still_requires_nul_terminator`
+  / `b3_32_scanner_still_enforces_min_length` — guards against
+  the change relaxing into "any run is a string"; non-NUL
+  termination and runs below the 4-byte floor still drop on
+  the floor.
+- `dac-binfmt::bridge::tests::b3_32_scanner_records_offset_within_section`
+  — the `01 00 02 00` header before the `hello\n` run lands on
+  the right offset (4), mirroring the fixture's `.rodata`
+  layout.
+- `dac-backend-c::emit::tests::b3_32_string_lit_emits_escaped_double_quoted_literal`
+  / `b3_32_string_lit_escapes_backslash_quote_tab_cr`
+  / `b3_32_string_lit_escapes_non_ascii_with_hex` — the
+  emitter renders the literal with the expected escape table.
+- `dac-backend-c::lower::tests::b3_32_call_arg_const_pointer_lowers_to_string_lit`
+  — exact-substitution: a `Call { args: [Const(0x2004)] }` SSA
+  with `{0x2004 → "hello\n"}` strings lowers to
+  `Cast(int64_t, StringLit("hello\n"))`.
+- `dac-backend-c::lower::tests::b3_32_no_string_table_keeps_int_lit_surface`
+  / `b3_32_non_matching_const_keeps_int_lit_surface` — guards
+  against the substitution firing unconditionally; with no
+  strings table the surface is unchanged, and a non-matching
+  constant (`1` against `{0x2004 → "hello\n"}`) keeps the
+  integer-literal surface.
+- `dac-cli::tests::o1_target_c::b3_32_string_literal_surfaces_in_write_call`
+  — end-to-end: the recovered `hello-x86_64` C source contains
+  the `"hello\n"` literal wrapped in the `(int64_t)` cast next
+  to the `write` call, and the bare `8196LL` constant no longer
+  leaks.
+
+Done-when verification (PLAN.md).
+- `dac --target c -O1 tests/fixtures/hello-x86_64` emits the
+  fixture's `.rodata` string as a `"…"` literal in the C source
+  instead of a bare `0x…` address — verified end-to-end:
+  ```
+  v9 = ((long long (*)(...))write)(1LL, ((int64_t)("hello\n")), 6LL, v6, v7, v8);
+  ```
+  The literal is next to the recovered `write` call, matching
+  the done-when verbatim.
+
+CI verification: `cargo xtask ci` green — fmt + clippy +
+743 tests pass (was 731 at B3.31, +12 net new for B3.32 across
+the four crates); 32 goldens across 12 cases match after the
+three affected `source.c` files were re-baselined.
+
+Closes: B3.32, FR-21 (recovered source readability), FR-23
+(confidence-attributed evidence), FR-25 (unresolved-construct
+reporting).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

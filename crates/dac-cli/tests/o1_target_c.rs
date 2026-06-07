@@ -91,6 +91,38 @@ fn b3_31_banner_reflects_active_opt_level() {
     }
 }
 
+/// B3.32: a constant pointer operand whose value matches an extracted
+/// `BinaryModel::strings` entry surfaces as a `"…"` literal in the C
+/// output instead of a bare integer address. The `hello-x86_64`
+/// fixture's `.rodata` contains `"hello\n\0"` at virtual address
+/// `0x2004`; the recovered `write(1, 0x2004, 6)` therefore renders
+/// with the literal next to the call. The literal is wrapped in an
+/// explicit `(int64_t)` cast so it keeps the integer slot the
+/// surrounding call cast expects (round-trip compile gate stays
+/// green).
+#[test]
+fn b3_32_string_literal_surfaces_in_write_call() {
+    let dir = TempDir::new().expect("tempdir");
+    let out = dir.path().join("a.listing");
+    run_o1_c(&out);
+
+    let source = fs::read_to_string(sidecar_with_suffix(&out, ".c")).expect("source sidecar");
+    assert!(
+        source.contains("\"hello\\n\""),
+        "expected `\"hello\\n\"` literal in:\n{source}"
+    );
+    assert!(
+        source.contains("((int64_t)(\"hello\\n\"))"),
+        "expected explicit `(int64_t)` cast around the literal in:\n{source}"
+    );
+    // The bare address constant must no longer leak; if it does, the
+    // string-substitution didn't fire.
+    assert!(
+        !source.contains("8196LL"),
+        "stale `8196LL` constant leaked next to the recovered write call:\n{source}"
+    );
+}
+
 #[test]
 fn o1_target_c_round_trips_through_system_compiler() {
     // Best-effort: run `cc -x c -c -` on the emitted source. If no

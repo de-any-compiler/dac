@@ -437,6 +437,7 @@ fn render_expr(expr: &Expr) -> String {
         Expr::Cast { ty, expr } => {
             format!("(({})({}))", render_type_prefix(ty), render_expr(expr))
         }
+        Expr::StringLit(text) => render_c_string_literal(text),
         Expr::Opaque(text) => {
             // Compile-safe placeholder. Wrapping in `(int)0` so the
             // expression has a definite type. The lowering pass uses
@@ -502,6 +503,35 @@ fn render_unary_op(op: UnaryOp) -> &'static str {
 /// closes the comment early.
 fn sanitize_comment(s: &str) -> String {
     s.replace("*/", "* /")
+}
+
+/// Render a recovered byte sequence as a C double-quoted string
+/// literal (B3.32). Escapes the standard set (`\`, `"`, `\n`, `\t`,
+/// `\r`) so the source round-trips through any C compiler, and any
+/// other byte outside ASCII printable is emitted as `\xHH` so the
+/// scanner's whitespace allowance (`\t`, `\n`, `\r`) can survive
+/// the trip without producing a literal newline in the source text
+/// — which would split the source line and break the round-trip
+/// compile gate.
+fn render_c_string_literal(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for &b in text.as_bytes() {
+        match b {
+            b'\\' => out.push_str("\\\\"),
+            b'"' => out.push_str("\\\""),
+            b'\n' => out.push_str("\\n"),
+            b'\t' => out.push_str("\\t"),
+            b'\r' => out.push_str("\\r"),
+            0x20..=0x7E => out.push(b as char),
+            _ => {
+                use std::fmt::Write as _;
+                let _ = write!(&mut out, "\\x{b:02x}");
+            }
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Indenting line printer.
@@ -729,6 +759,29 @@ void f(void) {
         let s = render_expr(&e);
         assert!(!s.contains("*/ bar"));
         assert!(s.contains("foo * / bar"));
+    }
+
+    #[test]
+    fn b3_32_string_lit_emits_escaped_double_quoted_literal() {
+        let e = Expr::StringLit("hello\n".into());
+        assert_eq!(render_expr(&e), "\"hello\\n\"");
+    }
+
+    #[test]
+    fn b3_32_string_lit_escapes_backslash_quote_tab_cr() {
+        let e = Expr::StringLit("a\\b\"c\td\re".into());
+        assert_eq!(render_expr(&e), "\"a\\\\b\\\"c\\td\\re\"");
+    }
+
+    #[test]
+    fn b3_32_string_lit_escapes_non_ascii_with_hex() {
+        // 0xe2 is the lead byte of `é`'s UTF-8 encoding; the scanner
+        // can store it because the scanner classifies on the raw byte
+        // stream, but the emitter has to escape it so the source line
+        // doesn't contain a stray non-ASCII byte that some toolchains
+        // refuse to consume.
+        let e = Expr::StringLit("\u{00e9}".into());
+        assert_eq!(render_expr(&e), "\"\\xc3\\xa9\"");
     }
 
     #[test]

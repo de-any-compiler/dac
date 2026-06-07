@@ -129,6 +129,18 @@ pub fn default_includes() -> Vec<String> {
 /// map and accept the `AddrLit` fallback.
 pub type NameResolver = BTreeMap<u64, String>;
 
+/// Map from absolute virtual address to recovered string content
+/// (B3.32, FR-21 / FR-23). The CLI builds this from
+/// `BinaryModel::strings` by adding each `StringRef`'s `offset` to
+/// the owning section's virtual address; the lowering pass then
+/// rewrites `Operand::Const(c)` operands whose value lands in the map
+/// into [`Expr::StringLit`] so the recovered text surfaces next to
+/// the call instead of as a bare integer address (e.g. the `0x2004`
+/// argument to `write` on the `hello-x86_64` fixture). Lookups are
+/// exact-match on the run start — interior pointers (`str + N`) keep
+/// the integer-literal fallback.
+pub type StringTable = BTreeMap<u64, String>;
+
 /// View onto the per-function recovery side tables produced by
 /// `dac-recovery`. The lowering pass reads through this rather than
 /// owning the tables so callers can pass any subset of facts they
@@ -179,6 +191,13 @@ pub struct Recovered<'a> {
     /// C function declarator (the "single source" the B3.29 spec
     /// calls for).
     pub inferred_return: Option<&'a CType>,
+    /// Recovered string-pointer index (B3.32, FR-21 / FR-23). When
+    /// set, the lowering pass rewrites every `Operand::Const(c)` whose
+    /// value matches a key in the map into [`Expr::StringLit`] with
+    /// the recovered text — so the bare pointer constant the SSA
+    /// carries (e.g. `0x2004` on `hello-x86_64`) surfaces as the
+    /// `"hello\n"` literal a reader expects.
+    pub strings: Option<&'a StringTable>,
 }
 
 impl<'a> Recovered<'a> {
@@ -197,6 +216,7 @@ impl<'a> Recovered<'a> {
             names,
             canonical: None,
             inferred_return: None,
+            strings: None,
         }
     }
 
@@ -217,6 +237,7 @@ impl<'a> Recovered<'a> {
             names,
             canonical,
             inferred_return: None,
+            strings: None,
         }
     }
 
@@ -228,6 +249,15 @@ impl<'a> Recovered<'a> {
     #[must_use]
     pub fn with_inferred_return(mut self, inferred_return: Option<&'a CType>) -> Self {
         self.inferred_return = inferred_return;
+        self
+    }
+
+    /// Field-update setter for the B3.32 string-pointer index. Lets
+    /// the CLI thread the [`StringTable`] in without reshuffling
+    /// every existing call site.
+    #[must_use]
+    pub fn with_strings(mut self, strings: Option<&'a StringTable>) -> Self {
+        self.strings = strings;
         self
     }
 }
@@ -988,7 +1018,7 @@ impl<'a> LowerCtx<'a> {
     /// width-typed shape is wrapped in `((<width>)v)` so arithmetic
     /// and pointer arithmetic stay consistent (B3.15).
     fn lower_operand_for_use(&self, op: &Operand) -> Expr {
-        let raw = lower_operand(op, self.recovered.names);
+        let raw = lower_operand(op, self.recovered.names, self.recovered.strings);
         match op {
             Operand::Value(v) => {
                 let declared = self.declared(*v);
@@ -1006,7 +1036,7 @@ impl<'a> LowerCtx<'a> {
     /// resulting cast pair is identity when the target is also
     /// `int64_t`.
     fn lower_operand_with_type(&self, op: &Operand) -> (Expr, CType) {
-        let raw = lower_operand(op, self.recovered.names);
+        let raw = lower_operand(op, self.recovered.names, self.recovered.strings);
         let ty = match op {
             Operand::Value(v) => self.declared(*v),
             Operand::Const(_) | Operand::Undef => CType::i64(),
@@ -1214,7 +1244,7 @@ impl<'a> LowerCtx<'a> {
                 // identity casts. The outer Assign re-adds the
                 // declared cast on the LHS if the lattice promoted
                 // the dst (B3.15).
-                let raw = lower_operand(src, self.recovered.names);
+                let raw = lower_operand(src, self.recovered.names, self.recovered.strings);
                 let source_ty = match src {
                     Operand::Value(v) => self.declared(*v),
                     Operand::Const(_) | Operand::Undef => CType::i64(),
@@ -1425,13 +1455,42 @@ pub fn map_ir_type(ty: &IrType) -> Option<CType> {
     }
 }
 
-fn lower_operand(op: &Operand, names: Option<&NameTable>) -> Expr {
+fn lower_operand(op: &Operand, names: Option<&NameTable>, strings: Option<&StringTable>) -> Expr {
     match op {
         Operand::Value(v) => Expr::Var(value_name(*v, names)),
-        Operand::Const(c) => Expr::IntLit {
-            value: *c,
-            signed: true,
-        },
+        Operand::Const(c) => {
+            // B3.32: a constant whose value matches a recovered string
+            // pointer surfaces as `Expr::StringLit` so the reader sees
+            // the literal text the call references instead of the bare
+            // address. Cast through `u64` because string-table keys
+            // are absolute virtual addresses (always non-negative on
+            // every supported target) and `Operand::Const` carries
+            // them as a signed `i64`; a negative value will never
+            // match a real string-section address.
+            //
+            // The literal is wrapped in an explicit `(int64_t)` cast
+            // so it keeps the integer slot the surrounding call /
+            // assignment expects. Without the cast, modern gcc
+            // escalates `-Wint-conversion` to an error when a
+            // `char *` literal lands in a `long long`-typed call
+            // parameter, breaking the round-trip compile gate
+            // (B2.8). The cast keeps the literal readable in the
+            // source and keeps the gate green.
+            if *c >= 0 {
+                if let Some(table) = strings {
+                    if let Some(text) = table.get(&(*c as u64)) {
+                        return Expr::Cast {
+                            ty: CType::i64(),
+                            expr: Box::new(Expr::StringLit(text.clone())),
+                        };
+                    }
+                }
+            }
+            Expr::IntLit {
+                value: *c,
+                signed: true,
+            }
+        }
         Operand::Undef => Expr::Undef,
     }
 }
@@ -1743,6 +1802,192 @@ mod tests {
             panic!("expected Call");
         };
         assert_eq!(**target, Expr::Var("puts".into()));
+    }
+
+    /// B3.32: a call-arg `Operand::Const(c)` whose value matches a
+    /// recovered string-pointer index entry lowers to
+    /// `Cast { ty: int64_t, expr: StringLit(text) }`. The explicit
+    /// cast keeps the integer slot the surrounding call cast
+    /// expects, and the literal surfaces next to the call instead
+    /// of the bare integer the SSA carries.
+    #[test]
+    fn b3_32_call_arg_const_pointer_lowers_to_string_lit() {
+        let ssa = SsaFunction {
+            function_address: 0,
+            function_name: None,
+            blocks: vec![SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![SsaInstruction {
+                    dst: None,
+                    op: SsaOp::Call {
+                        target: Some(0xdead_beef),
+                        args: vec![Operand::Const(0x2004)],
+                    },
+                }],
+                terminator: SsaTerminator::Return { value: None },
+            }],
+            entry: 0,
+            variables: vec![],
+            values: vec![],
+            evidence: ev(),
+        };
+        let sem = SemFunction {
+            function_address: 0,
+            function_name: None,
+            body: SemBlock {
+                stmts: vec![
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 0 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Return {
+                        value: None,
+                        evidence: ev(),
+                    },
+                ],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        };
+        let mut strings = StringTable::new();
+        strings.insert(0x2004, "hello\n".into());
+        let recovered = Recovered::default().with_strings(Some(&strings));
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        let CStmt::ExprStmt(Expr::Call { args, .. }) = &f.body.stmts[0] else {
+            panic!("expected Call");
+        };
+        assert_eq!(args.len(), 1);
+        match &args[0] {
+            Expr::Cast { ty, expr } => {
+                assert_eq!(*ty, CType::i64());
+                match expr.as_ref() {
+                    Expr::StringLit(text) => assert_eq!(text, "hello\n"),
+                    other => panic!("expected StringLit inside Cast, got {other:?}"),
+                }
+            }
+            other => panic!("expected Cast(StringLit), got {other:?}"),
+        }
+    }
+
+    /// B3.32: when the strings table is `None` (the default), the
+    /// constant pointer keeps the pre-B3.32 `Expr::IntLit` surface.
+    /// No regression for backends or callers that have not opted in.
+    #[test]
+    fn b3_32_no_string_table_keeps_int_lit_surface() {
+        let ssa = SsaFunction {
+            function_address: 0,
+            function_name: None,
+            blocks: vec![SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![SsaInstruction {
+                    dst: None,
+                    op: SsaOp::Call {
+                        target: Some(0xdead_beef),
+                        args: vec![Operand::Const(0x2004)],
+                    },
+                }],
+                terminator: SsaTerminator::Return { value: None },
+            }],
+            entry: 0,
+            variables: vec![],
+            values: vec![],
+            evidence: ev(),
+        };
+        let sem = SemFunction {
+            function_address: 0,
+            function_name: None,
+            body: SemBlock {
+                stmts: vec![
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 0 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Return {
+                        value: None,
+                        evidence: ev(),
+                    },
+                ],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        };
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &Recovered::default());
+        let CStmt::ExprStmt(Expr::Call { args, .. }) = &f.body.stmts[0] else {
+            panic!("expected Call");
+        };
+        assert_eq!(
+            args[0],
+            Expr::IntLit {
+                value: 0x2004,
+                signed: true,
+            }
+        );
+    }
+
+    /// B3.32: a non-matching constant (no entry in the strings table)
+    /// keeps the integer-literal surface even when the table is set.
+    /// Guards against the substitution firing on every constant.
+    #[test]
+    fn b3_32_non_matching_const_keeps_int_lit_surface() {
+        let ssa = SsaFunction {
+            function_address: 0,
+            function_name: None,
+            blocks: vec![SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![SsaInstruction {
+                    dst: None,
+                    op: SsaOp::Call {
+                        target: Some(0xdead_beef),
+                        args: vec![Operand::Const(1)],
+                    },
+                }],
+                terminator: SsaTerminator::Return { value: None },
+            }],
+            entry: 0,
+            variables: vec![],
+            values: vec![],
+            evidence: ev(),
+        };
+        let sem = SemFunction {
+            function_address: 0,
+            function_name: None,
+            body: SemBlock {
+                stmts: vec![
+                    SemStmt::Instr {
+                        r: SsaRef { block: 0, index: 0 },
+                        evidence: ev(),
+                    },
+                    SemStmt::Return {
+                        value: None,
+                        evidence: ev(),
+                    },
+                ],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        };
+        let mut strings = StringTable::new();
+        // Same table the matching test uses — but the const here is `1`,
+        // which is never a real string-section address.
+        strings.insert(0x2004, "hello\n".into());
+        let recovered = Recovered::default().with_strings(Some(&strings));
+        let f = lower_function(&ssa, &sem, &NameResolver::new(), &recovered);
+        let CStmt::ExprStmt(Expr::Call { args, .. }) = &f.body.stmts[0] else {
+            panic!("expected Call");
+        };
+        assert_eq!(
+            args[0],
+            Expr::IntLit {
+                value: 1,
+                signed: true,
+            }
+        );
     }
 
     #[test]
