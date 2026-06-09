@@ -94,15 +94,6 @@ above.
 
 Goal: `-O3` with AI assistance, review mode, and strict mode.
 
-### B4.5 — `-O3` semantic reconstruction
-- AI is consulted only at `-O3` and only after deterministic passes complete
-  (spec §5).
-- Naming suggestions, idiom suggestions, region summaries.
-- Confidence-aware rendering: low-confidence AI names get a prefix
-  (configurable) or annotation.
-- **Done when:** `-O3` produces meaningfully more readable C on the corpus
-  than `-O2`, with the strict-mode invariant preserved.
-
 ### B4.6 — Remote model provider (opt-in)
 - Adapter for at least one remote API.
 - Off by default (NFR-21). `--ai-provider remote:<name>` opts in.

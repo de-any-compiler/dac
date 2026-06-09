@@ -29,6 +29,15 @@ fn elf_fixture() -> PathBuf {
     fixture_path("hello-x86_64")
 }
 
+/// Stripped variant of [`elf_fixture`] — same binary, symbol table
+/// gone. Used by B4.5 / B4.4-migrated tests because the AI proposal
+/// pass only issues prompts for functions with synthesised `fn_<addr>`
+/// names; an un-stripped fixture would skip every function and yield
+/// `total=0`.
+fn elf_stripped_fixture() -> PathBuf {
+    fixture_path("hello-x86_64-stripped")
+}
+
 fn pe_fixture() -> PathBuf {
     fixture_path("hello-x86_64.exe")
 }
@@ -563,26 +572,31 @@ fn b4_3_ai_strict_works_with_default_provider() {
     );
 }
 
-/// B4.4 — `--ai-review` adds a review-mode side artifact (spec §13.6,
-/// FR-33). The block contains the verifier's verdict for every
-/// provider proposal as a before/after diff. The world model is still
-/// empty at this batch, so every proposal renders as
-/// `reject:unknown-target` and the `-` side is `(unknown target)`.
-/// The flag is behavioural — the manifest stays unchanged.
+/// B4.4 (migrated by B4.5) — `--ai-review` adds a review-mode side
+/// artifact (spec §13.6, FR-33). The block contains the verifier's
+/// verdict for every provider proposal as a before/after diff. B4.5
+/// gates the AI pass behind `-O3` (spec §5) and populates the world
+/// model from the recovered [`FunctionSet`]; the test runs at `-O3`
+/// against a stripped fixture so the per-function loop has
+/// synthesised `fn_<addr>` placeholders to propose against, and the
+/// verifier accepts the local-stub renames (no name collisions,
+/// lenient mode). The flag is still behavioural — the manifest
+/// stays unchanged.
 #[test]
 fn b4_4_ai_review_emits_review_block_on_stdout() {
-    let path = elf_fixture();
+    let path = elf_stripped_fixture();
     let out = Command::cargo_bin("dac")
         .expect("dac binary present")
+        .arg("-O3")
         .arg("--ai-provider")
         .arg("local")
         .arg("--ai-review")
         .arg(&path)
         .output()
-        .expect("run dac --ai-review --ai-provider local");
+        .expect("run dac -O3 --ai-review --ai-provider local");
     assert!(
         out.status.success(),
-        "--ai-review --ai-provider local should exit 0",
+        "-O3 --ai-review --ai-provider local should exit 0",
     );
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
     assert!(
@@ -601,33 +615,37 @@ fn b4_4_ai_review_emits_review_block_on_stdout() {
         stdout.contains(";; mode:     lenient"),
         "default mode must render as lenient:\n{stdout}",
     );
-    // Local stub returns exactly one delta against the empty world.
+    // Stripped hello fixture has 4 synthesised `fn_<addr>`
+    // placeholders; the local stub returns one rename each, the
+    // verifier's world recognises every target, and every rename
+    // passes lenient verification (no name collisions).
     assert!(
-        stdout.contains(";; deltas:   total=1 accepted=0 rejected=1"),
+        stdout.contains(";; deltas:   total=4 accepted=4 rejected=0"),
         "review block must summarise total/accepted/rejected:\n{stdout}",
     );
     assert!(
-        stdout.contains("reject:unknown-target"),
-        "review block must surface the unknown-target rejection tag:\n{stdout}",
+        stdout.contains("accept"),
+        "review block must surface accepted outcomes:\n{stdout}",
     );
     assert!(
-        stdout.contains("-   (unknown target)"),
-        "diff `-` side must mark the unknown target:\n{stdout}",
+        stdout.contains("+   name:"),
+        "diff `+` side must surface the proposed new name:\n{stdout}",
     );
 }
 
-/// B4.4 — `--ai-review` is omitted by default. No review block, no
-/// `.review.txt` sidecar, no manifest churn.
+/// B4.4 (migrated by B4.5) — `--ai-review` is omitted by default. No
+/// review block, no `.review.txt` sidecar, no manifest churn.
 #[test]
 fn b4_4_review_block_absent_without_flag() {
-    let path = elf_fixture();
+    let path = elf_stripped_fixture();
     let out = Command::cargo_bin("dac")
         .expect("dac binary present")
+        .arg("-O3")
         .arg("--ai-provider")
         .arg("local")
         .arg(&path)
         .output()
-        .expect("run dac --ai-provider local");
+        .expect("run dac -O3 --ai-provider local");
     assert!(out.status.success(), "default run should still exit 0");
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
     assert!(
@@ -640,20 +658,22 @@ fn b4_4_review_block_absent_without_flag() {
     );
 }
 
-/// B4.4 — `--ai-review --ai-strict` composes: strict mode flips the
-/// header without changing the side-artifact shape.
+/// B4.4 (migrated by B4.5) — `--ai-review --ai-strict` composes:
+/// strict mode flips the header without changing the side-artifact
+/// shape.
 #[test]
 fn b4_4_review_renders_strict_header_when_strict_is_set() {
-    let path = elf_fixture();
+    let path = elf_stripped_fixture();
     let out = Command::cargo_bin("dac")
         .expect("dac binary present")
+        .arg("-O3")
         .arg("--ai-provider")
         .arg("local")
         .arg("--ai-review")
         .arg("--ai-strict")
         .arg(&path)
         .output()
-        .expect("run dac --ai-review --ai-strict --ai-provider local");
+        .expect("run dac -O3 --ai-review --ai-strict --ai-provider local");
     assert!(out.status.success(), "combination should still exit 0");
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
     assert!(
@@ -662,14 +682,15 @@ fn b4_4_review_renders_strict_header_when_strict_is_set() {
     );
 }
 
-/// B4.4 — review block is stable across two runs against the same
-/// input (deterministic side artifact — spec §13.6 "human-readable
-/// and stable").
+/// B4.4 (migrated by B4.5) — review block is stable across two runs
+/// against the same input (deterministic side artifact — spec §13.6
+/// "human-readable and stable").
 #[test]
 fn b4_4_review_block_is_stable_across_two_runs() {
-    let path = elf_fixture();
+    let path = elf_stripped_fixture();
     let first = Command::cargo_bin("dac")
         .expect("dac binary present")
+        .arg("-O3")
         .arg("--ai-provider")
         .arg("local")
         .arg("--ai-review")
@@ -678,6 +699,7 @@ fn b4_4_review_block_is_stable_across_two_runs() {
         .expect("first run");
     let second = Command::cargo_bin("dac")
         .expect("dac binary present")
+        .arg("-O3")
         .arg("--ai-provider")
         .arg("local")
         .arg("--ai-review")
@@ -700,24 +722,220 @@ fn b4_4_review_block_is_stable_across_two_runs() {
     );
 }
 
-/// B4.4 — with `--no-ai`, review mode has nothing to record but must
-/// still produce a side artifact with `total=0`, so a reviewer can
-/// see "review mode was on, no proposals were returned".
+/// B4.4 (migrated by B4.5) — with `--no-ai`, review mode has nothing
+/// to record but must still produce a side artifact with `total=0`, so
+/// a reviewer can see "review mode was on, no proposals were
+/// returned".
 #[test]
 fn b4_4_review_block_renders_empty_under_no_ai() {
-    let path = elf_fixture();
+    let path = elf_stripped_fixture();
     let out = Command::cargo_bin("dac")
         .expect("dac binary present")
+        .arg("-O3")
         .arg("--no-ai")
         .arg("--ai-review")
         .arg(&path)
         .output()
-        .expect("run dac --no-ai --ai-review");
+        .expect("run dac -O3 --no-ai --ai-review");
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
     assert!(
         stdout.contains(";; deltas:   total=0 accepted=0 rejected=0"),
         "empty review block must still summarise zero counts:\n{stdout}",
+    );
+}
+
+/// B4.5 — at `-O3` the AI proposal pass runs, the verifier accepts
+/// the local stub's renames against the synthesised `fn_<addr>`
+/// world, and the C backend prefixes each accepted name with `ai_`
+/// (FR-32, ARCHITECTURE §13). The done-when "AI is consulted only at
+/// `-O3`" is observable here: the prefix would not appear if the pass
+/// had been skipped.
+#[test]
+fn b4_5_o3_applies_ai_prefixed_renames_to_synthesised_function_names() {
+    let path = elf_stripped_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("-O3")
+        .arg("--target")
+        .arg("c")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg(&path)
+        .output()
+        .expect("run dac -O3 --target c --ai-provider local");
+    assert!(out.status.success(), "-O3 run should exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("ai_dac_local_sub_"),
+        "at least one ai_-prefixed function name must appear in C output:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("dac: ai-suggested rename (Speculative, conf="),
+        "each AI-renamed function must carry an ai-suggested banner:\n{stdout}",
+    );
+}
+
+/// B4.5 — the AI pass is **not** run at `-O2`. The corollary is
+/// observable as the absence of any `ai_`-prefixed function name and
+/// the absence of the ai-suggested banner. Demonstrates the "AI is
+/// consulted only at `-O3`" gate (spec §5).
+#[test]
+fn b4_5_o2_does_not_consult_ai() {
+    let path = elf_stripped_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("-O2")
+        .arg("--target")
+        .arg("c")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-review")
+        .arg(&path)
+        .output()
+        .expect("run dac -O2 --target c --ai-provider local --ai-review");
+    assert!(out.status.success(), "-O2 run should exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        !stdout.contains("ai_dac_local_sub_"),
+        "no ai_-prefixed names at -O2:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("dac: ai-suggested"),
+        "no ai-suggested banner at -O2:\n{stdout}",
+    );
+    // The review block is inert below -O3 (the AI pass returns an
+    // empty result and the review_text is `None`) so `--ai-review`
+    // does not produce a side artifact.
+    assert!(
+        !stdout.contains(";; ---- ai review"),
+        "review block must not appear at -O2 even with --ai-review:\n{stdout}",
+    );
+}
+
+/// B4.5 — `--ai-strict` preserves observed names: the symbol-table
+/// fixture's `main` is recorded as `Source::Observed` in the world
+/// model and strict mode rejects any rename against an observed
+/// target (ARCHITECTURE §13.5). Note the proposal-pass policy also
+/// skips functions with a recovered symbol-table name, so `main`
+/// keeps its name regardless of `--ai-strict`; this test asserts the
+/// invariant rather than the policy step that enforces it.
+#[test]
+fn b4_5_ai_strict_preserves_observed_main_at_o3() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("-O3")
+        .arg("--target")
+        .arg("c")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-strict")
+        .arg(&path)
+        .output()
+        .expect("run dac -O3 --ai-strict --ai-provider local");
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("int main(void)") || stdout.contains("int main("),
+        "observed `main` symbol must survive --ai-strict at -O3:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("ai_dac_local_sub_"),
+        "no synthesised symbols in the symbol-table fixture → no ai_ renames:\n{stdout}",
+    );
+}
+
+/// B4.5 — `-O3` AI output is deterministic. The local stub is a pure
+/// function of `(prompt, bundle)` and the per-function loop iterates
+/// over `FunctionSet::functions` in ascending-address order; two runs
+/// against the same input must produce a byte-identical C
+/// translation unit (NFR-9).
+#[test]
+fn b4_5_o3_c_unit_is_stable_across_two_runs() {
+    let path = elf_stripped_fixture();
+    let run = || -> String {
+        let out = Command::cargo_bin("dac")
+            .expect("dac binary present")
+            .arg("-O3")
+            .arg("--target")
+            .arg("c")
+            .arg("--ai-provider")
+            .arg("local")
+            .arg(&path)
+            .output()
+            .expect("run dac");
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).expect("utf-8 stdout")
+    };
+    let a = run();
+    let b = run();
+    let extract_source = |s: &str| -> String {
+        // The C unit is delimited by `;; ---- target source` on
+        // stdout. The tracing INFO lines that precede the listing
+        // carry timestamps so we cannot diff full stdout — extract
+        // the source block instead.
+        let marker = ";; ---- target source";
+        let pos = s.find(marker).expect("source block present");
+        s[pos..].to_string()
+    };
+    assert_eq!(
+        extract_source(&a),
+        extract_source(&b),
+        "C unit must be byte-identical across two -O3 runs",
+    );
+}
+
+/// B4.5 — `--ai-name-prefix` overrides the default `ai_` prefix.
+/// Visible end-to-end: AI-renamed function names land with the
+/// configured prefix instead of `ai_`.
+#[test]
+fn b4_5_ai_name_prefix_overrides_default() {
+    let path = elf_stripped_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("-O3")
+        .arg("--target")
+        .arg("c")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-name-prefix")
+        .arg("synth_")
+        .arg(&path)
+        .output()
+        .expect("run dac with custom --ai-name-prefix");
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("synth_dac_local_sub_"),
+        "custom prefix must surface on renamed functions:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("ai_dac_local_sub_"),
+        "default prefix must not appear when overridden:\n{stdout}",
+    );
+}
+
+/// B4.5 — `--ai-name-prefix` rejects values that would produce an
+/// invalid C identifier when concatenated with the stub's name. The
+/// CLI must surface a clean error before running the pipeline so the
+/// user does not waste a full analysis on a malformed prefix.
+#[test]
+fn b4_5_ai_name_prefix_rejects_invalid_identifier() {
+    let path = elf_stripped_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("-O3")
+        .arg("--ai-name-prefix")
+        .arg("3bad")
+        .arg(&path)
+        .output()
+        .expect("run dac with invalid --ai-name-prefix");
+    assert!(!out.status.success(), "must reject leading-digit prefix");
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert!(
+        stderr.contains("invalid --ai-name-prefix"),
+        "stderr must explain why the prefix was rejected:\n{stderr}",
     );
 }
 

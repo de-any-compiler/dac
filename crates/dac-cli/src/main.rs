@@ -33,8 +33,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use dac_ai::{
-    select_provider, templates as ai_templates, EvidenceBundle as AiEvidenceBundle,
-    ProviderSelection as AiProviderSelection, SelectionReason as AiSelectionReason,
+    select_provider, templates as ai_templates, Delta as AiDelta,
+    EvidenceBundle as AiEvidenceBundle, ProviderSelection as AiProviderSelection,
+    SelectionReason as AiSelectionReason, SymbolRef as AiSymbolRef,
 };
 use dac_analysis::cfg::{build_cfgs, render_dot_all};
 use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, resolve_subject};
@@ -56,7 +57,7 @@ use dac_backend_cpp::{
     default_includes as cpp_default_includes, emit as cpp_emit, lower_unit as cpp_lower_unit,
 };
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
-use dac_core::{init_tracing, EvidenceGraph, EvidenceNode};
+use dac_core::{init_tracing, Confidence, EvidenceGraph, Source};
 use dac_hints::{HintError, Hints};
 use dac_recovery::{detect_thunks, discover_functions, FunctionSet, FunctionTaxonomy};
 use dac_verify::{render_review, verify_delta, KnownFacts, ReviewLog, VerifyMode, VerifyOutcome};
@@ -177,20 +178,6 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let manifest = build_manifest(&input_label, &model, args);
     let manifest_json = render_manifest_json(&manifest);
 
-    // B4.1 / B4.2: resolve `--no-ai` / `--ai-provider` to a concrete
-    // `AiProvider` and exercise a single propose call so the adapter
-    // trait, the delta protocol, the dispatch table
-    // (`dac_ai::select_provider`), and the versioned prompt-template
-    // registry (`dac_ai::templates`) all run end-to-end on every input.
-    // `NullProvider` is the default at this batch — real model
-    // adapters are wired in piecewise: B4.2 wired the rule-based
-    // `LocalProvider` behind `--ai-provider local`, B4.6 will wire the
-    // HTTP `local:llama` / `local:ollama` and remote-API variants. The
-    // determinism corridor (I-4, NFR-9) stays intact because every
-    // shipping backend is content-addressed and the proposals are not
-    // yet applied (`dac-verify` gates application in B4.3).
-    let review_text = run_ai_proposal_pass(args, &input_label, &model);
-
     let hints = match args.hints.as_deref() {
         Some(p) => Hints::load_from_path(p).map_err(hints_error_to_core)?,
         None => Hints::new(),
@@ -207,6 +194,12 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let callgraph_text;
     let xrefs_text;
     let annotations_doc;
+    // B4.5: the AI proposal pass runs only at `-O3` and only after
+    // every deterministic pass has completed. We declare the result
+    // up here so both backend branches can populate it; the
+    // unsupported-arch arm produces an empty result because it has no
+    // recovered functions to issue prompts for.
+    let ai_result: AiProposalResult;
     match &backend {
         Some(b) => {
             let mut graph = EvidenceGraph::new();
@@ -260,6 +253,11 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
+            // B4.5: AI is consulted only at `-O3`, and only after every
+            // deterministic pass has completed (spec §5). The proposal
+            // pass returns an empty result at any other opt level, so
+            // `--ai-review` and `--ai-strict` are inert below `-O3`.
+            ai_result = run_ai_proposal_pass(args, &input_label, &functions);
             let lift_stats = lift_outcomes
                 .as_deref()
                 .map(LiftStats::from)
@@ -304,6 +302,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 lift_outcomes.as_deref(),
                 &annotations_doc,
                 Some(&mut graph),
+                &ai_result.name_overrides,
             );
             callgraph_text = if args.emit_callgraph {
                 let cg = build_call_graph(&model, &bytes, b.decoder.as_ref(), &functions);
@@ -356,6 +355,10 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 &empty_hints,
                 &[],
             );
+            // No recovered functions → nothing for the AI pass to
+            // propose against. Skip the world build + propose loop and
+            // hand the renderer an empty override table.
+            ai_result = AiProposalResult::default();
             source_text = render_source_text(
                 args,
                 &input_label,
@@ -364,6 +367,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                 None,
                 &annotations_doc,
                 Some(&mut empty_graph),
+                &ai_result.name_overrides,
             );
             callgraph_text = if args.emit_callgraph {
                 Some(unsupported_arch_callgraph(&model))
@@ -399,7 +403,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         callgraph_text.as_deref(),
         xrefs_text.as_deref(),
         annotations_text.as_deref(),
-        review_text.as_deref(),
+        ai_result.review_text.as_deref(),
     )
 }
 
@@ -492,6 +496,7 @@ fn unsupported_arch_callgraph(model: &BinaryModel) -> String {
 /// `--target cpp` continues to emit class-shaped stubs because the
 /// C++ AST does not model bodies. Extending the AST to carry lowered
 /// bodies is on the B3 follow-up shelf in PLAN.md.
+#[allow(clippy::too_many_arguments)]
 fn render_source_text(
     args: &Args,
     input_label: &str,
@@ -500,6 +505,7 @@ fn render_source_text(
     lift_outcomes: Option<&[LiftOutcome]>,
     annotations: &AnnotationDoc,
     graph: Option<&mut EvidenceGraph>,
+    ai_name_overrides: &std::collections::BTreeMap<u64, AiNameOverride>,
 ) -> Option<String> {
     if args.opt == OptLevel::O0 {
         return None;
@@ -514,6 +520,8 @@ fn render_source_text(
             args.debug,
             args.hide_crt,
             args.opt,
+            ai_name_overrides,
+            &args.ai_name_prefix,
         )),
         Target::Cpp => Some(render_cpp_unit(
             input_label,
@@ -536,8 +544,10 @@ fn render_c_unit(
     debug: bool,
     hide_crt: bool,
     opt: OptLevel,
+    ai_name_overrides: &std::collections::BTreeMap<u64, AiNameOverride>,
+    ai_name_prefix: &str,
 ) -> String {
-    let resolver = build_c_name_resolver(functions);
+    let resolver = build_c_name_resolver(functions, ai_name_overrides, ai_name_prefix);
     // B3.32: build the absolute-address → recovered-text index from
     // the per-section `StringRef` entries the binfmt scanner already
     // populated. The C lowering pass consults this through
@@ -597,16 +607,30 @@ fn render_c_unit(
             extern_items.push(CItem::ExternDecl(hidden_crt_extern_decl(f, outcome, debug)));
             continue;
         }
+        let ai_override = ai_name_overrides.get(&f.address);
         if let dac_recovery::FunctionKind::Thunk { target } = &f.kind {
-            let mut thunk = lower_thunk_function(f, *target, &resolver, debug);
+            let mut thunk =
+                lower_thunk_function(f, *target, &resolver, debug, ai_override, ai_name_prefix);
+            thunk.leading_comment = prepend_ai_suggested_banner(thunk.leading_comment, ai_override);
             thunk.leading_comment = prepend_crt_banner(thunk.leading_comment, f);
             function_items.push(CItem::Function(thunk));
             continue;
         }
-        let mut lowered = lower_one_c_function(f, outcome, annot, &resolver, &string_table, debug);
+        let mut lowered = lower_one_c_function(
+            f,
+            outcome,
+            annot,
+            &resolver,
+            &string_table,
+            debug,
+            ai_override,
+            ai_name_prefix,
+        );
         for decl in lowered.struct_decls {
             typedefs.entry(decl.name.clone()).or_insert(decl);
         }
+        lowered.function.leading_comment =
+            prepend_ai_suggested_banner(lowered.function.leading_comment, ai_override);
         lowered.function.leading_comment = prepend_crt_banner(lowered.function.leading_comment, f);
         function_items.push(CItem::Function(lowered.function));
     }
@@ -638,13 +662,27 @@ fn render_c_unit(
 /// in the resolver keyed by its virtual address; the C backend then
 /// lowers `Call { target: Some(addr), … }` to a named call instead of
 /// the `((void (*)())0xNN)(…)` fallback.
-fn build_c_name_resolver(functions: &FunctionSet) -> CNameResolver {
+///
+/// B4.5: when an AI-supplied rename was accepted for a function, the
+/// resolver registers the prefixed AI name instead so call sites refer
+/// to the function by its AI-supplied identifier — the translation
+/// unit stays coherent (one name per function, used at definition and
+/// every call site).
+fn build_c_name_resolver(
+    functions: &FunctionSet,
+    ai_name_overrides: &std::collections::BTreeMap<u64, AiNameOverride>,
+    ai_name_prefix: &str,
+) -> CNameResolver {
     let mut r = CNameResolver::new();
     for f in &functions.functions {
-        let raw = f
-            .name
-            .clone()
-            .unwrap_or_else(|| format!("fn_{:x}", f.address));
+        let raw = ai_name_overrides
+            .get(&f.address)
+            .map(|o| format!("{ai_name_prefix}{}", o.name))
+            .unwrap_or_else(|| {
+                f.name
+                    .clone()
+                    .unwrap_or_else(|| format!("fn_{:x}", f.address))
+            });
         let name = sanitize_c_identifier(&raw);
         r.insert(f.address, name);
     }
@@ -693,6 +731,8 @@ fn lower_one_c_function(
     resolver: &CNameResolver,
     strings: &CStringTable,
     debug: bool,
+    ai_name_override: Option<&AiNameOverride>,
+    ai_name_prefix: &str,
 ) -> LoweredFunction {
     // B3.6: an applied `rename` hint takes precedence over the
     // recovered symbol. The sanitiser still runs so a hint that
@@ -702,11 +742,17 @@ fn lower_one_c_function(
         LiftOutcome::Real { facts, .. } => facts.user_hint.as_ref().and_then(|h| h.rename.clone()),
         LiftOutcome::Stub { .. } => None,
     });
-    let raw_name = renamed.unwrap_or_else(|| {
-        f.name
+    // B4.5: AI-supplied renames win over the recovered symbol but
+    // *not* over an explicit user `[[rename]]` hint — user intent
+    // outranks the model (FR-20, FR-32).
+    let raw_name = match (renamed, ai_name_override) {
+        (Some(user), _) => user,
+        (None, Some(o)) => format!("{ai_name_prefix}{}", o.name),
+        (None, None) => f
+            .name
             .clone()
-            .unwrap_or_else(|| format!("fn_{:x}", f.address))
-    });
+            .unwrap_or_else(|| format!("fn_{:x}", f.address)),
+    };
     let sanitized = sanitize_c_identifier(&raw_name);
     match outcome {
         Some(LiftOutcome::Real { ssa, sem, facts }) => {
@@ -1021,11 +1067,19 @@ fn lower_thunk_function(
     target: u64,
     resolver: &CNameResolver,
     debug: bool,
+    ai_name_override: Option<&AiNameOverride>,
+    ai_name_prefix: &str,
 ) -> CFunction {
-    let raw_name = f
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("fn_{:x}", f.address));
+    // B4.5: when an AI rename was accepted for this thunk, the
+    // resolver already maps the address to the prefixed AI name; pick
+    // it up here so the function definition matches its call sites.
+    let raw_name = match ai_name_override {
+        Some(o) => format!("{ai_name_prefix}{}", o.name),
+        None => f
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("fn_{:x}", f.address)),
+    };
     let sanitized = sanitize_c_identifier(&raw_name);
     let target_name = resolver.get(&target).cloned();
     let call = match &target_name {
@@ -1087,6 +1141,30 @@ fn prepend_crt_banner(existing: Option<String>, f: &dac_recovery::Function) -> O
     let Some(banner) = crt_banner_line(f) else {
         return existing;
     };
+    Some(match existing {
+        Some(rest) => format!("{banner}\n{rest}"),
+        None => banner,
+    })
+}
+
+/// B4.5: prepend an "ai-suggested" banner to a function's leading
+/// comment when an AI-supplied rename was accepted. The banner records
+/// the proposer's self-reported confidence + source so a reader can
+/// see *how strongly* the model believed in the rename without
+/// consulting the manifest (FR-37). Functions without an AI override
+/// pass through unchanged.
+fn prepend_ai_suggested_banner(
+    existing: Option<String>,
+    o: Option<&AiNameOverride>,
+) -> Option<String> {
+    let Some(over) = o else {
+        return existing;
+    };
+    let banner = format!(
+        "dac: ai-suggested rename ({:?}, conf={:.2})",
+        over.confidence.source(),
+        over.confidence.value()
+    );
     Some(match existing {
         Some(rest) => format!("{banner}\n{rest}"),
         None => banner,
@@ -1415,34 +1493,80 @@ fn sanitize_dot_ident(s: &str) -> String {
         .collect()
 }
 
-/// B4.1 / B4.2: resolve the CLI's `--no-ai` / `--ai-provider` flags onto
-/// an [`dac_ai::AiProvider`] and exercise a single propose call to prove
-/// the dispatch table, the prompt + bundle types, the versioned prompt
-/// templates ([`ai_templates`]), and the delta enum are reachable
-/// end-to-end. The chosen provider is recorded via `tracing::info!`
-/// (`reason`, `requested`, `proposals`) so the auditor can see the
-/// resolved provider in `--debug` runs and in the `--json` log without
-/// affecting stdout / golden manifests.
+/// One accepted AI-supplied rename for a recovered function.
 ///
-/// `Fallback` requests (e.g. `--ai-provider local:llama` until the
-/// HTTP-backed adapters land) are surfaced with `tracing::warn!` so the
-/// user knows their requested provider was downgraded. The
-/// deterministic corridor stays intact because the actual provider is
-/// still `NullProvider` in that branch and the rule-based
-/// [`dac_ai::LocalProvider`] is a pure function of its inputs.
+/// The `name` is the provider's suggestion (without the `--ai-name-prefix`
+/// — the prefix is applied at render time so a CLI override changes the
+/// surface without re-running the proposal pass). The `confidence` is
+/// the provider's reported confidence on the rename; the C backend uses
+/// `value()` and `source()` to print a "ai-suggested" comment above the
+/// function so a reviewer can see the proposer's self-reported strength
+/// without consulting the manifest (FR-37).
+#[derive(Debug, Clone)]
+struct AiNameOverride {
+    name: String,
+    confidence: Confidence,
+}
+
+/// What `run_ai_proposal_pass` returns to the orchestrator.
 ///
-/// B4.2 swaps the empty evidence bundle and the ad-hoc prompt of B4.1
-/// for the `pipeline-summary` template + a one-node bundle so the
-/// rule-based local provider has something to cite. Proposals are
-/// logged but **not applied** — delta verification (B4.3) and the
-/// review-mode + `-O3` paths (B4.4 / B4.5) gate application.
+/// `review_text` is the rendered `--ai-review` side artifact (spec
+/// §13.6, FR-33) — `Some` only when `--ai-review` is set *and* the AI
+/// pass actually ran (i.e. `-O3`). `name_overrides` maps every
+/// recovered function's entry address to the AI's accepted rename
+/// (when one survived verification); the C backend consults it through
+/// [`build_c_name_resolver`] / [`lower_one_c_function`] to swap
+/// `fn_<addr>` placeholders for the AI-supplied identifier.
+#[derive(Debug, Clone, Default)]
+struct AiProposalResult {
+    review_text: Option<String>,
+    name_overrides: std::collections::BTreeMap<u64, AiNameOverride>,
+}
+
+/// B4.5: run the AI proposal pass.
 ///
-/// B4.4 (spec §13.6, FR-33): when `--ai-review` is set, every judged
-/// delta is recorded in a [`ReviewLog`] and returned to the caller as
-/// a rendered side artifact. The artifact is informational only — no
-/// proposal is applied either way; review mode just makes the
-/// verifier's verdict legible to a human reviewer.
-fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) -> Option<String> {
+/// Gating (spec §5): AI is consulted only at `-O3`, and only after every
+/// deterministic pass has completed (the orchestrator therefore calls
+/// this *after* `lift_all` + `apply_void_return_inference`). At any
+/// other opt level the function early-returns an empty result; the
+/// `--ai-review` flag is inert because no proposals are issued, and the
+/// review log header is suppressed so a reviewer never sees an empty
+/// block at `-O2` they would have to interpret.
+///
+/// Per-function loop: every recovered function gets one
+/// [`PromptKind::NameSuggestion`] prompt rendered from the
+/// `rename-symbol` template. The local stub picks an arbitrary
+/// `SymbolRef` from the prompt hash; the orchestrator rebinds it to
+/// `SymbolRef(f.address)` before verification so the verifier's world
+/// model (built from the recovered [`FunctionSet`]) can judge the
+/// proposal against real recovered state.
+///
+/// World population: every recovered function lands in [`KnownFacts`] as
+/// a [`SymbolRef`] keyed by its entry address. Functions whose name came
+/// from the binary's symbol table register as [`Source::Observed`];
+/// synthesized `fn_<addr>` placeholders register as
+/// [`Source::Speculative`]. `--ai-strict` therefore blocks any rename
+/// against an observed name but lets AI suggest names for the
+/// synthesized placeholders — exactly the corridor B4.5 wants
+/// (ARCHITECTURE §13.5).
+///
+/// Determinism (NFR-9): iteration over `FunctionSet::functions` is in
+/// recovered (ascending-address) order, the local stub is a pure
+/// function of `(prompt, bundle)`, and the rebinding step is pure. Two
+/// runs against the same input produce a byte-identical
+/// `AiProposalResult`.
+fn run_ai_proposal_pass(
+    args: &Args,
+    input_label: &str,
+    functions: &FunctionSet,
+) -> AiProposalResult {
+    if args.opt != OptLevel::O3 {
+        // AI is consulted only at -O3 (spec §5). At lower opt levels
+        // the deterministic pipeline is the entire pipeline; even
+        // `--ai-review` and `--ai-strict` are inert because no
+        // proposals are issued.
+        return AiProposalResult::default();
+    }
     let selection: AiProviderSelection = select_provider(args.no_ai, args.ai_provider.as_deref());
     if selection.reason == AiSelectionReason::Fallback {
         tracing::warn!(
@@ -1459,103 +1583,169 @@ fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) -> 
             "selected ai provider"
         );
     }
-    // B4.2: build the `pipeline-summary` prompt + a one-handle
-    // evidence bundle so the local stub provider has something to
-    // cite. The `Bytes { start: 0, end: model.size }` node represents
-    // "the model has seen the input header" — the smallest honest
-    // citation for a once-per-run prompt. Future batches (B4.5) will
-    // issue per-function prompts with richer bundles drawn from the
-    // recovered evidence graph.
-    let size_str = model.size.to_string();
-    let prompt = match ai_templates::lookup("pipeline-summary") {
-        Some(t) => ai_templates::render(
-            t,
-            &[
-                ("input", input_label),
-                ("format", model.format.name()),
-                ("arch", model.architecture.name()),
-                ("size", &size_str),
-            ],
-        ),
-        None => {
-            // Defensive: a missing template should never happen — the
-            // registry is static and unit-tested. If it does, log the
-            // condition and skip the propose call so the pipeline
-            // continues to run normally.
-            tracing::warn!("missing prompt template `pipeline-summary`; skipping ai proposal pass");
-            return None;
-        }
-    };
-    let mut graph = EvidenceGraph::new();
-    let ev = graph.add_node(EvidenceNode::Bytes {
-        start: 0,
-        end: model.size as u64,
-    });
-    let bundle = AiEvidenceBundle::from_iter([ev]);
-    // B4.3: `dac-verify` judges each proposal before it could touch the
-    // IR. The world model is empty at this point — B4.4 / B4.5 wire it
-    // from recovered state. With an empty world, every delta rejects as
-    // `unknown-target`, which is the safe default while the apply path
-    // is still being built. The counts surface as tracing fields so a
-    // smoke run can see what the verifier did without parsing the
-    // (still-empty) review artifact (FR-37).
     let mode = if args.ai_strict {
         VerifyMode::Strict
     } else {
         VerifyMode::Lenient
     };
-    let world = KnownFacts::new();
-    // B4.4: build a review log on every run so the recording path
-    // matches the active path; we only render + return it when the
-    // user asked for `--ai-review`. The unused-log case is cheap (an
-    // empty `Vec`) and keeps the code path symmetric so the verifier
-    // sees exactly the same delta stream regardless of review mode.
+    let world = build_ai_world(functions);
     let mut review = ReviewLog::new(selection.provider.name(), mode);
-    match selection.provider.propose(&prompt, &bundle) {
-        Ok(deltas) => {
-            let mut accepted = 0u32;
-            let mut rejected = 0u32;
-            for d in &deltas {
-                let outcome = verify_delta(d, &world, mode);
-                review.record(d, &world, &outcome);
-                match outcome {
-                    VerifyOutcome::Accept => accepted += 1,
-                    VerifyOutcome::Reject(reason) => {
-                        rejected += 1;
-                        tracing::debug!(
-                            provider = selection.provider.name(),
-                            kind = d.kind_tag(),
-                            reason = reason.tag(),
-                            mode = mode.tag(),
-                            "ai delta rejected by dac-verify"
+    let mut name_overrides: std::collections::BTreeMap<u64, AiNameOverride> =
+        std::collections::BTreeMap::new();
+    let mut total_proposals = 0u64;
+    let mut total_accepted = 0u64;
+    let mut total_rejected = 0u64;
+    let mut provider_errors = 0u64;
+    let template = match ai_templates::lookup("rename-symbol") {
+        Some(t) => t,
+        None => {
+            // The registry is static + unit-tested; a missing template
+            // is a programmer error. Log it and degrade to "no AI" so
+            // the pipeline still produces output.
+            tracing::warn!("missing prompt template `rename-symbol`; skipping ai proposal pass");
+            return AiProposalResult::default();
+        }
+    };
+    for f in &functions.functions {
+        // Only ask AI to name functions whose recovered name is a
+        // synthesised `fn_<addr>` placeholder. Symbol-table names are
+        // already trustworthy (I-3: Observed) and a model rename would
+        // just add noise — and in lenient mode the verifier accepts
+        // the rename, which would let the proposer overwrite `main`
+        // with a stub name. The strict-mode guarantee from B4.3
+        // covers the corner case where this policy is bypassed by
+        // future code (the verifier would still reject in strict
+        // mode); here we make it the default behaviour at every
+        // verify mode (FR-32, ARCHITECTURE §13).
+        if f.name.is_some() {
+            continue;
+        }
+        let recovered_name = format!("fn_{:x}", f.address);
+        let address_str = format!("0x{:x}", f.address);
+        let prompt = ai_templates::render(
+            template,
+            &[
+                ("input", input_label),
+                ("address", &address_str),
+                ("recovered", &recovered_name),
+            ],
+        );
+        let bundle = AiEvidenceBundle::from_iter([f.evidence]);
+        let deltas = match selection.provider.propose(&prompt, &bundle) {
+            Ok(d) => d,
+            Err(err) => {
+                provider_errors += 1;
+                tracing::warn!(
+                    provider = selection.provider.name(),
+                    address = %address_str,
+                    kind = err.kind(),
+                    error = %err,
+                    "ai provider rejected the prompt"
+                );
+                continue;
+            }
+        };
+        for delta in deltas {
+            total_proposals += 1;
+            // The local stub picks its delta target from the prompt
+            // hash — meaningless to the verifier. Rebind to the
+            // function we asked about so the verifier can judge against
+            // the world model (and so the review log records the right
+            // target). Non-rename variants pass through unchanged; only
+            // the NameSuggestion path is exercised at B4.5.
+            let rebound = rebind_rename_to_function(delta, AiSymbolRef(f.address));
+            let outcome = verify_delta(&rebound, &world, mode);
+            review.record(&rebound, &world, &outcome);
+            match outcome {
+                VerifyOutcome::Accept => {
+                    total_accepted += 1;
+                    if let AiDelta::RenameSymbol { new_name, meta, .. } = &rebound {
+                        name_overrides.insert(
+                            f.address,
+                            AiNameOverride {
+                                name: new_name.clone(),
+                                confidence: meta.confidence(),
+                            },
                         );
                     }
                 }
+                VerifyOutcome::Reject(reason) => {
+                    total_rejected += 1;
+                    tracing::debug!(
+                        provider = selection.provider.name(),
+                        address = %address_str,
+                        kind = rebound.kind_tag(),
+                        reason = reason.tag(),
+                        mode = mode.tag(),
+                        "ai delta rejected by dac-verify"
+                    );
+                }
             }
-            tracing::info!(
-                provider = selection.provider.name(),
-                proposals = deltas.len(),
-                accepted,
-                rejected,
-                mode = mode.tag(),
-                review = args.ai_review,
-                template = "pipeline-summary",
-                "ai provider returned proposals"
-            );
-        }
-        Err(err) => {
-            tracing::warn!(
-                provider = selection.provider.name(),
-                kind = err.kind(),
-                error = %err,
-                "ai provider rejected the prompt"
-            );
         }
     }
-    if args.ai_review {
-        Some(render_review(&review))
-    } else {
-        None
+    tracing::info!(
+        provider = selection.provider.name(),
+        functions = functions.functions.len(),
+        proposals = total_proposals,
+        accepted = total_accepted,
+        rejected = total_rejected,
+        provider_errors,
+        mode = mode.tag(),
+        review = args.ai_review,
+        template = template.id,
+        "ai provider returned proposals"
+    );
+    AiProposalResult {
+        review_text: if args.ai_review {
+            Some(render_review(&review))
+        } else {
+            None
+        },
+        name_overrides,
+    }
+}
+
+/// Populate the verifier's world model from the recovered
+/// [`FunctionSet`] (B4.5).
+///
+/// Each function lands as a [`SymbolRef`] keyed by entry address.
+/// Functions named from the binary's symbol table get
+/// [`Source::Observed`] (so `--ai-strict` blocks renames against them);
+/// synthesized `fn_<addr>` placeholders get [`Source::Speculative`] so
+/// AI is free to suggest a more readable name. Regions mirror the
+/// symbol so the per-region annotation channel (a B4.5 follow-up) has
+/// a handle to bind against; the entry source is `Observed` when the
+/// name is observed and `Derived` otherwise (the function span is
+/// known to the deterministic pipeline either way).
+fn build_ai_world(functions: &FunctionSet) -> KnownFacts {
+    let mut world = KnownFacts::new();
+    for f in &functions.functions {
+        let recovered_name = f
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("fn_{:x}", f.address));
+        let source = match &f.name {
+            Some(_) => Source::Observed,
+            None => Source::Speculative,
+        };
+        world.insert_symbol(AiSymbolRef(f.address), recovered_name, source);
+    }
+    world
+}
+
+/// Rebind a [`AiDelta::RenameSymbol`]'s target to the function the
+/// orchestrator asked about. The local stub picks an arbitrary target
+/// from the prompt hash; rebinding keeps the verifier's world-model
+/// check honest. Non-rename variants pass through unchanged because at
+/// B4.5 the orchestrator only issues `NameSuggestion` prompts.
+fn rebind_rename_to_function(delta: AiDelta, target: AiSymbolRef) -> AiDelta {
+    match delta {
+        AiDelta::RenameSymbol { new_name, meta, .. } => AiDelta::RenameSymbol {
+            target,
+            new_name,
+            meta,
+        },
+        other => other,
     }
 }
 
@@ -1781,7 +1971,7 @@ impl Target {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Args {
     input: Option<PathBuf>,
     opt: OptLevel,
@@ -1808,6 +1998,11 @@ struct Args {
     /// on stdout) so a reviewer can inspect what the provider proposed
     /// without trusting the model to mutate the IR.
     ai_review: bool,
+    /// B4.5: prefix prepended to every AI-supplied function name so a
+    /// reviewer can grep the rendered translation unit for AI-renamed
+    /// identifiers without consulting the manifest (FR-21, ARCHITECTURE
+    /// §13). Default `ai_`.
+    ai_name_prefix: String,
     deterministic: bool,
     threads: Option<u32>,
     json: bool,
@@ -1820,6 +2015,40 @@ struct Args {
     hide_crt: bool,
     show_help: bool,
     show_version: bool,
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Self {
+            input: None,
+            opt: OptLevel::default(),
+            arch: None,
+            format: Format::default(),
+            target: Target::default(),
+            output: None,
+            emit_ir: false,
+            emit_cfg: false,
+            emit_report: false,
+            emit_annotations: false,
+            emit_callgraph: false,
+            xrefs_subject: None,
+            no_ai: false,
+            ai_provider: None,
+            ai_strict: false,
+            ai_review: false,
+            // B4.5 default — see `Args::ai_name_prefix` docstring.
+            ai_name_prefix: "ai_".to_string(),
+            deterministic: false,
+            threads: None,
+            json: false,
+            debug: false,
+            plugin: None,
+            hints: None,
+            hide_crt: false,
+            show_help: false,
+            show_version: false,
+        }
+    }
 }
 
 fn parse_args<I>(iter: I) -> std::result::Result<Args, String>
@@ -1849,6 +2078,15 @@ where
             "--ai-provider" => args.ai_provider = Some(take_value("--ai-provider", &mut it)?),
             "--ai-strict" => args.ai_strict = true,
             "--ai-review" => args.ai_review = true,
+            "--ai-name-prefix" => {
+                let raw = take_value("--ai-name-prefix", &mut it)?;
+                if !is_valid_c_prefix(&raw) {
+                    return Err(format!(
+                        "invalid --ai-name-prefix value `{raw}`; must match [A-Za-z_][A-Za-z0-9_]*"
+                    ));
+                }
+                args.ai_name_prefix = raw;
+            }
             "--deterministic" => args.deterministic = true,
             "--threads" => {
                 let raw = take_value("--threads", &mut it)?;
@@ -1889,6 +2127,23 @@ where
         .next()
         .ok_or_else(|| format!("{flag} requires a value"))?;
     Ok(next.to_string_lossy().into_owned())
+}
+
+/// `true` iff `s` is usable as a C-identifier prefix — non-empty,
+/// starts with a letter or underscore, contains only ASCII
+/// alphanumerics or underscores. The renderer concatenates the prefix
+/// with the proposer's name, so the full resulting symbol stays
+/// syntactically valid C iff both halves do.
+fn is_valid_c_prefix(s: &str) -> bool {
+    let mut chars = s.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if first != '_' && !first.is_ascii_alphabetic() {
+        return false;
+    }
+    chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
 fn take_os_value<I>(flag: &str, rest: &mut I) -> std::result::Result<OsString, String>
@@ -2077,7 +2332,7 @@ mod tests {
         let f = thunk_function("frame_dummy", 0x1150, 0x10c0);
         let mut resolver = CNameResolver::new();
         resolver.insert(0x10c0, "register_tm_clones".to_string());
-        let cf = lower_thunk_function(&f, 0x10c0, &resolver, false);
+        let cf = lower_thunk_function(&f, 0x10c0, &resolver, false, None, "ai_");
         assert_eq!(cf.name, "frame_dummy");
         assert!(matches!(cf.return_type, CType::Void));
         assert!(cf.params.is_empty());
@@ -2105,7 +2360,7 @@ mod tests {
     fn b3_25_lower_thunk_function_falls_back_to_addrlit_when_unresolved() {
         let f = thunk_function("opaque_thunk", 0x9000, 0x9abc);
         let resolver = CNameResolver::new();
-        let cf = lower_thunk_function(&f, 0x9abc, &resolver, false);
+        let cf = lower_thunk_function(&f, 0x9abc, &resolver, false, None, "ai_");
         assert_eq!(cf.body.stmts.len(), 1);
         match &cf.body.stmts[0] {
             CStmt::ExprStmt(CExpr::Call { target, args }) => {
@@ -2127,8 +2382,8 @@ mod tests {
         let f = thunk_function("atexit", 0x1460, 0x29c8);
         let mut resolver = CNameResolver::new();
         resolver.insert(0x29c8, "_crt_atexit".to_string());
-        let default = lower_thunk_function(&f, 0x29c8, &resolver, false);
-        let debug = lower_thunk_function(&f, 0x29c8, &resolver, true);
+        let default = lower_thunk_function(&f, 0x29c8, &resolver, false, None, "ai_");
+        let debug = lower_thunk_function(&f, 0x29c8, &resolver, true, None, "ai_");
         assert!(!default
             .leading_comment
             .as_deref()

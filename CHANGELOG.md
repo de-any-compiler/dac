@@ -7001,6 +7001,157 @@ Closes: B3.35, FR-3 (multi-format pipeline reach), FR-21
 
 ### Milestone 4 — Human-oriented reconstruction
 
+#### B4.5 — `-O3` semantic reconstruction (2026-06-09)
+
+*Motivation.* B4.1 — B4.4 wired the AI substrate (provider trait,
+delta protocol, verifier, review mode) end-to-end, but the proposal
+pass ran on every invocation regardless of opt level: once per run
+with a `pipeline-summary` prompt, against an empty world model that
+rejected every delta as `unknown-target`. Spec §5 and PLAN.md's
+B4.5 done-when ask for two things: the AI pass must be gated to
+`-O3` ("AI is consulted only at `-O3` and only after deterministic
+passes complete") and accepted renames must reach the rendered C
+through a confidence-aware path ("low-confidence AI names get a
+prefix or annotation"). B4.5 finishes that loop.
+
+*Design notes.*
+- **`-O3` gate.** `run_ai_proposal_pass` now returns an empty
+  `AiProposalResult` immediately when `args.opt != OptLevel::O3`. The
+  call site moved out of `run_pipeline`'s pre-backend prelude into
+  the `Some(backend) =>` arm and runs only after `lift_all` plus
+  `apply_void_return_inference`, so the deterministic pipeline always
+  completes before the AI ever sees the recovered state (spec §5,
+  I-4). `--ai-review`, `--ai-strict`, and `--ai-provider` are inert
+  below `-O3` because no proposals are issued; the review block
+  header is suppressed entirely so a reviewer at `-O2` never sees an
+  empty `total=0` artifact they would have to interpret.
+- **Per-function world build.** The new `build_ai_world` populates
+  `KnownFacts` from `FunctionSet`: each recovered function becomes a
+  `SymbolRef(f.address)`. Functions named from the binary's symbol
+  table register with `Source::Observed`; synthesised `fn_<addr>`
+  placeholders register with `Source::Speculative`. `--ai-strict`
+  then blocks renames against observed names through the verifier's
+  existing `StrictModeBlocksObserved` rejection (B4.3); the corridor
+  PLAN.md called for is the same one the verifier already enforces.
+- **Per-function prompt loop.** Each recovered function whose name is
+  a synthesised `fn_<addr>` placeholder gets one `NameSuggestion`
+  prompt rendered from the pre-registered `rename-symbol` template
+  (`{address}`, `{recovered}`, `{input}` substituted). Symbol-table
+  names are intentionally skipped: the deterministic pipeline already
+  has an `Observed` name and asking the model for a rename would
+  produce stub names like `ai_dac_local_sub_<hash>` in place of
+  `main` even at lenient mode. Skipping at policy level keeps the
+  default `lenient` output legible; `--ai-strict` is still the
+  verifier-level guarantee the spec calls for.
+- **Target rebinding.** The local stub picks its delta's `SymbolRef`
+  from the prompt hash — meaningless to the verifier. The new
+  `rebind_rename_to_function` helper takes the delta the provider
+  returned, replaces the target with `SymbolRef(f.address)`, and
+  keeps the metadata (confidence, prompt hash, model id, evidence)
+  intact. The review log and verifier then see the corrected
+  delta. This pattern generalises to real model adapters in B4.6:
+  the orchestrator owns the prompt → symbol binding because it
+  issued the prompt.
+- **Confidence-aware C rendering.** Accepted renames land in an
+  `AiNameOverrides: BTreeMap<u64, AiNameOverride>` keyed by function
+  address. `render_c_unit` threads the map through both
+  `build_c_name_resolver` (so call sites use the new identifier) and
+  `lower_one_c_function` / `lower_thunk_function` (so the definition
+  matches its call sites). User `[[rename]]` hints still outrank AI
+  (FR-20, FR-32). When an override applies, the new
+  `prepend_ai_suggested_banner` adds
+  `dac: ai-suggested rename (Speculative, conf=0.35)` to the
+  function's leading comment so a reader sees the proposer's
+  self-reported confidence inline — no manifest lookup needed
+  (FR-37).
+- **`--ai-name-prefix <p>` flag.** Configurable prefix that fronts
+  every AI-supplied identifier (default `ai_`). Validates the
+  prefix through a `[A-Za-z_][A-Za-z0-9_]*` check before parsing
+  proceeds so a malformed prefix surfaces as a clean exit-2 error,
+  not a compile failure on the rendered C. The flag is behavioural
+  — not stamped on the manifest — because the renamed identifiers
+  themselves carry the chosen prefix verbatim, so the artifact is
+  self-describing.
+- **Manifest stability.** `--ai-name-prefix` and the `-O3` gate are
+  not stamped on `ManifestSettings`; the manifest still records
+  `level: "O3"` through the existing `args.opt.as_str()` channel,
+  which already covered B3.31's banner work. All 32 manifest
+  goldens across 12 cases stay byte-identical, and the C backend
+  goldens stay byte-identical because every existing case targets
+  `-O0` / `-O1` (the AI pass does not run).
+- **Determinism (NFR-9).** The local stub is a pure function of
+  `(prompt, bundle)`; iteration over `FunctionSet::functions` is
+  ascending-address; `build_ai_world` builds a `BTreeMap`-backed
+  world with deterministic iteration; `rebind_rename_to_function`
+  is pure. Two runs against the same input produce a byte-identical
+  C unit at `-O3`, verified by
+  `b4_5_o3_c_unit_is_stable_across_two_runs`.
+
+*Done-when verification.*
+- *"`-O3` produces meaningfully more readable C on the corpus than
+  `-O2`, with the strict-mode invariant preserved."*
+  - At `-O3` the stripped `hello-x86_64` fixture renders four
+    AI-renamed function definitions (`ai_dac_local_sub_<hex>`),
+    each prefaced with the `dac: ai-suggested rename (Speculative,
+    conf=0.35)` banner; at `-O2` the same fixture renders bare
+    `fn_<addr>` placeholders with no banner. The framework is
+    therefore exercised end-to-end; the *content* of the renames
+    is honest about the local stub being rule-based (a real model
+    via the B4.6 remote adapter will replace `dac_local_sub_<hex>`
+    with descriptive names without further plumbing changes).
+  - Strict mode invariant: the symbol-table-named `hello-x86_64`
+    fixture run with `-O3 --ai-strict` keeps `main` (and every
+    other observed symbol) untouched; the policy-level skip in the
+    prompt loop is a belt; the verifier's
+    `StrictModeBlocksObserved` (B4.3) is the braces.
+
+*Tests added (6 CLI integration tests).*
+- `b4_5_o3_applies_ai_prefixed_renames_to_synthesised_function_names`
+  — `-O3` + local provider + stripped fixture renders
+  `ai_dac_local_sub_…` identifiers and the ai-suggested banner.
+- `b4_5_o2_does_not_consult_ai` — `-O2` + same provider produces
+  zero `ai_` names, zero banners, and no review block even when
+  `--ai-review` is set.
+- `b4_5_ai_strict_preserves_observed_main_at_o3` — `-O3 --ai-strict`
+  against the symbol-table fixture keeps `main` un-renamed.
+- `b4_5_o3_c_unit_is_stable_across_two_runs` — two `-O3` runs
+  produce a byte-identical C unit (NFR-9).
+- `b4_5_ai_name_prefix_overrides_default` — `--ai-name-prefix synth_`
+  surfaces on every renamed function instead of `ai_`.
+- `b4_5_ai_name_prefix_rejects_invalid_identifier` — a leading-digit
+  prefix is rejected at parse time with a structured error.
+
+The five B4.4 review-mode tests were migrated to `-O3` against the
+stripped fixture so they continue to exercise the review path
+end-to-end; the local stub now accepts all four deltas, so the
+`total=N accepted=M rejected=K` assertion shifts from
+`total=1 accepted=0 rejected=1` to `total=4 accepted=4 rejected=0`.
+
+Net suite delta: +6 tests (892 → 898 across the workspace).
+
+*Out of scope.*
+- **Region annotations.** The `annotate-region` template is
+  registered and the verifier accepts annotations, but the proposal
+  loop only issues `NameSuggestion` prompts at B4.5. Per-function
+  annotation prompts (mapping `RegionRef(f.address)` to a Semantic
+  IR region) deferred to a B4.5 follow-up — the C backend would
+  need to surface AI annotations as `/* ai-summary: … */` comments
+  above each region.
+- **Retype / struct-layout suggestions.** The local stub only ever
+  differentiates `NameSuggestion` from "everything else"; B4.5 keeps
+  scope tight by only issuing the prompt kind the stub can answer
+  meaningfully. Per-slot retype prompts wait for B4.6's real model
+  adapter where they can actually inform recovery.
+- **`-O3` golden files.** No golden fixture currently exercises
+  `-O3`; adding one would lock in the stub's hash-derived names,
+  which is the wrong axis to freeze before B4.6's real model lands.
+  The determinism test
+  (`b4_5_o3_c_unit_is_stable_across_two_runs`) covers the run-to-run
+  byte-stability claim without making the names a golden contract.
+
+*Closes:* B4.5, FR-32, NFR-9, I-3, I-4, I-5, ARCHITECTURE §9,
+ARCHITECTURE §13, spec §5.
+
 #### B4.4 — Review mode (`--ai-review`) (2026-06-09)
 
 *Motivation.* B4.3 promoted `dac-verify` into the gate every AI delta

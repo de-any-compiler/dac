@@ -37,6 +37,8 @@ AI:
                             Observed fact (spec §13.5).
       --ai-review           Collect AI deltas into a side artifact
                             (spec §13.6, FR-33) without applying them.
+      --ai-name-prefix <p>  Prefix prepended to AI-supplied function
+                            names at -O3 (default: ai_).
 
 Execution:
       --deterministic       Reject pipelines that register a
