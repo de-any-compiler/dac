@@ -7001,6 +7001,150 @@ Closes: B3.35, FR-3 (multi-format pipeline reach), FR-21
 
 ### Milestone 4 — Human-oriented reconstruction
 
+#### B4.2 — Local model provider (2026-06-09)
+
+*Motivation.* B4.1 shipped the AI adapter substrate — the
+`AiProvider` trait, the `Delta` enum, the `EvidenceBundle` builder,
+and a `NullProvider` default — but no real provider. The dispatch
+table downgraded every non-null request (`--ai-provider local`,
+`--ai-provider local:llama`, …) to `NullProvider` with a `Fallback`
+warning. B4.2 wires the first real local provider into the
+dispatch table behind `--ai-provider local`, adds the versioned
+prompt-template registry the spec §13.8 calls for, and proves the
+trait is reachable end-to-end by issuing one template-driven
+prompt against the loaded binary on every pipeline run.
+
+*Design notes.*
+- **`LocalProvider` (`dac-ai::local`)** wraps a closed
+  `LocalBackend` enum so future HTTP-backed adapters
+  (`local:llama` via llama.cpp's OpenAI-compatible endpoint,
+  `local:ollama`) plug into the same provider type without
+  revising the trait surface or the CLI dispatch table.
+  `is_local()` is always `true` — that is what `--deterministic`
+  keys off when it rejects remote providers in B4.6.
+- **`LocalBackend::Stub`** is the rule-based, in-process backend
+  that ships at this batch. It is pure (no time, no PRNG, no env
+  reads) so `--deterministic` does not need to special-case it:
+  the corridor is preserved by construction (NFR-9). The contract:
+  empty bundle → `Ok(vec![])` (matching `NullProvider`);
+  non-empty bundle → exactly one delta, keyed off `Prompt::kind`.
+  `NameSuggestion` produces `Delta::RenameSymbol` proposing
+  `dac_local_sub_<id>` where `<id>` is the bottom 32 bits of the
+  prompt digest; every other kind produces `Delta::AnnotateRegion`
+  whose comment carries the digest's bottom 64 bits as a 16-hex
+  prefix so a reviewer can match the comment back to the
+  originating prompt without consulting the manifest. The bundle's
+  handles flow into `DeltaMetadata::evidence` unchanged, preserving
+  the I-2 provenance chain.
+- **Confidence clamp.** Every delta the local stub emits carries
+  `Confidence::new(0.35, Source::Speculative)` — passed through
+  the existing `Delta::*` constructors so I-3 is enforced at the
+  type boundary. A future model-backed backend cannot promote a
+  rename to `Observed` even by accident; the constructors reject
+  the source field.
+- **`templates` module (`dac-ai::templates`)** holds the
+  spec §13.8 versioned prompt templates. Three templates ship at
+  B4.2: `pipeline-summary` (the orchestrator's once-per-run
+  annotation prompt, used today by the CLI), `rename-symbol` (the
+  per-function naming prompt B4.5 will consume), and
+  `annotate-region` (the per-region annotation prompt B4.4 / B4.5
+  will consume). Each template carries an `id`, a `version` (bumped
+  any time the body changes), a `PromptKind`, and a `body` with
+  `{name}` placeholders. `render(template, params)` substitutes
+  the params and prefixes the rendered text with `v<version>\n`
+  so a deliberate wording change is observable in the prompt hash
+  even when the body itself renders the same characters
+  (NFR-10 reproducibility).
+- **Dispatch table extension (`select_provider`).** Two new rows:
+  `"local"` and `"local:stub"` (case-insensitive) → `LocalProvider`
+  with `SelectionReason::Selected`. `"local:llama"` /
+  `"local:ollama"` stay on the `Fallback` row until the HTTP-backed
+  variants land in a follow-up — the run still succeeds; the
+  orchestrator logs a `warn` so the user knows their request was
+  downgraded.
+- **CLI integration (`run_ai_proposal_pass`).** The B4.1 call
+  site (one-shot post-manifest propose call) keeps its shape, but
+  the empty bundle of B4.1 is replaced by a one-handle
+  `EvidenceBundle` citing the input's byte range (via
+  `EvidenceNode::Bytes { start: 0, end: model.size }`), and the
+  ad-hoc prompt text is replaced by `templates::render` on
+  `pipeline-summary` with `input`, `format`, `arch`, `size`
+  substituted. The local stub then has something honest to cite,
+  and the proposals counter visible in `tracing::info!` reflects
+  the deltas the provider would emit on each run. Proposals are
+  not yet applied — B4.3 (delta verification), B4.4 (review
+  mode), and B4.5 (`-O3` semantic reconstruction) gate
+  application end-to-end.
+- **No manifest / golden churn.** The `ai.provider` field in the
+  manifest still records the user's verbatim `--ai-provider`
+  argument (B4.1 contract), so an existing golden that asserts
+  `"provider": null` (default) or `"provider": "local:llama"`
+  (fallback) still matches. The proposals counter is surfaced via
+  `tracing::info!` fields (`provider`, `proposals`, `template`),
+  not stdout — `cargo xtask test` re-ran the 32 goldens across 12
+  cases unchanged.
+
+*Done-when verification.*
+- ✅ **Running with a local model produces deltas on the sample
+  corpus.** End-to-end smoke on `hello-x86_64` with
+  `--ai-provider local --json`:
+  `selected ai provider provider="local:stub" requested="local"
+  reason="selected"` followed by `ai provider returned proposals
+  provider="local:stub" proposals=1 template="pipeline-summary"`.
+- ✅ **`--no-ai` produces identical output to M3.** No deltas are
+  applied at B4.2 (the I-4 corridor is unchanged), so the
+  recovered listing / source / report bodies are byte-identical
+  to the M3 baseline; only the manifest's `no_ai` flag flips.
+- ✅ **Determinism.** The local stub is a pure function of its
+  inputs. Two-run determinism corpus diff is clean.
+- ✅ **CI gate.** `cargo xtask ci` (fmt + clippy + tests +
+  goldens) green.
+
+*Tests added.*
+- `dac-ai::templates::tests` — 8 unit tests:
+  `lookup_returns_registered_template_by_id`,
+  `lookup_returns_none_for_unknown_id`,
+  `registry_ids_are_unique_and_kebab_case`,
+  `render_substitutes_named_placeholders`,
+  `render_passes_unknown_placeholders_through`,
+  `render_with_same_params_is_deterministic`,
+  `version_bump_changes_rendered_prompt_hash`,
+  `rename_symbol_template_is_name_suggestion_kind`.
+- `dac-ai::local::tests` — 7 unit tests:
+  `stub_provider_advertises_local_and_kebab_name`,
+  `stub_returns_empty_for_empty_bundle`,
+  `stub_produces_rename_for_name_suggestion_prompts`,
+  `stub_produces_annotation_for_other_prompt_kinds`,
+  `stub_is_deterministic_across_calls`,
+  `stub_differs_for_different_prompt_text`,
+  `stub_prompt_hash_is_recorded_in_metadata`.
+- `dac-ai::provider::tests` — 3 new dispatch-table tests:
+  `select_provider_routes_local_alias_to_local_stub`,
+  `select_provider_keeps_local_llama_on_fallback_until_b4_6`,
+  `select_provider_local_routes_through_no_ai`.
+- `dac-cli::tests::cli` — 4 new integration tests:
+  `b4_2_ai_provider_local_alias_routes_to_local_stub_and_succeeds`,
+  `b4_2_ai_provider_local_stub_is_an_explicit_alias`,
+  `b4_2_local_llama_remains_on_fallback_until_http_adapter_lands`,
+  `b4_2_no_ai_overrides_local_provider_request`.
+
+*Out of scope.*
+- HTTP-backed `local:llama` (llama.cpp's OpenAI-compatible mode
+  at `localhost:8080/v1/chat/completions`) and `local:ollama`
+  (`localhost:11434/api/chat`) adapters. They require a runtime
+  detector that gates them on host availability and an HTTP
+  client. The plumbing here is shaped so they slot into the
+  `LocalBackend` enum without revising the trait surface.
+- **Delta application.** Proposals are logged but not applied —
+  `dac-verify` (B4.3) is the gate, and review mode (B4.4) plus
+  `-O3` semantic reconstruction (B4.5) are where deltas
+  start reaching the lowered C output.
+- **Per-function prompts.** The CLI issues one
+  `pipeline-summary` prompt per run, not per recovered function.
+  Per-function prompts arrive with B4.5's `-O3` path.
+
+*Closes:* B4.2, FR-35, NFR-21, NFR-22, spec §13.8.
+
 #### B4.1 — AI adapter trait + offline default (2026-06-09)
 
 *Motivation.* `dac-ai` shipped as an empty crate from B0.1 onward;

@@ -402,6 +402,97 @@ fn b4_1_no_ai_overrides_explicit_ai_provider_arg() {
     assert!(out.status.success(), "combination should still succeed");
 }
 
+/// B4.2 — `--ai-provider local` resolves through `select_provider` to
+/// the rule-based [`dac_ai::LocalProvider`] (which advertises itself as
+/// `"local:stub"`). The run must succeed end-to-end and the manifest
+/// must preserve the user's requested provider name verbatim so the
+/// FR-37 attribution trail records what was asked for.
+#[test]
+fn b4_2_ai_provider_local_alias_routes_to_local_stub_and_succeeds() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-provider local");
+    assert!(out.status.success(), "--ai-provider local should exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("\"provider\": \"local\""),
+        "manifest must keep requested provider name `local`:\n{stdout}",
+    );
+}
+
+/// B4.2 — `--ai-provider local:stub` is the explicit spelling for the
+/// rule-based local backend. Verifies the dispatch table's lower-case
+/// match arm and that the manifest preserves the verbatim request.
+#[test]
+fn b4_2_ai_provider_local_stub_is_an_explicit_alias() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local:stub")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-provider local:stub");
+    assert!(
+        out.status.success(),
+        "--ai-provider local:stub should exit 0",
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("\"provider\": \"local:stub\""),
+        "manifest must keep requested provider name `local:stub`:\n{stdout}",
+    );
+}
+
+/// B4.2 — `local:llama` is the canonical HTTP-backed local adapter
+/// reserved for a follow-up batch. Until the HTTP wiring lands it stays
+/// on the `Fallback` row of the dispatch table — the run must still
+/// succeed and the manifest must preserve the requested name.
+#[test]
+fn b4_2_local_llama_remains_on_fallback_until_http_adapter_lands() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local:llama")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-provider local:llama");
+    assert!(out.status.success(), "local:llama must downgrade, not fail",);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("\"provider\": \"local:llama\""),
+        "manifest must keep requested provider name `local:llama`:\n{stdout}",
+    );
+}
+
+/// B4.2 — `--no-ai` still outranks the new `local` alias. The provider
+/// is force-downgraded to null, the run succeeds, and the manifest
+/// keeps the `no_ai: true` flag.
+#[test]
+fn b4_2_no_ai_overrides_local_provider_request() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--no-ai")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg(&path)
+        .output()
+        .expect("run dac --no-ai --ai-provider local");
+    assert!(out.status.success(), "combination should still succeed");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("\"no_ai\": true"),
+        "manifest must record no_ai=true even with explicit --ai-provider:\n{stdout}",
+    );
+}
+
 /// B3.35 — i386 dispatch wiring.
 ///
 /// Before this batch, `dac --target c <i386 PE>` printed the

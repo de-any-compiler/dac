@@ -94,12 +94,6 @@ above.
 
 Goal: `-O3` with AI assistance, review mode, and strict mode.
 
-### B4.2 — Local model provider (llama.cpp / ollama)
-- Adapter to a local provider (FR-35, NFR-21, NFR-22).
-- Prompt templates versioned alongside passes (spec §13.8).
-- **Done when:** running with a local model produces deltas on the sample
-  corpus and `--no-ai` produces identical output to M3.
-
 ### B4.3 — Delta verification (`dac-verify`)
 - IR consistency checks for every delta type (spec §13.4).
 - Strict mode (`--ai-strict`) drops any delta that would reduce confidence

@@ -1,13 +1,16 @@
-//! [`AiProvider`] trait and the two offline providers that ship at
-//! B4.1: [`NullProvider`] (the default) and [`EchoProvider`] (test
-//! fixture).
+//! [`AiProvider`] trait, the two offline providers ([`NullProvider`]
+//! default + [`EchoProvider`] test fixture), and the [`select_provider`]
+//! dispatch table that maps `--no-ai` / `--ai-provider` onto a concrete
+//! provider.
 //!
-//! Real model adapters land in B4.2 (local) and B4.6 (remote). Until
-//! then [`select_provider`] always returns a `NullProvider` — every
-//! unknown `--ai-provider` argument resolves to null with a
-//! [`ProviderSelection::Fallback`] tag so the orchestrator can warn
-//! once and keep the deterministic pipeline (I-4) untouched.
+//! B4.2 wires [`crate::LocalProvider`] into the dispatch table as the
+//! first real local provider — see the table in [`select_provider`].
+//! Remote-API providers land in B4.6; until then every non-local /
+//! non-null name resolves to [`NullProvider`] with a
+//! [`SelectionReason::Fallback`] tag so the orchestrator can warn once
+//! and keep the deterministic pipeline (I-4) intact.
 
+use crate::local::LocalProvider;
 use crate::{Delta, EvidenceBundle, Prompt, ProviderResult};
 
 /// What an AI adapter looks like from `dac-core`'s perspective.
@@ -178,18 +181,22 @@ impl SelectionReason {
 }
 
 /// Map the CLI's `--no-ai` + `--ai-provider` flags onto a concrete
-/// provider. At B4.1 the only real provider is `NullProvider`; every
-/// non-null name resolves to `NullProvider` via
-/// [`SelectionReason::Fallback`].
+/// provider.
 ///
 /// The mapping table:
 ///
-/// | `no_ai` | `requested`           | result        | reason     |
-/// |---------|-----------------------|---------------|------------|
-/// | `true`  | _any_                 | `Null`        | `Disabled` |
-/// | `false` | `None`                | `Null`        | `Default`  |
-/// | `false` | `Some("null"/"none")` | `Null`        | `Selected` |
-/// | `false` | `Some(other)`         | `Null`        | `Fallback` |
+/// | `no_ai` | `requested`                              | result          | reason     |
+/// |---------|------------------------------------------|-----------------|------------|
+/// | `true`  | _any_                                    | `Null`          | `Disabled` |
+/// | `false` | `None`                                   | `Null`          | `Default`  |
+/// | `false` | `Some("null" / "none")`                  | `Null`          | `Selected` |
+/// | `false` | `Some("local" / "local:stub")`           | `LocalProvider` | `Selected` |
+/// | `false` | `Some(other, incl. `local:llama`, etc.)` | `Null`          | `Fallback` |
+///
+/// `local` (no suffix) is the alias for the default local backend; at
+/// B4.2 that is the rule-based stub. Future HTTP-backed local adapters
+/// (B4.6 follow-up) will be routed by suffix (`local:llama`,
+/// `local:ollama`).
 #[must_use]
 pub fn select_provider(no_ai: bool, requested: Option<&str>) -> ProviderSelection {
     if no_ai {
@@ -212,13 +219,23 @@ pub fn select_provider(no_ai: bool, requested: Option<&str>) -> ProviderSelectio
                 requested: Some(name.to_string()),
             }
         }
+        Some(name)
+            if name.eq_ignore_ascii_case("local") || name.eq_ignore_ascii_case("local:stub") =>
+        {
+            ProviderSelection {
+                provider: Box::new(LocalProvider::stub()),
+                reason: SelectionReason::Selected,
+                requested: Some(name.to_string()),
+            }
+        }
         Some(name) => {
-            // No local / remote providers ship at B4.1. Anything else
-            // is honoured as a request to opt in to AI, but downgraded
-            // to null — the orchestrator's warn handler turns this
-            // into a one-shot CLI warning so the determinism corridor
-            // is preserved (NFR-9) and the user knows their request
-            // was downgraded.
+            // Local HTTP adapters (`local:llama`, `local:ollama`) and
+            // remote APIs are reserved for B4.6. They land here as
+            // `Fallback` so the orchestrator can warn the user once
+            // that their requested provider was downgraded to null
+            // (NFR-9: the determinism corridor stays intact because
+            // the actual provider is always `NullProvider` in this
+            // branch).
             ProviderSelection {
                 provider: Box::new(NullProvider),
                 reason: SelectionReason::Fallback,
@@ -340,6 +357,43 @@ mod tests {
         assert_eq!(sel.reason, SelectionReason::Fallback);
         assert_eq!(sel.provider.name(), "null");
         assert_eq!(sel.requested.as_deref(), Some("local:llama"));
+    }
+
+    #[test]
+    fn select_provider_routes_local_alias_to_local_stub() {
+        // B4.2: `local` (no suffix) and `local:stub` both resolve to the
+        // rule-based local provider. The selected reason fires (not
+        // Default and not Fallback) so the orchestrator stays silent.
+        for name in ["local", "LOCAL", "local:stub", "LOCAL:STUB"] {
+            let sel = select_provider(false, Some(name));
+            assert_eq!(sel.reason, SelectionReason::Selected, "name = {name}");
+            assert_eq!(sel.provider.name(), "local:stub", "name = {name}");
+            assert!(sel.provider.is_local(), "name = {name}");
+            assert_eq!(sel.requested.as_deref(), Some(name));
+        }
+    }
+
+    #[test]
+    fn select_provider_keeps_local_llama_on_fallback_until_b4_6() {
+        // `local:llama` / `local:ollama` are reserved for B4.6's HTTP
+        // adapter — at B4.2 they still downgrade to null so the run
+        // succeeds. The orchestrator logs a warn so the user knows.
+        for name in ["local:llama", "local:ollama"] {
+            let sel = select_provider(false, Some(name));
+            assert_eq!(sel.reason, SelectionReason::Fallback, "name = {name}");
+            assert_eq!(sel.provider.name(), "null", "name = {name}");
+        }
+    }
+
+    #[test]
+    fn select_provider_local_routes_through_no_ai() {
+        // `--no-ai` outranks every requested provider, including the
+        // new `local` alias. The provider remains `null` and the
+        // requested name is preserved for the warn message.
+        let sel = select_provider(true, Some("local"));
+        assert_eq!(sel.reason, SelectionReason::Disabled);
+        assert_eq!(sel.provider.name(), "null");
+        assert_eq!(sel.requested.as_deref(), Some("local"));
     }
 
     #[test]

@@ -33,9 +33,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use dac_ai::{
-    select_provider, EvidenceBundle as AiEvidenceBundle, Prompt as AiPrompt,
-    PromptKind as AiPromptKind, ProviderSelection as AiProviderSelection,
-    SelectionReason as AiSelectionReason,
+    select_provider, templates as ai_templates, EvidenceBundle as AiEvidenceBundle,
+    ProviderSelection as AiProviderSelection, SelectionReason as AiSelectionReason,
 };
 use dac_analysis::cfg::{build_cfgs, render_dot_all};
 use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, resolve_subject};
@@ -57,7 +56,7 @@ use dac_backend_cpp::{
     default_includes as cpp_default_includes, emit as cpp_emit, lower_unit as cpp_lower_unit,
 };
 use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
-use dac_core::{init_tracing, EvidenceGraph};
+use dac_core::{init_tracing, EvidenceGraph, EvidenceNode};
 use dac_hints::{HintError, Hints};
 use dac_recovery::{detect_thunks, discover_functions, FunctionSet, FunctionTaxonomy};
 
@@ -175,14 +174,19 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let manifest = build_manifest(&input_label, &model, args);
     let manifest_json = render_manifest_json(&manifest);
 
-    // B4.1: resolve `--no-ai` / `--ai-provider` to a concrete
-    // `AiProvider` and exercise a single offline propose call so the
-    // adapter trait, the delta protocol, and the dispatch table
-    // (`dac_ai::select_provider`) all run end-to-end on every input.
+    // B4.1 / B4.2: resolve `--no-ai` / `--ai-provider` to a concrete
+    // `AiProvider` and exercise a single propose call so the adapter
+    // trait, the delta protocol, the dispatch table
+    // (`dac_ai::select_provider`), and the versioned prompt-template
+    // registry (`dac_ai::templates`) all run end-to-end on every input.
     // `NullProvider` is the default at this batch — real model
-    // adapters land in B4.2 / B4.6 — so the call returns zero deltas
-    // and the determinism corridor (I-4, NFR-9) stays intact.
-    run_ai_proposal_pass(args);
+    // adapters are wired in piecewise: B4.2 wired the rule-based
+    // `LocalProvider` behind `--ai-provider local`, B4.6 will wire the
+    // HTTP `local:llama` / `local:ollama` and remote-API variants. The
+    // determinism corridor (I-4, NFR-9) stays intact because every
+    // shipping backend is content-addressed and the proposals are not
+    // yet applied (`dac-verify` gates application in B4.3).
+    run_ai_proposal_pass(args, &input_label, &model);
 
     let hints = match args.hints.as_deref() {
         Some(p) => Hints::load_from_path(p).map_err(hints_error_to_core)?,
@@ -1407,20 +1411,28 @@ fn sanitize_dot_ident(s: &str) -> String {
         .collect()
 }
 
-/// B4.1: resolve the CLI's `--no-ai` / `--ai-provider` flags onto an
-/// [`dac_ai::AiProvider`] and exercise a single propose call to prove
-/// the dispatch table, prompt + bundle types, and delta enum are
-/// reachable end-to-end. Until B4.2 the only real provider is
-/// `NullProvider`, so the call always returns zero deltas; we log the
-/// outcome (`reason`, `requested`, `proposals`) via `tracing::info!`
-/// so the auditor can see the chosen provider in `--debug` runs and
-/// in the `--json` log without affecting stdout / golden manifests.
+/// B4.1 / B4.2: resolve the CLI's `--no-ai` / `--ai-provider` flags onto
+/// an [`dac_ai::AiProvider`] and exercise a single propose call to prove
+/// the dispatch table, the prompt + bundle types, the versioned prompt
+/// templates ([`ai_templates`]), and the delta enum are reachable
+/// end-to-end. The chosen provider is recorded via `tracing::info!`
+/// (`reason`, `requested`, `proposals`) so the auditor can see the
+/// resolved provider in `--debug` runs and in the `--json` log without
+/// affecting stdout / golden manifests.
 ///
-/// `Fallback` requests (e.g. `--ai-provider local:llama` before B4.2)
-/// are surfaced with `tracing::warn!` so the user knows their
-/// requested provider was downgraded. The deterministic corridor
-/// stays intact because the actual provider is still `NullProvider`.
-fn run_ai_proposal_pass(args: &Args) {
+/// `Fallback` requests (e.g. `--ai-provider local:llama` until the
+/// HTTP-backed adapters land) are surfaced with `tracing::warn!` so the
+/// user knows their requested provider was downgraded. The
+/// deterministic corridor stays intact because the actual provider is
+/// still `NullProvider` in that branch and the rule-based
+/// [`dac_ai::LocalProvider`] is a pure function of its inputs.
+///
+/// B4.2 swaps the empty evidence bundle and the ad-hoc prompt of B4.1
+/// for the `pipeline-summary` template + a one-node bundle so the
+/// rule-based local provider has something to cite. Proposals are
+/// logged but **not applied** — delta verification (B4.3) and the
+/// review-mode + `-O3` paths (B4.4 / B4.5) gate application.
+fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) {
     let selection: AiProviderSelection = select_provider(args.no_ai, args.ai_provider.as_deref());
     if selection.reason == AiSelectionReason::Fallback {
         tracing::warn!(
@@ -1437,17 +1449,45 @@ fn run_ai_proposal_pass(args: &Args) {
             "selected ai provider"
         );
     }
-    // A stable pipeline-summary prompt + empty evidence bundle is
-    // enough to exercise the trait. Future batches (B4.5) will issue
-    // per-function prompts with non-empty bundles; this call site is
-    // the dispatch point those batches grow from.
-    let prompt = AiPrompt::new(AiPromptKind::Annotation, "dac pipeline summary");
-    let bundle = AiEvidenceBundle::new();
+    // B4.2: build the `pipeline-summary` prompt + a one-handle
+    // evidence bundle so the local stub provider has something to
+    // cite. The `Bytes { start: 0, end: model.size }` node represents
+    // "the model has seen the input header" — the smallest honest
+    // citation for a once-per-run prompt. Future batches (B4.5) will
+    // issue per-function prompts with richer bundles drawn from the
+    // recovered evidence graph.
+    let size_str = model.size.to_string();
+    let prompt = match ai_templates::lookup("pipeline-summary") {
+        Some(t) => ai_templates::render(
+            t,
+            &[
+                ("input", input_label),
+                ("format", model.format.name()),
+                ("arch", model.architecture.name()),
+                ("size", &size_str),
+            ],
+        ),
+        None => {
+            // Defensive: a missing template should never happen — the
+            // registry is static and unit-tested. If it does, log the
+            // condition and skip the propose call so the pipeline
+            // continues to run normally.
+            tracing::warn!("missing prompt template `pipeline-summary`; skipping ai proposal pass");
+            return;
+        }
+    };
+    let mut graph = EvidenceGraph::new();
+    let ev = graph.add_node(EvidenceNode::Bytes {
+        start: 0,
+        end: model.size as u64,
+    });
+    let bundle = AiEvidenceBundle::from_iter([ev]);
     match selection.provider.propose(&prompt, &bundle) {
         Ok(deltas) => {
             tracing::info!(
                 provider = selection.provider.name(),
                 proposals = deltas.len(),
+                template = "pipeline-summary",
                 "ai provider returned proposals"
             );
         }

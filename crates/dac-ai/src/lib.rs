@@ -3,7 +3,7 @@
 //! Part of the dac workspace. See `ARCHITECTURE.md` §9 in the workspace
 //! root.
 //!
-//! ## Status (B4.1)
+//! ## Status (B4.2)
 //!
 //! - [`AiProvider`] trait, [`Delta`] enum, and [`EvidenceBundle`] builder
 //!   ship the offline-only substrate so the rest of M4 can be authored
@@ -12,8 +12,16 @@
 //! - [`NullProvider`] is the default; it always returns no deltas and
 //!   keeps the I-4 corridor (deterministic pipeline completes without
 //!   AI) trivially satisfied.
+//! - [`LocalProvider`] is the first real local provider, gated by
+//!   `--ai-provider local` (or `--ai-provider local:stub`). The
+//!   default backend is a rule-based, in-process delta producer that
+//!   needs no external host (FR-35, NFR-21, NFR-22). HTTP-backed
+//!   `local:llama` / `local:ollama` adapters are reserved for a
+//!   follow-up batch.
 //! - [`EchoProvider`] is a test-only fixture that replays a fixed list
 //!   of [`Delta`]s on every call; nothing reaches a network.
+//! - [`templates`] holds the versioned prompt templates the CLI uses to
+//!   build the prompts it hands the provider (spec §13.8 / NFR-10).
 //!
 //! ## Invariants this crate is responsible for
 //!
@@ -40,8 +48,10 @@
 mod bundle;
 mod delta;
 mod error;
+mod local;
 mod prompt;
 mod provider;
+pub mod templates;
 
 pub use bundle::EvidenceBundle;
 pub use delta::{
@@ -49,6 +59,7 @@ pub use delta::{
     StructFieldSuggestion, SymbolRef,
 };
 pub use error::{ProviderError, ProviderResult};
+pub use local::{LocalBackend, LocalProvider};
 pub use prompt::{prompt_digest, Prompt, PromptKind};
 pub use provider::{
     select_provider, AiProvider, EchoProvider, NullProvider, ProviderSelection, SelectionReason,
