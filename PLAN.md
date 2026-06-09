@@ -94,13 +94,6 @@ above.
 
 Goal: `-O3` with AI assistance, review mode, and strict mode.
 
-### B4.3 — Delta verification (`dac-verify`)
-- IR consistency checks for every delta type (spec §13.4).
-- Strict mode (`--ai-strict`) drops any delta that would reduce confidence
-  on an Observed fact.
-- **Done when:** verification rejects a hand-crafted "rename to colliding
-  symbol" delta and a "retype int→ptr without evidence" delta.
-
 ### B4.4 — Review mode
 - `--ai-review` collects deltas as a side artifact without applying them
   (FR-33, spec §13.6).

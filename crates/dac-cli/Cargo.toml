@@ -26,6 +26,7 @@ dac-ir.workspace = true
 dac-knowledge.workspace = true
 dac-lift.workspace = true
 dac-recovery.workspace = true
+dac-verify.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

@@ -59,6 +59,7 @@ use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph, EvidenceNode};
 use dac_hints::{HintError, Hints};
 use dac_recovery::{detect_thunks, discover_functions, FunctionSet, FunctionTaxonomy};
+use dac_verify::{verify_delta, KnownFacts, VerifyMode, VerifyOutcome};
 
 use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
@@ -122,6 +123,7 @@ fn main() -> ExitCode {
         deterministic = args.deterministic,
         no_ai = args.no_ai,
         ai_provider = ?args.ai_provider,
+        ai_strict = args.ai_strict,
         threads = ?args.threads,
         arch = ?args.arch,
         output = ?args.output,
@@ -1482,11 +1484,44 @@ fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) {
         end: model.size as u64,
     });
     let bundle = AiEvidenceBundle::from_iter([ev]);
+    // B4.3: `dac-verify` judges each proposal before it could touch the
+    // IR. The world model is empty at this point — B4.4 / B4.5 wire it
+    // from recovered state. With an empty world, every delta rejects as
+    // `unknown-target`, which is the safe default while the apply path
+    // is still being built. The counts surface as tracing fields so a
+    // smoke run can see what the verifier did without parsing the
+    // (still-empty) review artifact (FR-37).
+    let mode = if args.ai_strict {
+        VerifyMode::Strict
+    } else {
+        VerifyMode::Lenient
+    };
+    let world = KnownFacts::new();
     match selection.provider.propose(&prompt, &bundle) {
         Ok(deltas) => {
+            let mut accepted = 0u32;
+            let mut rejected = 0u32;
+            for d in &deltas {
+                match verify_delta(d, &world, mode) {
+                    VerifyOutcome::Accept => accepted += 1,
+                    VerifyOutcome::Reject(reason) => {
+                        rejected += 1;
+                        tracing::debug!(
+                            provider = selection.provider.name(),
+                            kind = d.kind_tag(),
+                            reason = reason.tag(),
+                            mode = mode.tag(),
+                            "ai delta rejected by dac-verify"
+                        );
+                    }
+                }
+            }
             tracing::info!(
                 provider = selection.provider.name(),
                 proposals = deltas.len(),
+                accepted,
+                rejected,
+                mode = mode.tag(),
                 template = "pipeline-summary",
                 "ai provider returned proposals"
             );
@@ -1731,6 +1766,11 @@ struct Args {
     xrefs_subject: Option<String>,
     no_ai: bool,
     ai_provider: Option<String>,
+    /// B4.3: when set, the AI delta verifier (`dac-verify`) drops any
+    /// proposal whose target is recorded as `Source::Observed` rather
+    /// than letting the confidence lattice silently shadow it
+    /// (ARCHITECTURE §13).
+    ai_strict: bool,
     deterministic: bool,
     threads: Option<u32>,
     json: bool,
@@ -1770,6 +1810,7 @@ where
             "--xrefs" => args.xrefs_subject = Some(take_value("--xrefs", &mut it)?),
             "--no-ai" => args.no_ai = true,
             "--ai-provider" => args.ai_provider = Some(take_value("--ai-provider", &mut it)?),
+            "--ai-strict" => args.ai_strict = true,
             "--deterministic" => args.deterministic = true,
             "--threads" => {
                 let raw = take_value("--threads", &mut it)?;

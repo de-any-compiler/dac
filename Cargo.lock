@@ -177,6 +177,7 @@ dependencies = [
  "dac-knowledge",
  "dac-lift",
  "dac-recovery",
+ "dac-verify",
  "rand 0.8.6",
  "tempfile",
  "tracing",
@@ -248,6 +249,10 @@ dependencies = [
 [[package]]
 name = "dac-verify"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-ai",
+ "dac-core",
+]
 
 [[package]]
 name = "difflib"

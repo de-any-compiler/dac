@@ -493,6 +493,76 @@ fn b4_2_no_ai_overrides_local_provider_request() {
     );
 }
 
+/// B4.3 — `--ai-strict` is accepted and the run succeeds end-to-end.
+///
+/// At B4.3 the verifier rejects every proposal as `unknown-target`
+/// (the world model is still empty — populated in B4.4 / B4.5). The
+/// CLI surface we lock in here is that the flag parses, the binary
+/// exits 0, and the strict-mode choice does not perturb the manifest
+/// (it is a behavioural switch, not a settings stamp).
+#[test]
+fn b4_3_ai_strict_flag_is_accepted_and_run_succeeds() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-strict")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-strict --ai-provider local");
+    assert!(
+        out.status.success(),
+        "--ai-strict --ai-provider local should exit 0",
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("\"provider\": \"local\""),
+        "manifest must keep requested provider name `local`:\n{stdout}",
+    );
+}
+
+/// B4.3 — `--ai-strict --no-ai` is a no-op combination: `--no-ai`
+/// outranks every provider selection, so the verifier never sees a
+/// delta and strict mode has nothing to gate. The run still succeeds
+/// and the manifest's `no_ai: true` flag survives the combination.
+#[test]
+fn b4_3_ai_strict_is_inert_when_no_ai_is_set() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--no-ai")
+        .arg("--ai-strict")
+        .arg(&path)
+        .output()
+        .expect("run dac --no-ai --ai-strict");
+    assert!(out.status.success(), "combination should still succeed");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("\"no_ai\": true"),
+        "manifest must record no_ai=true even with --ai-strict:\n{stdout}",
+    );
+}
+
+/// B4.3 — `--ai-strict` works without any `--ai-provider` selection.
+/// The default `NullProvider` returns zero deltas, so strict mode has
+/// nothing to gate, but the flag must still parse and the run must
+/// still succeed.
+#[test]
+fn b4_3_ai_strict_works_with_default_provider() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-strict")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-strict (default provider)");
+    assert!(
+        out.status.success(),
+        "--ai-strict alone should still exit 0",
+    );
+}
+
 /// B3.35 — i386 dispatch wiring.
 ///
 /// Before this batch, `dac --target c <i386 PE>` printed the

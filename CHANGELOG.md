@@ -7001,6 +7001,151 @@ Closes: B3.35, FR-3 (multi-format pipeline reach), FR-21
 
 ### Milestone 4 — Human-oriented reconstruction
 
+#### B4.3 — Delta verification (`dac-verify`) (2026-06-09)
+
+*Motivation.* B4.1 and B4.2 shipped the AI adapter substrate plus
+the first real local provider, but no judgment lived between
+"provider returned deltas" and "deltas reach the IR". Spec §13.4
+calls for IR-consistency validation; spec §13.5 / ARCHITECTURE §13
+call for a strict mode that drops Speculative deltas which would
+shadow Observed facts. B4.3 promotes the empty `dac-verify` crate
+into the gate the spec asks for, and wires it into the orchestrator
+so a smoke run can already see "proposals=N, accepted=A,
+rejected=R" without changing manifest semantics.
+
+*Design notes.*
+- **`KnownFacts` world model (`dac-verify::world`).** The
+  verifier's view of recovered state: `BTreeMap<SymbolRef,
+  KnownSymbol>` + `BTreeMap<SlotRef, KnownSlot>` +
+  `BTreeMap<RegionRef, KnownRegion>`, with a reverse
+  `names_by_symbol` index for O(log n) collision lookups.
+  Iteration is deterministic (`BTreeMap`, NFR-9). Empty by
+  default — the orchestrator can build it from recovered state in
+  B4.4 / B4.5; until then an empty world rejects every proposal as
+  `unknown-target`, which is the safe default while the apply path
+  is still being built.
+- **`SlotType` (verifier-side).** Coarse summary of a slot's
+  recovered type — `Integer { width_bits }`, `Pointer`, `Float`,
+  `Aggregate`, `Unknown`. Finer detail lives in `dac-ir`; the
+  verifier only needs enough to decide "would this retype
+  contradict observed evidence?". `Unknown` is the "any retype is
+  plausible" escape valve so the verifier does not over-reject
+  slots that the deterministic pipeline has not yet typed.
+- **`verify_delta(delta, world, mode)` (`dac-verify::verify`).**
+  Closed dispatch over the `Delta` enum; one private helper per
+  variant. Each helper runs:
+    - `RenameSymbol`: identifier syntax check + symbol existence +
+      strict-mode source gate + name-collision against any *other*
+      symbol's recorded name. A no-op rename (same name) accepts.
+    - `RetypeSlot`: slot existence + strict-mode source gate +
+      "retype to pointer when slot has non-pointer evidence" check.
+      Pointer detection is the syntactic `*`/`* const` heuristic —
+      the verifier does not own a type parser; the full type system
+      lives in `dac-ir` and `dac-knowledge`.
+    - `SuggestStructLayout`: region existence + strict-mode gate +
+      non-empty + strictly-ascending field offsets + every field
+      identifier valid + every field type non-empty.
+    - `SuggestIdiom`: region existence + strict-mode gate +
+      non-empty idiom tag.
+    - `AnnotateRegion`: region existence + strict-mode gate +
+      non-empty comment.
+- **`VerifyMode { Lenient, Strict }`.** Strict mode rejects any
+  delta whose target's recorded source is `Source::Observed`
+  (ARCHITECTURE §13). Lenient mode lets the same delta through —
+  the confidence lattice's join semantics already protect Observed
+  facts from being shadowed by a Speculative proposal, but strict
+  mode surfaces the rejection up front so the orchestrator never
+  applies a delta it would have shadowed anyway.
+- **Closed `DeltaRejection` enum.** Eight variants, each with a
+  stable kebab-case `tag()`: `unknown-target`, `name-collision`,
+  `invalid-identifier`, `retype-no-pointer-evidence`,
+  `invalid-struct-layout`, `empty-annotation`, `empty-idiom`,
+  `strict-mode-blocks-observed`. The tag set is what the
+  orchestrator surfaces as `tracing` fields and (in B4.4) what the
+  review-mode artifact groups rejections by.
+- **`TargetKind { Symbol, Slot, Region }`.** Lets `UnknownTarget`
+  and `StrictModeBlocksObserved` carry the "which kind of handle"
+  distinction without splitting into per-kind variants.
+- **CLI wiring (`--ai-strict`).** New boolean flag on `Args`
+  parses verbatim (`--ai-strict`), folds into the `tracing` event
+  bundle, and threads `VerifyMode::Strict` vs `VerifyMode::Lenient`
+  into `run_ai_proposal_pass`. The flag is **not** mirrored into
+  the manifest's `ManifestSettings` — it's a behavioural switch,
+  not a settings stamp, and the omission keeps every existing
+  manifest golden byte-identical. The help-text snapshot
+  (`tests/snapshots/help.txt`) gains the new flag's two-line entry
+  in the AI block (spec §13.5).
+- **Empty-world wiring at B4.3.** `run_ai_proposal_pass` builds
+  `KnownFacts::new()` and runs `verify_delta` per proposal, then
+  logs `proposals=N, accepted=A, rejected=R, mode=<tag>` on the
+  existing tracing event. With an empty world, every stub delta
+  rejects as `unknown-target` — the correct safe default while
+  apply path is still being built (the local stub's deltas
+  reference handles derived from the prompt hash, not real
+  recovered symbols, so rejection is exactly right). B4.4 /
+  B4.5 populate the world model from recovered state and the
+  accepted counter will start climbing.
+
+*Done-when verification.*
+PLAN.md's "done when" calls out two cases; both ship as
+verifier-side unit tests:
+- `rejects_rename_to_colliding_symbol`: world has `SymbolRef(7) →
+  "sub_1040"` and `SymbolRef(8) → "checksum"`; a `RenameSymbol`
+  delta on `SymbolRef(7)` to `"checksum"` returns
+  `Reject(NameCollision { existing: SymbolRef(8), name: "checksum" })`.
+- `rejects_retype_int_to_ptr_without_evidence`: world has
+  `SlotRef(3)` typed as `Integer { width_bits: 32 }`; a
+  `RetypeSlot` delta to `"uint8_t *"` returns
+  `Reject(RetypeNoPointerEvidence { current: Integer { 32 },
+  requested: "uint8_t *" })`.
+End-to-end smoke check on `hello-x86_64 --ai-provider local`:
+`proposals=1, accepted=0, rejected=1, mode=lenient`; with
+`--ai-strict`: same proposals=1 line but `mode=strict`. Manifest
+unchanged. `--no-ai --ai-strict` parses, runs, and the manifest
+records `no_ai: true`.
+
+*Tests added.*
+- `dac-verify::world::tests` — 6 tests: empty-world emptiness,
+  symbol insertion + reverse index, `SlotType` tags distinct +
+  kebab-case, `is_pointer` only on `Pointer`, slot / region
+  insertion observability, name-index last-writer-wins.
+- `dac-verify::verify::tests` — 30 tests covering: both PLAN
+  done-when cases; strict-mode blocks rename / leaves lenient
+  alone / does not block Speculative target; per-variant
+  unknown-target rejection; rename happy-path (unique, self-noop)
+  + invalid identifier rejections; retype happy-paths
+  (pointer→pointer, int→int, unknown→any); struct-layout happy +
+  empty / overlapping / out-of-order / invalid-field-name; idiom +
+  annotation accept / empty-string rejection; `VerifyMode` /
+  `DeltaRejection` / `TargetKind` tag distinctness +
+  kebab-case; `VerifyOutcome::is_accept` / `is_reject` helpers;
+  pointer-shape heuristic + identifier-shape heuristic.
+- `dac-cli` integration — 3 tests: `--ai-strict` parses + run
+  succeeds with `--ai-provider local`; `--ai-strict` is inert
+  alongside `--no-ai`; `--ai-strict` alone with the default null
+  provider still parses and exits 0.
+
+*Out of scope (deferred).*
+- World-model population from recovered state. B4.3 leaves the
+  world empty; B4.4 (review mode) and B4.5 (`-O3`) wire recovered
+  symbol / slot / region facts into `KnownFacts` so the verifier
+  can start accepting proposals.
+- Delta application. The orchestrator still doesn't mutate the IR
+  on accepted proposals — `dac-core` gains the apply path with
+  B4.4 / B4.5 once review mode has somewhere to record what was
+  applied vs. what was withheld.
+- Review-artifact rendering. The verifier records structured
+  rejections; serialising them into a side artifact is B4.4's
+  job (FR-33, spec §13.6).
+- Sound IR-consistency checks driven by the recovered layout
+  table, idiom whitelists drawn from `dac-knowledge`, and
+  full-strength type matching (`dac-ir`). The substrate is in;
+  the world-model population that feeds those richer checks lands
+  with the apply path.
+
+Closes: B4.3, FR-32, FR-33, FR-34, NFR-9, I-3, I-5,
+ARCHITECTURE §9, ARCHITECTURE §13, spec §13.4, spec §13.5.
+
 #### B4.2 — Local model provider (2026-06-09)
 
 *Motivation.* B4.1 shipped the AI adapter substrate — the
