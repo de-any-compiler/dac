@@ -33,7 +33,7 @@ pub use api::{
 };
 pub use canonical::{canonical_entries, lookup_canonical_entry, CanonicalArg, CanonicalEntry};
 pub use convention::{
-    x86_64_convention_by_name, CallingConvention, ConventionKind, MS_X64, SYSV_AMD64,
-    SYSV_AMD64_SYSCALL, X86_64_CONVENTIONS,
+    i386_convention_by_name, x86_64_convention_by_name, CallingConvention, ConventionKind, CDECL,
+    I386_CONVENTIONS, MS_X64, STDCALL, SYSV_AMD64, SYSV_AMD64_SYSCALL, X86_64_CONVENTIONS,
 };
 pub use crt::{crt_entries, lookup_crt_entry, CrtEntry, CrtRuntime};

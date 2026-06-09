@@ -79,6 +79,21 @@ in needed libraries, etc.).
 | `hello-x86_64-stripped.exe`   | Same, with full `--strip-all` (no symtab)        | `x86_64-w64-mingw32-strip --strip-all tmp.exe -o hello-x86_64-stripped.exe`                            |
 | `sample.dll`                  | PE32+ DLL with three `__declspec(dllexport)`s    | `x86_64-w64-mingw32-gcc -Os -shared -ffunction-sections -fdata-sections -Wl,--gc-sections sample_dll.c -o tmp.dll` then `x86_64-w64-mingw32-strip --strip-debug tmp.dll -o sample.dll` |
 
+## PE (i386, Windows) — B3.35
+
+| File              | What it is                                       | How to rebuild                                                                                         |
+| ----------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `hello-i386.exe`  | PE32 (i386) console exe with the COFF symbol table | `i686-w64-mingw32-gcc -Os -ffunction-sections -fdata-sections -Wl,--gc-sections hello_pe.c -o tmp.exe` then `i686-w64-mingw32-strip --strip-debug tmp.exe -o hello-i386.exe` |
+
+The i386 PE shares the same `hello_pe.c` source as `hello-x86_64.exe`.
+It exists to gate the B3.35 dispatch arm: before the batch the CLI
+emitted the unsupported-arch stub for any non-x86-64 model; after,
+the existing `dac-arch-x86` 32-bit decoder / lifter / register file
+route through, and the recovery pass scores cdecl / stdcall
+([`dac_knowledge::I386_CONVENTIONS`]) instead of the x86-64 slate.
+Body-recovery quality on i386 (rax→eax bridge constants, push/pop
+slot width) is residue-shelf concern, not a B3.35 done-when.
+
 The unstripped variant keeps the COFF symbol table (so `main` round-trips
 through the parser) but drops debug sections, keeping the file ~40 KiB.
 The fully-stripped variant is ~16 KiB; the DLL is ~30 KiB. Reference

@@ -231,10 +231,92 @@ pub const SYSV_AMD64_SYSCALL: CallingConvention = CallingConvention {
 /// scoring rule applies a hard penalty when the opcode is absent.
 pub const X86_64_CONVENTIONS: &[&CallingConvention] = &[&SYSV_AMD64, &MS_X64, &SYSV_AMD64_SYSCALL];
 
+/// 32-bit System V / Win32 `cdecl` (B3.35).
+///
+/// The default convention for user-space functions on 32-bit Linux,
+/// the BSDs, and (modulo stack cleanup) Win32 console / CRT entry
+/// points. All integer / pointer arguments pass on the stack — the
+/// argument-prefix scoring lane in [`dac_recovery::convention`] is
+/// therefore effectively a no-op for cdecl, and the inference pass
+/// falls back on the stack-arg lane (positive-offset locals at +4,
+/// +8, …). `eax` carries the integer return value; `ebx`, `esi`,
+/// `edi`, `ebp` are callee-saved (matching the Win32 ABI's "non-
+/// volatile" set on i386).
+///
+/// `first_stack_arg_offset` is `4` because the i386 return-address
+/// slot is one machine word above the callee's entry stack pointer
+/// (versus `8` on x86-64). `frame_pointer` is `ebp`, so a function
+/// that sets up the classic `push ebp; mov ebp, esp` prologue is
+/// scorable without further metadata.
+pub const CDECL: CallingConvention = CallingConvention {
+    name: "cdecl",
+    architecture: "i386",
+    int_arg_registers: &[],
+    float_arg_registers: &[],
+    int_return_register: "eax",
+    float_return_register: "st0",
+    callee_saved: &["ebx", "esi", "edi", "ebp"],
+    caller_saved: &["eax", "ecx", "edx"],
+    stack_pointer: "esp",
+    frame_pointer: Some("ebp"),
+    first_stack_arg_offset: 4,
+    stack_arg_alignment: 4,
+    shadow_space_bytes: 0,
+    kind: ConventionKind::Normal,
+};
+
+/// 32-bit Win32 `stdcall` (B3.35).
+///
+/// The dominant convention for Win32 API entry points on i386 PE
+/// (`WINAPI`, `CALLBACK`, most user32 / kernel32 exports). Argument
+/// layout is identical to [`CDECL`] from the callee's perspective —
+/// all integer args on the stack, `eax` returns, same callee-saved
+/// set. The wire-level difference is that the callee, not the
+/// caller, cleans the stack on return (`ret imm16`). The recovery
+/// pass scores callee-side facts only, so the two conventions are
+/// indistinguishable at the callee boundary and the table preserves
+/// both so the caller-side cleanup story remains a hint dac can
+/// promote when the call site is in view.
+pub const STDCALL: CallingConvention = CallingConvention {
+    name: "stdcall",
+    architecture: "i386",
+    int_arg_registers: &[],
+    float_arg_registers: &[],
+    int_return_register: "eax",
+    float_return_register: "st0",
+    callee_saved: &["ebx", "esi", "edi", "ebp"],
+    caller_saved: &["eax", "ecx", "edx"],
+    stack_pointer: "esp",
+    frame_pointer: Some("ebp"),
+    first_stack_arg_offset: 4,
+    stack_arg_alignment: 4,
+    shadow_space_bytes: 0,
+    kind: ConventionKind::Normal,
+};
+
+/// All i386 calling conventions known to dac, in inference-pass
+/// scoring order (B3.35).
+///
+/// `cdecl` precedes `stdcall` so a callee-side tie breaks toward the
+/// default — the recovery pass only sees the callee, and the two
+/// share an identical register layout. The order is load-bearing
+/// for [`dac_recovery::convention::candidates_for`]'s tie-break
+/// behaviour, mirroring [`X86_64_CONVENTIONS`].
+pub const I386_CONVENTIONS: &[&CallingConvention] = &[&CDECL, &STDCALL];
+
 /// Look up an x86-64 convention by its stable `name`.
 #[must_use]
 pub fn x86_64_convention_by_name(name: &str) -> Option<&'static CallingConvention> {
     X86_64_CONVENTIONS
+        .iter()
+        .copied()
+        .find(|c| c.name.eq_ignore_ascii_case(name))
+}
+
+/// Look up an i386 convention by its stable `name` (B3.35).
+#[must_use]
+pub fn i386_convention_by_name(name: &str) -> Option<&'static CallingConvention> {
+    I386_CONVENTIONS
         .iter()
         .copied()
         .find(|c| c.name.eq_ignore_ascii_case(name))
@@ -361,5 +443,64 @@ mod tests {
                 .kind,
             ConventionKind::Syscall,
         );
+    }
+
+    // ---- B3.35 i386 ---------------------------------------------------
+
+    #[test]
+    fn cdecl_table_matches_i386_abi() {
+        assert_eq!(CDECL.name, "cdecl");
+        assert_eq!(CDECL.architecture, "i386");
+        assert_eq!(CDECL.int_arg_registers, &[] as &[&str]);
+        assert_eq!(CDECL.int_return_register, "eax");
+        assert_eq!(CDECL.callee_saved, &["ebx", "esi", "edi", "ebp"]);
+        assert_eq!(CDECL.caller_saved, &["eax", "ecx", "edx"]);
+        assert_eq!(CDECL.stack_pointer, "esp");
+        assert_eq!(CDECL.frame_pointer, Some("ebp"));
+        // i386 return-address slot is 4 bytes; first stack arg sits
+        // immediately above it.
+        assert_eq!(CDECL.first_stack_arg_offset, 4);
+        assert_eq!(CDECL.stack_arg_alignment, 4);
+        assert_eq!(CDECL.shadow_space_bytes, 0);
+        assert_eq!(CDECL.kind, ConventionKind::Normal);
+    }
+
+    #[test]
+    fn stdcall_shares_callee_layout_with_cdecl() {
+        // stdcall's caller-cleanup difference is invisible from the
+        // callee side, which is what the recovery pass scores.
+        assert_eq!(STDCALL.int_arg_registers, CDECL.int_arg_registers);
+        assert_eq!(STDCALL.int_return_register, CDECL.int_return_register);
+        assert_eq!(STDCALL.callee_saved, CDECL.callee_saved);
+        assert_eq!(STDCALL.caller_saved, CDECL.caller_saved);
+        assert_eq!(STDCALL.first_stack_arg_offset, CDECL.first_stack_arg_offset);
+        assert_eq!(STDCALL.stack_arg_alignment, CDECL.stack_arg_alignment);
+        assert_eq!(STDCALL.frame_pointer, CDECL.frame_pointer);
+    }
+
+    #[test]
+    fn i386_conventions_ordered_cdecl_first() {
+        let names: Vec<_> = I386_CONVENTIONS.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["cdecl", "stdcall"]);
+    }
+
+    #[test]
+    fn i386_lookup_by_name_returns_canonical_entry() {
+        assert_eq!(i386_convention_by_name("cdecl").unwrap().name, "cdecl");
+        assert_eq!(i386_convention_by_name("STDCALL").unwrap().name, "stdcall");
+        assert!(i386_convention_by_name("ms-x64").is_none());
+    }
+
+    #[test]
+    fn i386_conventions_do_not_advertise_x86_64_registers() {
+        // The i386 register file has no `rax` / `rdi`, so neither the
+        // return register nor the (empty) arg-register list should
+        // reference any 64-bit GP name.
+        for c in I386_CONVENTIONS {
+            assert!(!c.int_return_register.starts_with('r'));
+            assert!(c.int_arg_registers.iter().all(|r| !r.starts_with('r')));
+            assert!(c.callee_saved.iter().all(|r| !r.starts_with('r')));
+            assert!(c.caller_saved.iter().all(|r| !r.starts_with('r')));
+        }
     }
 }

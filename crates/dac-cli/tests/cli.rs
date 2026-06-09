@@ -33,6 +33,10 @@ fn pe_fixture() -> PathBuf {
     fixture_path("hello-x86_64.exe")
 }
 
+fn pe_i386_fixture() -> PathBuf {
+    fixture_path("hello-i386.exe")
+}
+
 #[test]
 fn dac_returns_clean_error_on_random_input() {
     let mut rng = StdRng::seed_from_u64(0xDAC0_5EED);
@@ -297,4 +301,50 @@ fn dac_rejects_missing_value_with_exit_2() {
         .assert()
         .failure()
         .code(2);
+}
+
+/// B3.35 — i386 dispatch wiring.
+///
+/// Before this batch, `dac --target c <i386 PE>` printed the
+/// `unsupported_arch_listing` stub ("no architecture backend
+/// available; listing skipped"). After: the dispatch arm in
+/// `pick_backend` routes i386 through the existing `dac-arch-x86`
+/// 32-bit decoder / lifter / register file, so the listing carries
+/// real recovered functions and the manifest reports
+/// `architecture: i386`.
+///
+/// Done-when (PLAN.md §B3.35): listing has at least one recovered
+/// function instead of the unsupported-arch stub, and the manifest
+/// architecture field reads `i386`. (FR-3, FR-21)
+#[test]
+fn b3_35_i386_pe_listing_recovers_functions_and_manifest_reports_i386() {
+    let path = pe_i386_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg(&path)
+        .output()
+        .expect("run dac on i386 PE");
+    assert!(out.status.success(), "dac on i386 PE should exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // The pre-B3.35 stub leaves this exact substring; its absence is
+    // the structural signal that the dispatch arm fired.
+    assert!(
+        !stdout.contains("no architecture backend available"),
+        "i386 listing must not emit the unsupported-arch stub:\n{stdout}",
+    );
+    // At least one function header must appear. The annotated-listing
+    // renderer prints `;; function <name>` per recovered entry; the
+    // i386 PE fixture's symbol table seeds dozens of these.
+    assert!(
+        stdout.contains(";; function "),
+        "i386 listing must include at least one recovered function header:\n{stdout}",
+    );
+    // Manifest is appended to stdout under the `;; ---- manifest`
+    // banner and reports the architecture string as the
+    // `dac-binfmt::Architecture::name` for I386, which is `"i386"`.
+    assert!(
+        stdout.contains("\"architecture\": \"i386\""),
+        "manifest must report architecture: i386:\n{stdout}",
+    );
 }

@@ -6815,6 +6815,190 @@ their stale `long` declarators and `return ((long)(…));` casts.
 
 Closes: B3.34, FR-21 (recovered source readability).
 
+#### B3.35 — i386 dispatch wiring (2026-06-09)
+
+The `dac-arch-x86` crate has shipped a 32-bit decoder, lifter, and
+register file since B1.3 / B1.4 — the `I386` zero-sized
+`Architecture` impl tests passed, but no `Architecture::I386` arm
+existed in `dac-cli::pick_backend`. Every i386 PE the CLI saw
+therefore took the `unsupported_arch_*` branch: the listing,
+report, source.c, and CFG outputs collapsed to one-line stubs, and
+the round-trip end-to-end loses 100% on any 32-bit input. The
+GOTHIC.EXE-class of period PE binaries is i386, so the gap blocked
+a sizeable chunk of the corpus.
+
+B3.35 fills three small holes:
+
+1. **CLI dispatch (`crates/dac-cli/src/main.rs`).** A new
+   `Architecture::I386 => Some(Backend { … })` arm in `pick_backend`
+   routes i386 binaries through the same pipeline as x86-64: the
+   `IcedDecoder::new(32)` decoder, the `IcedLifter::new(32)`
+   lifter, and the `OnceLock`-backed i386 register file. A new
+   `i386_register_file_static()` helper mirrors
+   `x86_64_register_file_static()` so the borrow recovers its real
+   `'static` lifetime through a zero-sized `I386` value promoted
+   to `static`.
+2. **i386 calling conventions in `dac-knowledge`
+   (`crates/dac-knowledge/src/convention.rs`).** Two new entries —
+   `CDECL` and `STDCALL` — and an `I386_CONVENTIONS: &[…]` slate in
+   inference-pass scoring order (`cdecl` first so the callee-side
+   tie breaks toward the SysV / Linux default). Both share the
+   callee-side layout (no register args, `eax` returns, `{ebx,
+   esi, edi, ebp}` callee-saved, `first_stack_arg_offset = 4`
+   above the 4-byte i386 return-address slot, `stack_arg_alignment
+   = 4`). The recovery pass scores callee-side facts only, so the
+   caller-cleanup distinction between cdecl and stdcall is
+   invisible at the boundary; both are kept so a future call-site
+   hint can promote one over the other. An `i386_convention_by_name`
+   lookup mirrors `x86_64_convention_by_name`.
+3. **Format-gated slate dispatch
+   (`crates/dac-recovery/src/convention.rs`).** `candidates_for`
+   gains an i386 arm: ELF / Mach-O → cdecl only (stdcall is
+   Windows-only); PE → cdecl + stdcall. Non-x86-64, non-i386
+   architectures (Aarch64, etc.) still fall back to the full
+   `X86_64_CONVENTIONS` slate — that path is unchanged from B3.24.
+
+Motivation:
+
+- **Unblocks the GOTHIC.EXE-class corpus.** The B3 polish wave was
+  scoped to make dac "genuinely useful to a reverse engineer"
+  (PLAN.md M3 goal). Period-correct PE binaries (Win9x / WinXP-era
+  consumer software, including a lot of game-engine corpora) are
+  overwhelmingly i386; routing them through `unsupported_arch`
+  would make that section of corpus unusable for any future
+  M4 / M5 work.
+- **No new arch lifter.** The existing iced-x86 wrapping is
+  bitness-parameterised at the type level (`IcedDecoder::new(32)`
+  / `IcedLifter::new(32)`); the registers crate already builds an
+  i386 file with sub-register parents wired to 32-bit GP bases.
+  The work is wiring, not arch-recovery.
+- **Corpus-quality residue is out of scope.** PLAN.md is explicit:
+  "the compile round-trip gate is *not* a done-when for this
+  batch — i386 corpus quality is a residue-shelf concern." The
+  bridge in `dac-lift::bridge` still uses x86-64 register names
+  (`rax`, `rdi`, …) and a fixed 8-byte push / pop slot at every
+  call site, so i386 source.c carries stray `int64_t v_rax = 0LL`
+  initialisers and `long long`-typed call expressions. The
+  bodies are still well-formed C; the unhelpful types are honest
+  evidence of the residue, not a bug. Wiring an i386-aware
+  bridge is sized as a separate M3-residue item rather than a
+  numbered batch.
+
+Design notes:
+
+- **Why not promote the i386 conventions to the x86-64 inference
+  pass too?** The scoring pass in `dac-recovery::convention`
+  scores callee-side facts: argument register prefixes, return
+  register, stack-arg layout. cdecl / stdcall have no register
+  args (`int_arg_registers: &[]`), so the prefix-bonus lane
+  contributes zero; the stack-arg lane (which scores positive
+  offsets at `+4`, `+8`, …) does the real work. The i386 register
+  file does not advertise the 64-bit GP set, so a cdecl candidate
+  would never spuriously match an x86-64 binary; conversely, the
+  x86-64 conventions reference `rax`, `rdi`, etc. — names absent
+  from the i386 register file — so they cannot spuriously match
+  an i386 binary. The two slates are disjoint by construction;
+  the candidate-slice dispatch in `candidates_for` is the right
+  cut.
+- **`first_stack_arg_offset = 4`.** The x86-64 SysV first-stack-arg
+  offset is `+8` because the return address occupies one 64-bit
+  machine word above the callee's entry stack pointer. On i386
+  the analogous slot is 4 bytes. The recovery pass's
+  positive-offset stack-local scan starts at this offset, so
+  setting it to `4` is what makes a cdecl callee's first stack
+  arg show up at the right slot.
+- **`STDCALL` carries the same callee-side layout as `CDECL`.**
+  The wire-level difference (callee cleans the stack via `ret
+  imm16`) is observable only at the call site, not from the
+  callee body. Keeping both entries means a future B3
+  follow-up — call-site cleanup analysis, or a `[[convention]]`
+  hint — can promote one over the other without redoing the
+  scoring pass.
+- **Fixture choice.** `hello-i386.exe` is the same minimal
+  `hello_pe.c` source as `hello-x86_64.exe`, compiled with
+  `i686-w64-mingw32-gcc` and `--strip-debug` to keep the COFF
+  symbol table for function-discovery seed reliability.
+
+Changes by file:
+
+- **`crates/dac-knowledge/src/convention.rs`** —
+  - `CDECL`, `STDCALL` — two `CallingConvention` const entries
+    with the i386 callee-side layout.
+  - `I386_CONVENTIONS: &[&CallingConvention] = &[&CDECL, &STDCALL]`
+    in inference-pass scoring order.
+  - `i386_convention_by_name(name: &str)` lookup helper.
+  - 5 new tests covering ABI shape, lookup case-insensitivity,
+    table ordering, and the i386 / x86-64 register disjointness
+    invariant.
+- **`crates/dac-knowledge/src/lib.rs`** —
+  - Re-exports for `CDECL`, `STDCALL`, `I386_CONVENTIONS`,
+    `i386_convention_by_name`.
+- **`crates/dac-recovery/src/convention.rs`** —
+  - `candidates_for` rewritten as an arch-then-format match: x86-64
+    keeps its ELF / Mach-O / PE branches verbatim; i386 gains the
+    same shape with `ELF_I386_CONVENTIONS = &[&CDECL]` and
+    `PE_I386_CONVENTIONS = &[&CDECL, &STDCALL]`; any other arch
+    still falls through to `X86_64_CONVENTIONS`.
+  - Renamed the existing
+    `b3_24_non_x86_64_arch_returns_full_x86_64_slate` test to
+    `b3_24_non_x86_arch_returns_full_x86_64_slate` (it now
+    documents the fallback for arches other than x86-64 *and*
+    i386).
+  - 3 new B3.35 tests: PE / ELF / Mach-O i386 slate composition.
+- **`crates/dac-cli/src/main.rs`** —
+  - `use dac_arch_x86::{I386, X86_64};`
+  - `pick_backend` gains the `Architecture::I386` arm.
+  - `i386_register_file_static()` helper mirroring
+    `x86_64_register_file_static()`.
+- **`crates/dac-cli/tests/cli.rs`** —
+  - `pe_i386_fixture()` helper.
+  - `b3_35_i386_pe_listing_recovers_functions_and_manifest_reports_i386`
+    — end-to-end check that the unsupported-arch stub disappears,
+    at least one `;; function ` header appears, and the manifest
+    reports `"architecture": "i386"`.
+- **`tests/fixtures/hello-i386.exe`** — new fixture.
+- **`tests/fixtures/README.md`** — new "PE (i386, Windows) —
+  B3.35" section documenting the source and rebuild command.
+
+End-to-end verification:
+
+- `./target/debug/dac --target c tests/fixtures/hello-i386.exe` —
+  listing emits 76 recovered functions with rendered disassembly
+  and lifted-IR commentary. Pre-batch baseline was the
+  unsupported-arch stub (`;; (no architecture backend available;
+  listing skipped)`).
+- The manifest JSON appended to stdout reports `"architecture":
+  "i386"` (was already correct pre-batch — the binfmt layer detects
+  arch; B3.35 just makes the pipeline act on it).
+- `./target/debug/dac -O1 --target c tests/fixtures/hello-i386.exe`
+  produces a 1200+ line `source.c` with recovered structs, function
+  declarations, and bodies for all 76 discovered functions. The
+  bodies contain x86-64-shaped register names (`v_rax`, `v_rdi`,
+  …) because `dac-lift::bridge` is still i386-unaware — this is
+  the residue PLAN.md flagged; the compile gate is not asserted.
+
+Tests added (+9 net new, 777 total):
+
+- `crates/dac-knowledge/src/convention.rs::tests::cdecl_table_matches_i386_abi`,
+  `stdcall_shares_callee_layout_with_cdecl`,
+  `i386_conventions_ordered_cdecl_first`,
+  `i386_lookup_by_name_returns_canonical_entry`,
+  `i386_conventions_do_not_advertise_x86_64_registers` — 5 unit
+  tests.
+- `crates/dac-recovery/src/convention.rs::tests::b3_35_pe_i386_keeps_cdecl_and_stdcall`,
+  `b3_35_elf_i386_keeps_only_cdecl`,
+  `b3_35_macho_i386_mirrors_elf_slate` — 3 unit tests.
+- `crates/dac-cli/tests/cli.rs::b3_35_i386_pe_listing_recovers_functions_and_manifest_reports_i386`
+  — end-to-end CLI integration test.
+
+`cargo xtask ci` green: fmt + clippy + 777 tests + 32 goldens
+across 12 cases match (no golden refresh needed — the i386 fixture
+is not covered by the golden suite at this batch; an i386 golden
+case is a fit for a follow-up corpus-quality batch).
+
+Closes: B3.35, FR-3 (multi-format pipeline reach), FR-21
+(recovered source readability).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

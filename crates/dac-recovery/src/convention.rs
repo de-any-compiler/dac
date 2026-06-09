@@ -84,7 +84,9 @@ use std::collections::BTreeSet;
 use dac_binfmt::{Architecture, BinaryFormat};
 use dac_core::{Confidence, Source};
 use dac_ir::ssa::{Operand, SsaFunction, SsaOp, SsaTerminator, ValueId, ValueSource, VariableId};
-use dac_knowledge::{CallingConvention, ConventionKind, MS_X64, SYSV_AMD64, SYSV_AMD64_SYSCALL};
+use dac_knowledge::{
+    CallingConvention, ConventionKind, CDECL, MS_X64, STDCALL, SYSV_AMD64, SYSV_AMD64_SYSCALL,
+};
 
 use crate::stack::StackFrame;
 
@@ -265,31 +267,44 @@ pub fn pick_best(
 ///   loaders.
 /// - PE on x86-64 → MsX64 only ([`MS_X64`]). Linux syscall
 ///   conventions are impossible on this loader.
-/// - Non-x86-64 architecture → the full [`X86_64_CONVENTIONS`] slate.
-///   dac does not yet lift other architectures end-to-end, but
-///   returning the full slate preserves the pre-B3.24 behaviour for
-///   any caller that exercises a non-x86-64 path (no test relies on
-///   this branch today, so the choice is documentational).
+/// - ELF / Mach-O on i386 → cdecl-family ([`CDECL`]) (B3.35).
+/// - PE on i386 → cdecl + stdcall ([`CDECL`], [`STDCALL`]) (B3.35).
+///   Both share the callee-side layout the inference pass scores; the
+///   caller-cleanup distinction is a hint dac promotes when the call
+///   site is in view.
+/// - Other architectures → the full [`X86_64_CONVENTIONS`] slate. dac
+///   does not yet lift them end-to-end, but returning the full slate
+///   preserves the pre-B3.24 behaviour for any caller that exercises
+///   such a path (no test relies on this branch today, so the choice
+///   is documentational).
 ///
 /// The returned slice's order mirrors [`X86_64_CONVENTIONS`] so a
 /// score tie still breaks toward the entry that appears first there
-/// (SysV before MsX64, both before the syscall variant).
+/// (SysV before MsX64, both before the syscall variant). The i386
+/// slates mirror [`dac_knowledge::I386_CONVENTIONS`] for the same
+/// reason — cdecl before stdcall.
 #[must_use]
 pub fn candidates_for(
     format: BinaryFormat,
     arch: Architecture,
 ) -> &'static [&'static CallingConvention] {
-    if !matches!(arch, Architecture::X86_64) {
-        return dac_knowledge::X86_64_CONVENTIONS;
-    }
-    match format {
-        BinaryFormat::Elf | BinaryFormat::MachO => ELF_X86_64_CONVENTIONS,
-        BinaryFormat::Pe => PE_X86_64_CONVENTIONS,
+    match arch {
+        Architecture::X86_64 => match format {
+            BinaryFormat::Elf | BinaryFormat::MachO => ELF_X86_64_CONVENTIONS,
+            BinaryFormat::Pe => PE_X86_64_CONVENTIONS,
+        },
+        Architecture::I386 => match format {
+            BinaryFormat::Elf | BinaryFormat::MachO => ELF_I386_CONVENTIONS,
+            BinaryFormat::Pe => PE_I386_CONVENTIONS,
+        },
+        _ => dac_knowledge::X86_64_CONVENTIONS,
     }
 }
 
 const ELF_X86_64_CONVENTIONS: &[&CallingConvention] = &[&SYSV_AMD64, &SYSV_AMD64_SYSCALL];
 const PE_X86_64_CONVENTIONS: &[&CallingConvention] = &[&MS_X64];
+const ELF_I386_CONVENTIONS: &[&CallingConvention] = &[&CDECL];
+const PE_I386_CONVENTIONS: &[&CallingConvention] = &[&CDECL, &STDCALL];
 
 /// All parameter values in the function, paired with their
 /// register name (lowercased via the SSA variable table).
@@ -1355,16 +1370,47 @@ mod tests {
         assert_eq!(names, vec!["sysv-amd64", "sysv-amd64-syscall"]);
     }
 
-    /// A non-x86-64 architecture falls back to the full
+    /// A non-x86-64, non-i386 architecture falls back to the full
     /// `X86_64_CONVENTIONS` slate. dac does not lift other
     /// architectures end-to-end yet, so this branch preserves the
     /// pre-B3.24 caller behaviour rather than returning an empty
     /// slice that would silently disable convention inference.
     #[test]
-    fn b3_24_non_x86_64_arch_returns_full_x86_64_slate() {
+    fn b3_24_non_x86_arch_returns_full_x86_64_slate() {
         let slate = candidates_for(BinaryFormat::Elf, Architecture::Aarch64);
         let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
         assert_eq!(names, vec!["sysv-amd64", "ms-x64", "sysv-amd64-syscall"]);
+    }
+
+    // --- B3.35: i386 format-gated candidate slice ---------------
+
+    /// PE on i386 keeps both `cdecl` and `stdcall`. `cdecl` precedes
+    /// `stdcall` so the callee-side score-tie breaks toward the
+    /// default convention; the two are otherwise interchangeable from
+    /// the callee's view (callee-cleanup is the caller's concern).
+    #[test]
+    fn b3_35_pe_i386_keeps_cdecl_and_stdcall() {
+        let slate = candidates_for(BinaryFormat::Pe, Architecture::I386);
+        let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["cdecl", "stdcall"]);
+    }
+
+    /// ELF on i386 sees `cdecl` only. stdcall is a Windows-only
+    /// convention; SysV i386 binaries use cdecl exclusively.
+    #[test]
+    fn b3_35_elf_i386_keeps_only_cdecl() {
+        let slate = candidates_for(BinaryFormat::Elf, Architecture::I386);
+        let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["cdecl"]);
+    }
+
+    /// Mach-O on i386 mirrors ELF (`cdecl` only). Apple's i386 ABI is
+    /// SysV-compatible at the level the recovery pass scores.
+    #[test]
+    fn b3_35_macho_i386_mirrors_elf_slate() {
+        let slate = candidates_for(BinaryFormat::MachO, Architecture::I386);
+        let names: Vec<&str> = slate.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["cdecl"]);
     }
 
     /// On the same SysV-style function fixture as

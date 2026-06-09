@@ -35,7 +35,7 @@ use std::process::ExitCode;
 use dac_analysis::cfg::{build_cfgs, render_dot_all};
 use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, resolve_subject};
 use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter, RegisterFile};
-use dac_arch_x86::X86_64;
+use dac_arch_x86::{I386, X86_64};
 use dac_backend_c::ast::{
     Block as CBlock, CType, Expr as CExpr, ExternDecl as CExternDecl, Function as CFunction,
     Item as CItem, Param as CParam, Stmt as CStmt, TranslationUnit,
@@ -1313,6 +1313,18 @@ fn pick_backend(model: &BinaryModel) -> Option<Backend> {
             lifter: X86_64.lifter(),
             register_file: x86_64_register_file_static(),
         }),
+        // B3.35: route i386 (32-bit Intel) through the same pipeline
+        // as x86-64. The dac-arch-x86 crate has shipped a 32-bit
+        // decoder, lifter, and register file since B1.3 / B1.4; this
+        // dispatch arm makes them reachable from the CLI. PE-only
+        // calling-convention plumbing (cdecl / stdcall) lives in
+        // `dac-knowledge` and `dac-recovery::candidates_for`; nothing
+        // else in the pipeline is i386-specific (FR-3, FR-21).
+        Architecture::I386 => Some(Backend {
+            decoder: I386.decoder(),
+            lifter: I386.lifter(),
+            register_file: i386_register_file_static(),
+        }),
         _ => None,
     }
 }
@@ -1328,6 +1340,16 @@ fn pick_backend(model: &BinaryModel) -> Option<Backend> {
 /// `&'static self` and therefore `&'static RegisterFile`.
 fn x86_64_register_file_static() -> &'static RegisterFile {
     static ARCH: X86_64 = X86_64;
+    ARCH.register_file()
+}
+
+/// Borrow the i386 register file with its real `'static` lifetime.
+/// Mirrors [`x86_64_register_file_static`]; both register files live
+/// in `OnceLock`-backed statics inside `dac-arch-x86`, so promoting
+/// the zero-sized `I386` to `static` is enough to recover the
+/// `'static` lifetime the trait method elides (B3.35).
+fn i386_register_file_static() -> &'static RegisterFile {
+    static ARCH: I386 = I386;
     ARCH.register_file()
 }
 

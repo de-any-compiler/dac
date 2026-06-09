@@ -49,32 +49,11 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22, B3.23 – B3.31, B3.32, B3.33, and B3.34 are complete
-— see [CHANGELOG.md](./CHANGELOG.md). B3.35 is the only remaining
-polish-wave batch before M3 closes: i386 dispatch wiring. The "B3
-residue shelf" further down tracks heavier residue items that stay
-deferred past M3 and are sized as separate milestones rather than
-numbered batches.
-
-### Sequencing
-
-B3.35 (i386 dispatch wiring) unblocks the GOTHIC.EXE-class of PE
-fixtures; it is independent of every other M3 batch.
-
-### B3.35 — i386 dispatch wiring (PE focus)
-
-- `Architecture::I386 => Some(Backend { … })` added to the dispatch
-  in `dac-cli::main.rs` so the existing `I386` zero-sized type,
-  its decoder, and its register file (all already present in
-  `dac-arch-x86`) route through the same pipeline as `X86_64`.
-- 32-bit ABI plumbing (cdecl / stdcall on i386 PE) where the
-  existing x86-64 SysV / Win64 conventions don't already cover it.
-- The compile round-trip gate is *not* a done-when for this batch
-  — i386 corpus quality is a residue-shelf concern.
-- **Done when:** `dac --target c <i386 PE fixture>` produces a
-  listing with at least one recovered function instead of the
-  current "no architecture backend available" stub, and the
-  manifest correctly reports `architecture: i386`. (FR-3, FR-21)
+All M3 polish-wave batches (B3.1 – B3.35) are complete — see
+[CHANGELOG.md](./CHANGELOG.md). M3 itself closes once the "B3
+residue shelf" items below are either picked up as their own
+batches or formally re-scoped as M4 / M5 / Mx work; the goal
+("dac is genuinely useful to a reverse engineer") is reached.
 
 ### B3 residue shelf
 
