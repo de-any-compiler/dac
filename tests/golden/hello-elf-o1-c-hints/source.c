@@ -28,7 +28,7 @@ extern ssize_t write(int fd, const void * buf, size_t n);
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+void _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int64_t v0 = 0LL;
     int64_t v2 = 0LL;
     int8_t v5 = 0LL;
@@ -48,7 +48,7 @@ long _init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4,
         v12 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v6, v7, v8, v9, v10, v11);
     }
     /* phi v13 <- (bb0: v2) (bb1: v12) */
-    return ((long)(v13));
+    return;
 }
 
 /* dac-recovered function */
@@ -139,7 +139,7 @@ void _start(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long deregister_tm_clones(void) {
+void deregister_tm_clones(void) {
     int8_t v2 = 0LL;
     int64_t v3 = 0LL;
     int8_t v6 = 0LL;
@@ -149,7 +149,7 @@ long deregister_tm_clones(void) {
     if (v2) {
 L0:;
         /* phi v7 <- (bb0: 16408) (bb1: v3) */
-        return ((long)(v7));
+        return;
     } else {
         v3 = (*((int64_t *)(16328LL)));
         v6 = (v3 == 0LL);
@@ -176,7 +176,7 @@ L0:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long register_tm_clones(void) {
+void register_tm_clones(void) {
     int64_t v8 = 0LL;
     int8_t v11 = 0LL;
     int64_t v12 = 0LL;
@@ -199,7 +199,7 @@ long register_tm_clones(void) {
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
+void __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5) {
     int8_t v0 = 0LL;
     int8_t v1 = 0LL;
     int64_t v2 = 0LL;
@@ -222,7 +222,7 @@ long __do_global_dtors_aux(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg
     v0 = (*((int8_t *)(16408LL)));
     v1 = (v0 != 0LL);
     if (v1) {
-        return ((long)(v21));
+        return;
     } else {
         v3 = ((void *)((v2 - 8LL)));
         *((int64_t *)(((int64_t)(v3)))) = v4;
@@ -256,9 +256,9 @@ void frame_dummy(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long _fini(void) {
+void _fini(void) {
     int64_t v0 = 0LL;
     int64_t v3 = 0LL;
 
-    return ((long)(v3));
+    return;
 }

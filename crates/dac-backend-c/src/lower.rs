@@ -198,6 +198,17 @@ pub struct Recovered<'a> {
     /// carries (e.g. `0x2004` on `hello-x86_64`) surfaces as the
     /// `"hello\n"` literal a reader expects.
     pub strings: Option<&'a StringTable>,
+    /// Whole-callgraph void-return demote (B3.34, FR-21). The CLI's
+    /// [`apply_void_return_inference`] post-pass sets this on every
+    /// function whose return value is dropped by every observed
+    /// caller (or for which no caller was observed in the analyzed
+    /// function set). When `true`, [`pick_return_type`] returns
+    /// [`CType::Void`] regardless of the per-function [`Self::inferred_return`]
+    /// channel, and the Return-lowering arm drops the returned value
+    /// so the body stays well-formed C. The canonical override above
+    /// still wins — `main`, `wmain`, … keep their curated return
+    /// spelling even when the callgraph pass demoted them.
+    pub void_return_demoted: bool,
 }
 
 impl<'a> Recovered<'a> {
@@ -217,6 +228,7 @@ impl<'a> Recovered<'a> {
             canonical: None,
             inferred_return: None,
             strings: None,
+            void_return_demoted: false,
         }
     }
 
@@ -238,6 +250,7 @@ impl<'a> Recovered<'a> {
             canonical,
             inferred_return: None,
             strings: None,
+            void_return_demoted: false,
         }
     }
 
@@ -258,6 +271,17 @@ impl<'a> Recovered<'a> {
     #[must_use]
     pub fn with_strings(mut self, strings: Option<&'a StringTable>) -> Self {
         self.strings = strings;
+        self
+    }
+
+    /// Field-update setter for the B3.34 whole-callgraph void-return
+    /// demote. Wires the CLI's [`apply_void_return_inference`] verdict
+    /// into the lowering pass so [`pick_return_type`] knows to render
+    /// the function as `void` and the Return-lowering arm knows to
+    /// drop the returned value.
+    #[must_use]
+    pub fn with_void_return_demoted(mut self, demoted: bool) -> Self {
+        self.void_return_demoted = demoted;
         self
     }
 }
@@ -593,6 +617,17 @@ fn pick_return_type(body: &SemBlock, ssa: &SsaFunction, recovered: &Recovered<'_
         if let Some(ty) = &canon.return_type {
             return ty.clone();
         }
+    }
+    // B3.34: the whole-callgraph void-return demote sits between the
+    // canonical override and the per-function inference. When every
+    // observed caller drops the return register (or no caller was
+    // observed at all), the inference is upgraded from "widest write
+    // to the return register" to "no caller observes anything", which
+    // forces the declarator to `void`. The canonical channel still
+    // wins above so curated entry-points like `main` keep their
+    // catalogued return spelling.
+    if recovered.void_return_demoted {
+        return CType::Void;
     }
     if let Some(inferred) = recovered.inferred_return {
         return inferred.clone();
@@ -1132,10 +1167,23 @@ impl<'a> LowerCtx<'a> {
             SemStmt::Break { .. } => out.push(CStmt::Break),
             SemStmt::Continue { .. } => out.push(CStmt::Continue),
             SemStmt::Return { value, .. } => {
-                let v = value.as_ref().map(|op| {
-                    let (raw, source_ty) = self.lower_operand_with_type(op);
-                    cast_if_needed(&source_ty, &self.return_type, raw)
-                });
+                // B3.34: when the function's declarator is `void` —
+                // either because the per-function inference said so or
+                // because the whole-callgraph void-return demote fired
+                // — drop the returned value so the body emits a bare
+                // `return;`. Casting an arbitrary expression to `(void)`
+                // and re-returning it is non-standard C and would break
+                // the round-trip compile gate; explicitly degrading to
+                // `return;` keeps the body well-formed regardless of
+                // which channel picked the void declarator.
+                let v = if matches!(self.return_type, CType::Void) {
+                    None
+                } else {
+                    value.as_ref().map(|op| {
+                        let (raw, source_ty) = self.lower_operand_with_type(op);
+                        cast_if_needed(&source_ty, &self.return_type, raw)
+                    })
+                };
                 out.push(CStmt::Return(v));
             }
             SemStmt::Label { id, .. } => out.push(CStmt::Label(*id)),
@@ -2292,6 +2340,96 @@ mod tests {
             LowerOptions::default(),
         );
         assert_eq!(lowered.function.return_type, CType::Void);
+    }
+
+    /// B3.34: `Recovered::void_return_demoted = true` forces the
+    /// emitted declarator to `void`, overriding the per-function
+    /// width-derived inference channel below it.
+    #[test]
+    fn b3_34_void_return_demoted_overrides_width_inference() {
+        let ssa = empty_ssa("crt_helper");
+        let sem = empty_sem("crt_helper");
+        let inferred = CType::Named("long".into());
+        let recovered = Recovered::default()
+            .with_inferred_return(Some(&inferred))
+            .with_void_return_demoted(true);
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(
+            lowered.function.return_type,
+            CType::Void,
+            "B3.34 demote must collapse `long` to `void`",
+        );
+    }
+
+    /// B3.34: the canonical override still wins over the demote
+    /// channel — a function matching the canonical catalogue keeps
+    /// its catalogue spelling even when the whole-callgraph pass
+    /// classified it as unobserved. Mirrors `main` on the
+    /// `hello-x86_64` fixture: the CRT calls main through a libc
+    /// indirect, the analyzed callgraph never sees an observation,
+    /// but the catalogue pins `int` so the declarator survives.
+    #[test]
+    fn b3_34_canonical_outranks_void_return_demoted() {
+        let ssa = empty_ssa("main");
+        let sem = empty_sem("main");
+        let canonical = SynthesizedSignature {
+            return_type: Some(CType::Named("int".into())),
+            params: vec![],
+        };
+        let recovered = Recovered::with_canonical(None, None, None, None, Some(&canonical))
+            .with_void_return_demoted(true);
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Named("int".into()));
+    }
+
+    /// B3.34: when the declarator is `void` (whether via the demote
+    /// channel, the per-function inference, or a canonical override),
+    /// the Return-lowering arm drops the value side of
+    /// `Return { value: Some(_) }` so the body emits a bare
+    /// `return;`. Casting an arbitrary expression to `(void)` and
+    /// re-returning it is non-standard C and would break the
+    /// round-trip compile gate.
+    #[test]
+    fn b3_34_void_return_emits_bare_return_when_body_carries_value() {
+        let ssa = empty_ssa("crt_helper");
+        let sem = SemFunction {
+            function_address: 0x1000,
+            function_name: Some("crt_helper".to_string()),
+            body: SemBlock {
+                stmts: vec![SemStmt::Return {
+                    value: Some(dac_ir::ssa::Operand::Const(0)),
+                    evidence: ev(),
+                }],
+            },
+            evidence: ev(),
+            stats: StructuringStats::default(),
+        };
+        let recovered = Recovered::default().with_void_return_demoted(true);
+        let lowered = lower_function_with_options(
+            &ssa,
+            &sem,
+            &NameResolver::new(),
+            &recovered,
+            LowerOptions::default(),
+        );
+        assert_eq!(lowered.function.return_type, CType::Void);
+        assert_eq!(
+            lowered.function.body.stmts,
+            vec![CStmt::Return(None)],
+            "void declarator must drop the value operand from the Return arm",
+        );
     }
 
     /// The canonical override (B3.28) outranks the B3.29 inferred

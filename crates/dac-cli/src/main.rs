@@ -60,7 +60,10 @@ use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
     InputStamp, SettingsStamp, ToolStamp,
 };
-use crate::lift::{lift_all, register_hints, InferredReturn, LiftOutcome, LiftStats};
+use crate::lift::{
+    apply_void_return_inference, lift_all, register_hints, LiftOutcome, LiftStats,
+    ReturnInferenceVerdict,
+};
 use crate::listing::{render_listing, ListingOptions};
 use crate::manifest::{
     render_manifest_json, Manifest, ManifestInput, ManifestSettings, ManifestTool,
@@ -215,7 +218,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             // call is cheap enough on the corpus that the
             // unconditional cost is worth the simplicity.
             let lift_outcomes = if args.opt != OptLevel::O0 || args.emit_report {
-                Some(lift_all(
+                let mut outcomes = lift_all(
                     &functions,
                     &model,
                     &bytes,
@@ -223,7 +226,16 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
                     b.lifter.as_ref(),
                     b.register_file,
                     &hints,
-                ))
+                );
+                // B3.34: whole-callgraph void-return inference runs
+                // after every per-function lift completes so the pass
+                // can observe every direct caller's def-use. It mutates
+                // `facts.void_return_demoted` on each outcome; the C
+                // backend reads the flag through
+                // `Recovered::void_return_demoted` to publish the
+                // demoted declarator.
+                apply_void_return_inference(&mut outcomes);
+                Some(outcomes)
             } else {
                 None
             };
@@ -250,8 +262,10 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
             } else {
                 None
             };
-            let inferred_returns =
-                inferred_returns_from_outcomes(lift_outcomes.as_deref(), functions.functions.len());
+            let inferred_returns = return_inference_verdicts_from_outcomes(
+                lift_outcomes.as_deref(),
+                functions.functions.len(),
+            );
             annotations_doc = build_annotations_doc(
                 &input_label,
                 &model,
@@ -374,7 +388,7 @@ fn build_annotations_doc(
     functions: &FunctionSet,
     graph: &EvidenceGraph,
     hints: &Hints,
-    inferred_returns: &[Option<InferredReturn>],
+    inferred_returns: &[Option<ReturnInferenceVerdict>],
 ) -> AnnotationDoc {
     AnnotationDoc::build(
         ToolStamp {
@@ -401,20 +415,26 @@ fn build_annotations_doc(
     )
 }
 
-/// Project lift outcomes to the B3.29 inferred-return slice the
-/// annotation channel expects. Entries are ordered to match
+/// Project lift outcomes to the per-function return-inference verdict
+/// the annotation channel expects. Entries are ordered to match
 /// `functions.functions`; stub outcomes (and missing outcomes) carry
 /// `None` so the annotator's hint-then-inference path degrades to
-/// the unavailable-inference placeholder.
-fn inferred_returns_from_outcomes(
+/// the unavailable-inference placeholder. The verdict bundles B3.29's
+/// width-derived inference with B3.34's whole-callgraph void-return
+/// demote flag so the sidecar can distinguish "no writes to the
+/// return register" from "no caller observes the return".
+fn return_inference_verdicts_from_outcomes(
     outcomes: Option<&[LiftOutcome]>,
     functions_len: usize,
-) -> Vec<Option<InferredReturn>> {
+) -> Vec<Option<ReturnInferenceVerdict>> {
     match outcomes {
         Some(os) => os
             .iter()
             .map(|o| match o {
-                LiftOutcome::Real { facts, .. } => Some(facts.inferred_return),
+                LiftOutcome::Real { facts, .. } => Some(ReturnInferenceVerdict {
+                    width: facts.inferred_return,
+                    demoted: facts.void_return_demoted,
+                }),
                 LiftOutcome::Stub { .. } => None,
             })
             .collect(),
@@ -682,7 +702,8 @@ fn lower_one_c_function(
                 facts.canonical_signature.as_ref(),
             )
             .with_inferred_return(Some(&inferred_return_ty))
-            .with_strings(Some(strings));
+            .with_strings(Some(strings))
+            .with_void_return_demoted(facts.void_return_demoted);
             let mut lowered = c_lower_function_with_options(
                 ssa,
                 sem,

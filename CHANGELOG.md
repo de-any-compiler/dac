@@ -6646,6 +6646,175 @@ two affected `source.c` files were re-baselined.
 
 Closes: B3.33, FR-21 (recovered source readability).
 
+#### B3.34 — Void-return inference for unobserved-rax helpers (2026-06-09)
+
+The per-function B3.29 return-type inference observes the widest
+write to the return register variable inside one function's SSA
+and stops there. On the `hello-x86_64` fixture that left every
+runtime helper — `_init`, `_fini`, `register_tm_clones`,
+`deregister_tm_clones`, `__do_global_dtors_aux` — declared as
+`long` even though no observed caller ever read their return
+register. The reader sees five copies of a misleading
+`return ((long)(v_x));` epilogue when the runtime contract for
+all five is "callback invoked for its side effects; rax discarded
+on return."
+
+B3.34 adds a whole-callgraph void-return inference pass that runs
+after `lift_all` completes. For every direct call site
+`SsaOp::Call { target: Some(F), .. }` whose result value (the
+instruction's `dst`) is consumed in any observable way, the pass
+marks `F`'s return as live. Functions left unobserved are demoted
+to `void`; the C backend overrides the per-function inference
+channel below it and the Return-lowering arm drops the value side
+of `Return { value: Some(_) }` so the body emits a bare `return;`.
+
+Motivation:
+
+- **No silent fact corruption (I-1, I-3).** The recovered SSA
+  Instruction IR is the ground truth — every `Call` node still
+  carries its `dst` and the lifter's observations stay verbatim.
+  The demote lives in a parallel `void_return_demoted: bool`
+  channel on `RecoveryFacts` so the per-function
+  `inferred_return` signal the annotation channel attributes to
+  width observation is preserved. The new flag is the only thing
+  that flips when the callgraph analysis discovers no caller
+  observes the return.
+- **Done-when on the hello fixture.** With the pass off,
+  `_init`, `_fini`, `register_tm_clones`, `deregister_tm_clones`,
+  `__do_global_dtors_aux` print with `long` returns and bogus
+  return-value casts (e.g. `return ((long)(v3));` for `_fini`
+  reading uninitialised rax). With the pass on, all five collapse
+  to `void` with bare `return;` epilogues; `main` keeps `int`
+  because the canonical-signature override above the demote
+  channel still wins; `_start` and `frame_dummy` keep their
+  pre-existing `void` shape (the per-function inference already
+  said void for those). PE fixtures pick up the same shape:
+  `__mingw_invalidParameterHandler`, `__tmainCRTStartup`,
+  `WinMainCRTStartup`, and `mainCRTStartup` flip to `void`.
+
+Design notes:
+
+- **Fixpoint over "the caller observes."** A direct call whose
+  result flows only into the caller's `Return` operand is *not*
+  an observation when the caller itself is demoted; observed-ness
+  has to propagate through the callgraph. The pass formulates
+  this as a forward fixpoint: bootstrap "observed" from functions
+  whose canonical-signature override pins a non-void return
+  (`main`, `wmain`, `WinMain`); then iterate, marking F observed
+  if any observed caller's call-to-F has a `dst` whose
+  transitive use (through phi / Move propagation) reaches a hard
+  sink (Store value, Call arg, Branch cond, arithmetic,
+  Compare/Load, Opaque). Reaches stability in O(callgraph depth)
+  iterations; the lattice is monotone-rising so termination is
+  guaranteed.
+- **`__do_global_dtors_aux` → `deregister_tm_clones`.** This is
+  the call chain the single-pass formulation misses: the body of
+  `__do_global_dtors_aux` calls `deregister_tm_clones` and lets
+  the result flow into its own Return. The fixpoint correctly
+  defers the observation: `__do_global_dtors_aux` is itself
+  unobserved (CRT-only callers), so its Return is dead, so the
+  upstream call's result is also dead. Both demote.
+- **Vacuous truth on leaf entry points.** Functions called only
+  from external code (the dynamic loader, `atexit`-registered
+  callbacks, etc.) get demoted by vacuous truth — "every observed
+  caller drops the return" is trivially true when no observed
+  caller exists. This is what flips `_init` / `_fini` /
+  `__do_global_dtors_aux` to void; the canonical-override above
+  the channel ensures `main` doesn't fall in the same bucket.
+- **C backend's Return arm.** When the declarator is `void` —
+  via the demote channel, the per-function inference, or a future
+  channel — the lowering drops the value operand from
+  `SemStmt::Return`. Casting an arbitrary expression to `(void)`
+  and re-returning it is non-standard C and would break the
+  round-trip compile gate; the explicit collapse to `return;`
+  keeps the body well-formed regardless of which channel picked
+  void.
+
+Changes by file:
+
+- **`crates/dac-backend-c/src/lower.rs`** —
+  - `Recovered::void_return_demoted: bool` (default `false`).
+  - Builder `Recovered::with_void_return_demoted(bool)`.
+  - `pick_return_type` consults the demote channel between the
+    canonical override and the per-function inferred channel.
+  - `SemStmt::Return` lowering checks `matches!(self.return_type,
+    CType::Void)` and emits `CStmt::Return(None)` regardless of
+    whether the structurer carried a value operand.
+- **`crates/dac-cli/src/lift.rs`** —
+  - `RecoveryFacts::void_return_demoted: bool` (default `false`).
+  - `LiftStats::void_return_demotions: u64` counter.
+  - `ReturnInferenceVerdict { width, demoted }` — annotation-side
+    carrier the CLI threads from `RecoveryFacts` into the
+    `AnnotationDoc::build` API.
+  - `apply_void_return_inference(outcomes: &mut [LiftOutcome])`
+    — the new whole-callgraph pass.
+- **`crates/dac-cli/src/main.rs`** —
+  - Calls `apply_void_return_inference(&mut outcomes)`
+    immediately after `lift_all` returns.
+  - Plumbs `facts.void_return_demoted` into the per-function
+    `Recovered::with_void_return_demoted(...)` call site.
+  - `return_inference_verdicts_from_outcomes` replaces
+    `inferred_returns_from_outcomes` so the annotation channel
+    can distinguish per-function inference from the callgraph
+    demote when rendering the explanation.
+- **`crates/dac-cli/src/report.rs`** —
+  - `;; return-inf:  void_demotions=N` row, sourced from
+    `LiftStats::void_return_demotions`.
+- **`crates/dac-cli/src/annotations.rs`** —
+  - `annotate_return_type` reads `ReturnInferenceVerdict.demoted`
+    and, when set, renders `value: "void"` with the
+    callgraph-aware explanation
+    `"no observed caller consumes the return register across the
+    analyzed callgraph (whole-callgraph void-return inference);
+    pre-demote width inference: <label>"` so the original
+    per-function observation is preserved as a trailing context
+    note.
+
+End-to-end verification:
+
+- `./target/debug/dac -O1 --target c tests/fixtures/hello-x86_64`
+  emits `void _init(…)`, `void _fini(…)`,
+  `void register_tm_clones(…)`, `void deregister_tm_clones(…)`,
+  `void __do_global_dtors_aux(…)` — all five done-when targets.
+  `main` stays `int main(void)` (canonical override). The
+  declarators that already lowered to `void` before B3.34
+  (`_start`, `frame_dummy`) stay unchanged.
+- `./target/debug/dac -O1 --emit-report tests/fixtures/hello-x86_64`
+  reports `;; return-inf:  void_demotions=8` (one demote per
+  Real outcome; `main` is in the count because the pass marks
+  the underlying flag regardless of whether the canonical
+  override above will route around it).
+- Round-trip compile gate: `cc -x c -c - -o /dev/null -w
+  -Dmain=__dac_main__ < source.c` exits 0 — the void declarator
+  + bare `return;` path is well-formed C.
+
+Tests added (+11 net new, 768 total):
+
+- `crates/dac-cli/src/lift.rs::lift::tests::b3_34_*` — 5 unit
+  tests (`demotes_when_every_caller_drops_dst`,
+  `demotes_when_caller_dst_is_unused`,
+  `keeps_return_when_caller_is_observed_and_passes_through`,
+  `store_value_use_keeps_callee_return_live`,
+  `skips_stub_outcomes`).
+- `crates/dac-backend-c/src/lower.rs::lower::tests::b3_34_*` — 3
+  unit tests (`void_return_demoted_overrides_width_inference`,
+  `canonical_outranks_void_return_demoted`,
+  `void_return_emits_bare_return_when_body_carries_value`).
+- `crates/dac-cli/src/annotations.rs::b3_34_demoted_verdict_renders_with_callgraph_explanation`
+  — annotation channel explanation + pre-demote width trail.
+- `crates/dac-cli/src/report.rs::report_text_includes_return_inference_void_demotions_row`
+  — `;; return-inf:` row presence.
+- `crates/dac-cli/tests/o1_target_c.rs::b3_34_void_return_inference_demotes_unobserved_helpers`
+  — end-to-end declarator check on the `hello-x86_64` fixture.
+
+Goldens refreshed: 6 files. `hello-elf-o0-report/report.txt` and
+`hello-elf-o1-c-hints/report.txt` gain the new `;; return-inf`
+row; `hello-elf-o1-c/source.c`, `hello-elf-o1-c-hints/source.c`,
+`hello-pe-o1-c/source.c`, `syscall-hello-elf-o1-c/source.c` lose
+their stale `long` declarators and `return ((long)(…));` casts.
+
+Closes: B3.34, FR-21 (recovered source readability).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

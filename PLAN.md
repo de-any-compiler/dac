@@ -49,34 +49,17 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22, B3.23 – B3.31, B3.32, and B3.33 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.34 – B3.35 are the remaining
-polish-wave batches that lift the most visible non-residue gaps
-before M3 closes: void-return inference for runtime helpers and
-i386 dispatch wiring. The "B3 residue shelf" further down tracks
-heavier residue items that stay deferred past M3 and are sized as
-separate milestones rather than numbered batches.
+B3.1 – B3.22, B3.23 – B3.31, B3.32, B3.33, and B3.34 are complete
+— see [CHANGELOG.md](./CHANGELOG.md). B3.35 is the only remaining
+polish-wave batch before M3 closes: i386 dispatch wiring. The "B3
+residue shelf" further down tracks heavier residue items that stay
+deferred past M3 and are sized as separate milestones rather than
+numbered batches.
 
 ### Sequencing
 
-Within the remaining B3.34 – B3.35 wave, B3.34 (void-return
-inference) is independent of B3.35. B3.35 (i386 dispatch wiring)
-unblocks the GOTHIC.EXE-class of PE fixtures and is independent
-of B3.34 but lower-priority for hello-fixture polish.
-
-### B3.34 — Void-return inference for unobserved-rax helpers
-
-- New whole-callgraph pass (`Pure` determinism class): for every
-  function whose return value is dropped by every caller (no SSA
-  use of the returned register across the callgraph), the
-  recovered signature's return type is demoted to `void`.
-- Confidence `Derived`; the original return-type evidence remains
-  in the graph.
-- **Done when:** `_init`, `_fini`, `register_tm_clones`,
-  `deregister_tm_clones`, `__do_global_dtors_aux` emit with a
-  `void` return type on the `hello-x86_64` fixture; no behaviour
-  change for functions whose return value is observed by at least
-  one caller. (FR-21)
+B3.35 (i386 dispatch wiring) unblocks the GOTHIC.EXE-class of PE
+fixtures; it is independent of every other M3 batch.
 
 ### B3.35 — i386 dispatch wiring (PE focus)
 

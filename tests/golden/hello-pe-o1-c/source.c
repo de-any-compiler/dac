@@ -568,10 +568,10 @@ typedef struct __attribute__((packed)) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long __mingw_invalidParameterHandler(void) {
+void __mingw_invalidParameterHandler(void) {
     int64_t v0 = 0LL;
 
-    return ((long)(v0));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -610,7 +610,7 @@ void safe_flush(int64_t arg0) {
 /* stack_locals: 11 */
 /* struct_layouts: pointer=3 stack=1 */
 /* switch_tables: 0 */
-long __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void __tmainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -1050,7 +1050,7 @@ L1:;
                 v107 = (*((int64_t *)(((int64_t)(v105)))));
                 v108 = ((void *)((((int64_t)(v105)) + 8LL)));
                 v110 = (*((int64_t *)(((int64_t)(v108)))));
-                return ((long)(v87));
+                return;
             }
         }
     }
@@ -1071,7 +1071,7 @@ L1:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v2 = 0LL;
     int64_t v4 = 0LL;
@@ -1085,7 +1085,7 @@ long WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v2 = (*((int64_t *)(5368726624LL)));
     *((int32_t *)(v2)) = 1LL;
     v10 = ((long long (*)(long long, long long, long long, long long, long long, long long))__tmainCRTStartup)(v4, v5, v6, v7, v8, v9);
-    return ((long)(v10));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -1103,7 +1103,7 @@ long WinMainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v2 = 0LL;
     int64_t v4 = 0LL;
@@ -1117,7 +1117,7 @@ long mainCRTStartup(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v2 = (*((int64_t *)(5368726624LL)));
     *((int32_t *)(v2)) = 0LL;
     v10 = ((long long (*)(long long, long long, long long, long long, long long, long long))__tmainCRTStartup)(v4, v5, v6, v7, v8, v9);
-    return ((long)(v10));
+    return;
 }
 
 /* dac-recovered forwarding thunk */
@@ -1231,7 +1231,7 @@ L0:;
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long __gcc_deregister_frame(void) {
+void __gcc_deregister_frame(void) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -1267,7 +1267,7 @@ long __gcc_deregister_frame(void) {
     if (v20) {
         v25 = ((void *)((((int64_t)(v4)) + 32LL)));
         v26 = (*((int64_t *)(((int64_t)(v25)))));
-        return ((long)(v16));
+        return;
     } else {
         v21 = ((void *)((((int64_t)(v4)) + 32LL)));
         v22 = (*((int64_t *)(((int64_t)(v21)))));
@@ -1290,7 +1290,7 @@ long __gcc_deregister_frame(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v2 = 0LL;
     int64_t v4 = 0LL;
@@ -1328,7 +1328,7 @@ long __do_global_dtors(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
         }
     }
     /* phi v25 <- (bb0: v4) (bb3: v21) */
-    return ((long)(v25));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -1451,7 +1451,7 @@ void __do_global_ctors(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-int __main(void) {
+void __main(void) {
     int32_t v0 = 0LL;
     int8_t v3 = 0LL;
 
@@ -1461,7 +1461,7 @@ int __main(void) {
         *((int32_t *)(5368742048LL)) = 1LL;
         /* dac: structuring fallback */
     } else {
-        return ((int)(v0));
+        return;
     }
 }
 
@@ -1480,10 +1480,10 @@ int __main(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long _setargv(void) {
+void _setargv(void) {
     int64_t v0 = 0LL;
 
-    return ((long)(0LL));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -1501,7 +1501,7 @@ long _setargv(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long __dyn_tls_dtor(void) {
+void __dyn_tls_dtor(void) {
     int64_t v0 = 0LL;
     int8_t v1 = 0LL;
     int8_t v3 = 0LL;
@@ -1516,7 +1516,7 @@ L0:;
         if (v3) {
             goto L0;
         } else {
-            return ((long)(v4));
+            return;
         }
     }
 }
@@ -1536,7 +1536,7 @@ L0:;
 /* stack_locals: 2 */
 /* struct_layouts: pointer=0 stack=1 */
 /* switch_tables: 0 */
-long __dyn_tls_init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void __dyn_tls_init(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -1595,7 +1595,7 @@ L0:;
             v21 = (*((int64_t *)(((int64_t)(v20)))));
             v22 = ((void *)((((int64_t)(v20)) + 8LL)));
             v24 = (*((int64_t *)(((int64_t)(v22)))));
-            return ((long)(v6));
+            return;
         } else {
             while (1) {
                 /* phi v30 <- (bb7: 5368726976) (bb10: v41) */
@@ -1618,7 +1618,7 @@ L0:;
             v44 = (*((int64_t *)(((int64_t)(v43)))));
             v45 = ((void *)((((int64_t)(v43)) + 8LL)));
             v47 = (*((int64_t *)(((int64_t)(v45)))));
-            return ((long)(v40));
+            return;
         }
     } else {
         v12 = (v10 == 1LL);
@@ -1649,10 +1649,10 @@ L0:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long __tlregdtor(void) {
+void __tlregdtor(void) {
     int64_t v0 = 0LL;
 
-    return ((long)(0LL));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -1670,7 +1670,7 @@ long __tlregdtor(void) {
 /* stack_locals: 2 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 1 */
-long _matherr(S_140001730_v6_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void _matherr(S_140001730_v6_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -1725,7 +1725,7 @@ long _matherr(S_140001730_v6_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3)
         v34 = (*((int64_t *)(((int64_t)(v33)))));
         v35 = ((void *)((((int64_t)(v33)) + 8LL)));
         v37 = (*((int64_t *)(((int64_t)(v35)))));
-        return ((long)(0LL));
+        return;
     } else {
         v9 = (*((int32_t *)(((int64_t)(v6)))));
         v12 = (v9 * 4LL);
@@ -1817,7 +1817,7 @@ void __report_error(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
 /* stack_locals: 6 */
 /* struct_layouts: pointer=5 stack=1 */
 /* switch_tables: 0 */
-long mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void mark_section_writable(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -2015,7 +2015,7 @@ L1:;
                     v128 = (*((int64_t *)(((int64_t)(v126)))));
                     v129 = ((void *)((((int64_t)(v126)) + 8LL)));
                     v131 = (*((int64_t *)(((int64_t)(v129)))));
-                    return ((long)(v123));
+                    return;
                 } else {
                     goto L1;
                 }
@@ -2040,7 +2040,7 @@ L1:;
 /* stack_locals: 9 */
 /* struct_layouts: pointer=5 stack=1 */
 /* switch_tables: 0 */
-long _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void _pei386_runtime_relocator(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -2281,7 +2281,7 @@ L0:;
             v46 = (*((int64_t *)(((int64_t)(v44)))));
             v47 = ((void *)((((int64_t)(v44)) + 8LL)));
             v49 = (*((int64_t *)(((int64_t)(v47)))));
-            return ((long)(v25));
+            return;
         } else {
             v75 = (v73 > 11LL);
             if (v75) {
@@ -2460,7 +2460,7 @@ L4:;
 /* stack_locals: 2 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-long __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     S_140001d90_v1_t * v1 = ((S_140001d90_v1_t *)(0LL));
     int64_t v2 = 0LL;
@@ -2492,7 +2492,7 @@ long __mingw_raise_matherr(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg
         v16 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(v12, v13, v11, ((int64_t)(v6)), v14, v15);
     }
     /* phi v17 <- (bb0: v2) (bb2: v16) */
-    return ((long)(v17));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -2532,7 +2532,7 @@ void __mingw_setusermatherr(int64_t arg0) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=1 stack=0 */
 /* switch_tables: 1 */
-long __mingw_SEH_error_handler(S_140001de0_v2_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void __mingw_SEH_error_handler(S_140001de0_v2_t * arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     S_140001de0_v2_t * v2 = arg0;
     int64_t v3 = 0LL;
@@ -2577,7 +2577,7 @@ long __mingw_SEH_error_handler(S_140001de0_v2_t * arg0, int64_t arg1, int64_t ar
     if (v6) {
 L0:;
         /* phi v56 <- (bb16: 0) (bb34: 1) (bb36: v11) */
-        return ((long)(v56));
+        return;
     } else {
         v8 = (*((int64_t *)(((int64_t)(v2)))));
         v9 = (4848615423LL & v8);
@@ -2659,7 +2659,7 @@ L4:;
 /* stack_locals: 1 */
 /* struct_layouts: pointer=1 stack=0 */
 /* switch_tables: 1 */
-long _gnu_exception_handler(int64_t arg0) {
+void _gnu_exception_handler(int64_t arg0) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -2729,7 +2729,7 @@ L0:;
                 if (v56) {
                     v63 = ((void *)((((int64_t)(v3)) + 32LL)));
                     v64 = (*((int64_t *)(((int64_t)(v63)))));
-                    return ((long)(0LL));
+                    return;
                 } else {
                     v58 = ((void *)((((int64_t)(v3)) + 32LL)));
                     v59 = (*((int64_t *)(((int64_t)(v58)))));
@@ -2747,7 +2747,7 @@ L0:;
 L1:;
                             v68 = ((void *)((((int64_t)(v3)) + 32LL)));
                             v69 = (*((int64_t *)(((int64_t)(v68)))));
-                            return ((long)(-1LL));
+                            return;
                         } else {
                             v47 = (v44 == 0LL);
                             if (v47) {
@@ -2916,7 +2916,7 @@ void __mingwthr_run_key_dtors_part_0(void) {
 /* stack_locals: 3 */
 /* struct_layouts: pointer=2 stack=0 */
 /* switch_tables: 0 */
-long ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
+void ___w64_mingwthr_add_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2) {
     int64_t v0 = 0LL;
     S_1400021b0_v1_t * v1 = ((S_1400021b0_v1_t *)(0LL));
     int32_t v2 = 0LL;
@@ -2979,7 +2979,7 @@ L0:;
         goto L0;
     }
     /* phi v10 <- (bb1: 0) (bb9: -1) */
-    return ((long)(v10));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -2997,7 +2997,7 @@ L0:;
 /* stack_locals: 1 */
 /* struct_layouts: pointer=1 stack=0 */
 /* switch_tables: 0 */
-long ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int32_t v2 = 0LL;
@@ -3052,9 +3052,9 @@ long ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2, i
         /* phi v40 <- (bb4: v13) (bb7: v22) (bb12: v22) */
         /* phi v41 <- (bb4: v14) (bb7: v25) (bb12: v26) */
         v43 = ((long long (*)(long long, long long, long long, long long, long long, long long))(/* opaque: indirect-call */ 0))(p, v12, v40, 5368742240LL, v41, v15);
-        return ((long)(0LL));
+        return;
     } else {
-        return ((long)(0LL));
+        return;
     }
 }
 
@@ -3073,7 +3073,7 @@ long ___w64_mingwthr_remove_key_dtor(int64_t arg0, int64_t arg1, int64_t arg2, i
 /* stack_locals: 1 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     int64_t v1 = 0LL;
     int64_t v2 = arg1;
@@ -3113,7 +3113,7 @@ long __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3)
     v3 = (v2 == 2LL);
     if (v3) {
         v51 = ((long long (*)(long long, long long, long long, long long, long long, long long))_fpreset)(p, v12, v2, v41, v13, v14);
-        return ((long)(1LL));
+        return;
     } else {
         /* dac: structuring fallback */
     }
@@ -3134,11 +3134,11 @@ long __mingw_TLScallback(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3)
 /* stack_locals: 0 */
 /* struct_layouts: pointer=0 stack=0 */
 /* switch_tables: 0 */
-long _fpreset(void) {
+void _fpreset(void) {
     int64_t v0 = 0LL;
 
     (/* opaque: fninit */ 0);
-    return ((long)(v0));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -3156,7 +3156,7 @@ long _fpreset(void) {
 /* stack_locals: 0 */
 /* struct_layouts: pointer=2 stack=0 */
 /* switch_tables: 0 */
-long _ValidateImageBase(S_1400023f0_v2_t * arg0) {
+void _ValidateImageBase(S_1400023f0_v2_t * arg0) {
     int64_t v0 = 0LL;
     S_1400023f0_v2_t * v2 = arg0;
     int16_t v3 = 0LL;
@@ -3172,7 +3172,7 @@ long _ValidateImageBase(S_1400023f0_v2_t * arg0) {
     v3 = (*((int16_t *)(((int64_t)(v2)))));
     v4 = (v3 != 23117LL);
     if (v4) {
-        return ((long)(0LL));
+        return;
     } else {
         v5 = (((int64_t)(v2)) + 60LL);
         v6 = v2->field_3c;
@@ -3183,7 +3183,7 @@ long _ValidateImageBase(S_1400023f0_v2_t * arg0) {
             v12 = ((void *)((((int64_t)(v8)) + 24LL)));
             v13 = v8->field_18;
             (/* opaque: sete */ 0);
-            return ((long)(0LL));
+            return;
         } else {
 L0:;
             goto L0;
@@ -3206,7 +3206,7 @@ L0:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=2 stack=0 */
 /* switch_tables: 0 */
-long _FindPESection(int64_t arg0, int64_t arg1) {
+void _FindPESection(int64_t arg0, int64_t arg1) {
     int64_t v0 = arg0;
     int64_t v1 = 0LL;
     int32_t v2 = 0LL;
@@ -3283,7 +3283,7 @@ L0:;
         }
     }
     /* phi v39 <- (bb3: v24) (bb5: 0) */
-    return ((long)(v39));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -3301,7 +3301,7 @@ L0:;
 /* stack_locals: 4 */
 /* struct_layouts: pointer=2 stack=1 */
 /* switch_tables: 0 */
-long _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void _FindPESectionByName(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -3432,7 +3432,7 @@ L0:;
     v65 = (*((int64_t *)(((int64_t)(v63)))));
     v66 = ((void *)((((int64_t)(v63)) + 8LL)));
     v68 = (*((int64_t *)(((int64_t)(v66)))));
-    return ((long)(v56));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -3577,7 +3577,7 @@ L1:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=2 stack=0 */
 /* switch_tables: 0 */
-long __mingw_GetSectionCount(int64_t arg0) {
+void __mingw_GetSectionCount(int64_t arg0) {
     S_140002590_v0_t * v0 = ((S_140002590_v0_t *)(0LL));
     int64_t v2 = arg0;
     int16_t v4 = 0LL;
@@ -3597,7 +3597,7 @@ long __mingw_GetSectionCount(int64_t arg0) {
     v4 = (*((int16_t *)(((int64_t)(v0)))));
     v5 = (v4 != 23117LL);
     if (v5) {
-        return ((long)(0LL));
+        return;
     } else {
         v6 = (((int64_t)(v0)) + 60LL);
         v7 = v0->field_3c;
@@ -3614,7 +3614,7 @@ L0:;
             } else {
                 v15 = ((void *)((((int64_t)(v9)) + 6LL)));
                 v16 = v9->field_6;
-                return ((long)(v16));
+                return;
             }
         } else {
             goto L0;
@@ -3637,7 +3637,7 @@ L0:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=2 stack=0 */
 /* switch_tables: 0 */
-long _FindPESectionExec(int64_t arg0) {
+void _FindPESectionExec(int64_t arg0) {
     S_1400025d0_v0_t * v0 = ((S_1400025d0_v0_t *)(0LL));
     int64_t v2 = 0LL;
     int16_t v4 = 0LL;
@@ -3683,7 +3683,7 @@ long _FindPESectionExec(int64_t arg0) {
     if (v5) {
 L0:;
         /* phi v49 <- (bb0: 0) (bb1: 0) (bb4: 0) (bb5: 0) (bb8: v36) */
-        return ((long)(v49));
+        return;
     } else {
         v6 = (((int64_t)(v0)) + 60LL);
         v7 = v0->field_3c;
@@ -3728,7 +3728,7 @@ L1:;
                             if (v47) {
                                 continue;
                             } else {
-                                return ((long)(0LL));
+                                return;
                             }
                         } else {
                             v43 = (v37 == 0LL);
@@ -3815,7 +3815,7 @@ L0:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=3 stack=0 */
 /* switch_tables: 0 */
-long _IsNonwritableInCurrentImage(int64_t arg0) {
+void _IsNonwritableInCurrentImage(int64_t arg0) {
     S_140002690_v0_t * v0 = ((S_140002690_v0_t *)(0LL));
     int64_t v2 = 0LL;
     int16_t v4 = 0LL;
@@ -3862,7 +3862,7 @@ long _IsNonwritableInCurrentImage(int64_t arg0) {
     v4 = (*((int16_t *)(((int64_t)(v0)))));
     v5 = (v4 != 23117LL);
     if (v5) {
-        return ((long)(0LL));
+        return;
     } else {
         v6 = (((int64_t)(v0)) + 60LL);
         v7 = v0->field_3c;
@@ -3918,13 +3918,13 @@ L1:;
                                 v48 = v37->field_24;
                                 v50 = ~(v48);
                                 v51 = (v50 >> 31LL);
-                                return ((long)(v51));
+                                return;
                             } else {
                                 goto L1;
                             }
                         }
                     }
-                    return ((long)(0LL));
+                    return;
                 }
             }
         } else {
@@ -3948,7 +3948,7 @@ L1:;
 /* stack_locals: 0 */
 /* struct_layouts: pointer=4 stack=0 */
 /* switch_tables: 0 */
-long __mingw_enum_import_library_names(int64_t arg0) {
+void __mingw_enum_import_library_names(int64_t arg0) {
     S_140002720_v0_t * v0 = ((S_140002720_v0_t *)(0LL));
     int64_t v2 = 0LL;
     int16_t v4 = 0LL;
@@ -4008,7 +4008,7 @@ long __mingw_enum_import_library_names(int64_t arg0) {
     v4 = (*((int16_t *)(((int64_t)(v0)))));
     v5 = (v4 != 23117LL);
     if (v5) {
-        return ((long)(0LL));
+        return;
     } else {
         v6 = (((int64_t)(v0)) + 60LL);
         v7 = v0->field_3c;
@@ -4083,7 +4083,7 @@ L1:;
                                                 v68 = ((void *)((((int64_t)(v52)) + 12LL)));
                                                 v69 = v52->field_c;
                                                 v71 = (v69 + ((int64_t)(v0)));
-                                                return ((long)(v71));
+                                                return;
                                             }
                                         } else {
                                             v59 = ((void *)((((int64_t)(v52)) + 12LL)));
@@ -4102,7 +4102,7 @@ L1:;
                                 }
                             }
                         }
-                        return ((long)(0LL));
+                        return;
                     }
                 }
             }
@@ -4171,7 +4171,7 @@ long fn_1400027e0(int64_t arg0) {
 /* stack_locals: 4 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-long vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -4213,7 +4213,7 @@ long vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v27 = (*((int64_t *)(((int64_t)(v25)))));
     v28 = ((void *)((((int64_t)(v25)) + 8LL)));
     v30 = (*((int64_t *)(((int64_t)(v28)))));
-    return ((long)(v22));
+    return;
 }
 
 /* dac-recovered function */
@@ -4230,7 +4230,7 @@ long vfprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
 /* stack_locals: 7 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-long fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -4281,7 +4281,7 @@ long fprintf(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v31 = (*((int64_t *)(((int64_t)(v29)))));
     v32 = ((void *)((((int64_t)(v29)) + 8LL)));
     v34 = (*((int64_t *)(((int64_t)(v32)))));
-    return ((long)(v26));
+    return;
 }
 
 /* runtime support (mingw-w64 startup) — not user code */
@@ -4377,7 +4377,7 @@ void _amsg_exit(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
 /* stack_locals: 5 */
 /* struct_layouts: pointer=1 stack=1 */
 /* switch_tables: 0 */
-long __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
+void __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     int64_t v0 = 0LL;
     void * v1 = ((void *)(0LL));
     int64_t v2 = 0LL;
@@ -4445,7 +4445,7 @@ long __getmainargs(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3) {
     v45 = (*((int64_t *)(((int64_t)(v43)))));
     v46 = ((void *)((((int64_t)(v43)) + 8LL)));
     v48 = (*((int64_t *)(((int64_t)(v46)))));
-    return ((long)(0LL));
+    return;
 }
 
 /* dac-recovered function */

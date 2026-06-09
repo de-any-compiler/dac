@@ -7,6 +7,7 @@
 ;; naming:      named_values=0 / 46 (0.00% heuristic coverage, hint=0)
 ;; simplify:    folded=40 dropped=6
 ;; structuring: fallbacks=6
+;; return-inf:  void_demotions=8
 ;; taxonomy:    user=1 crt_support=7 thunk=0 imported=1
 
 functions:

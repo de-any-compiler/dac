@@ -235,6 +235,11 @@ pub(crate) fn render_report_text(r: &Report) -> String {
     );
     let _ = writeln!(
         out,
+        ";; return-inf:  void_demotions={}",
+        r.lift.void_return_demotions,
+    );
+    let _ = writeln!(
+        out,
         ";; taxonomy:    user={} crt_support={} thunk={} imported={}",
         r.taxonomy.user, r.taxonomy.crt_support, r.taxonomy.thunk, r.taxonomy.imported,
     );
@@ -465,6 +470,31 @@ mod tests {
         assert!(
             s.contains(";; taxonomy:    user=1 crt_support=0 thunk=0 imported=0"),
             "expected taxonomy row in:\n{s}",
+        );
+    }
+
+    /// B3.34: the report carries a `;; return-inf: void_demotions=N`
+    /// row whose value is read straight from
+    /// [`crate::lift::LiftStats::void_return_demotions`]. The row is
+    /// unconditional — zero outcomes still print zero so the column
+    /// is byte-deterministic across runs.
+    #[test]
+    fn report_text_includes_return_inference_void_demotions_row() {
+        let model = empty_model();
+        let mut g = EvidenceGraph::new();
+        let set = discover_functions(&model, &[0u8; 0x10], &NullDecoder, &mut g);
+        let r = Report::build(
+            &model,
+            &[0u8; 0x10],
+            &NullDecoder,
+            &OpaqueLifter,
+            &set,
+            LiftStats::default(),
+        );
+        let s = render_report_text(&r);
+        assert!(
+            s.contains(";; return-inf:  void_demotions=0"),
+            "expected return-inf row in:\n{s}",
         );
     }
 

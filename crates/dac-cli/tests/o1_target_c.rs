@@ -160,6 +160,47 @@ fn b3_33_canonical_extern_for_write_uses_posix_typedefs() {
     );
 }
 
+/// B3.34: the whole-callgraph void-return inference pass demotes
+/// every CRT-helper on the `hello-x86_64` fixture whose return value
+/// is dropped by every observed caller (or for which no caller was
+/// observed in the analyzed function set). The done-when for B3.34
+/// lists `_init`, `_fini`, `register_tm_clones`, `deregister_tm_clones`,
+/// and `__do_global_dtors_aux` — each should emit with a `void`
+/// declarator (B3.29's per-function inference left them at `long`)
+/// without changing functions whose return is observed (e.g. `main`,
+/// which the canonical-signature override keeps at `int`).
+#[test]
+fn b3_34_void_return_inference_demotes_unobserved_helpers() {
+    let dir = TempDir::new().expect("tempdir");
+    let out = dir.path().join("a.listing");
+    run_o1_c(&out);
+
+    let source = fs::read_to_string(sidecar_with_suffix(&out, ".c")).expect("source sidecar");
+    for fn_name in [
+        "_init",
+        "_fini",
+        "register_tm_clones",
+        "deregister_tm_clones",
+        "__do_global_dtors_aux",
+    ] {
+        let expect_void = format!("void {fn_name}(");
+        assert!(
+            source.contains(&expect_void),
+            "expected `{expect_void}` declarator in:\n{source}",
+        );
+        let stale_long = format!("long {fn_name}(");
+        assert!(
+            !source.contains(&stale_long),
+            "stale `{stale_long}` declarator must not survive B3.34 in:\n{source}",
+        );
+    }
+    // The canonical override above B3.34 keeps `main`'s `int`.
+    assert!(
+        source.contains("int main("),
+        "main must remain `int main(…)` even though no analyzed caller observes its return:\n{source}",
+    );
+}
+
 #[test]
 fn o1_target_c_round_trips_through_system_compiler() {
     // Best-effort: run `cc -x c -c -` on the emitted source. If no

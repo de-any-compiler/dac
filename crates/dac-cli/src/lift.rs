@@ -126,6 +126,19 @@ pub(crate) struct RecoveryFacts {
     /// `return_type` agrees with the emitted C function declarator
     /// (the "single source" the B3.29 spec calls for).
     pub inferred_return: InferredReturn,
+    /// Whole-callgraph void-return demote (B3.34, FR-21). Set by
+    /// [`apply_void_return_inference`] when every observed direct
+    /// caller of this function drops the return register (or no caller
+    /// was observed in the analyzed function set). When `true`, the C
+    /// backend overrides [`Self::inferred_return`] and renders the
+    /// declarator as `void`, with the Return-lowering arm degrading
+    /// any `Return { value: Some(_) }` to a bare `return;`. Stays
+    /// `false` for stubs and for functions whose return is observed.
+    /// The per-function [`Self::inferred_return`] signal is preserved
+    /// untouched so the annotation channel can attribute the demote
+    /// to the callgraph pass without losing the width-derived
+    /// observation.
+    pub void_return_demoted: bool,
 }
 
 /// Summary of the user hint applied to a function. Surfaces in
@@ -279,6 +292,15 @@ pub(crate) struct LiftStats {
     /// the raw count so a reader sees how often the structurer hit a
     /// recognised fallback regardless of `--debug` (FR-25).
     pub structuring_fallbacks: u64,
+    /// Number of `Real` outcomes whose declarator was forced to
+    /// `void` by the whole-callgraph void-return inference pass
+    /// (B3.34, FR-21). Surfaces in `--emit-report` so a reader sees
+    /// how many runtime-helper bodies the pass collapsed across the
+    /// translation unit. Functions also covered by a canonical
+    /// signature override (e.g. `main`) keep the override's
+    /// catalogued return spelling — this counter only tracks the
+    /// raw demote, not the final printed declarator.
+    pub void_return_demotions: u64,
 }
 
 impl LiftStats {
@@ -289,6 +311,9 @@ impl LiftStats {
                 LiftOutcome::Real { ssa, sem, facts } => {
                     s.real += 1;
                     s.structuring_fallbacks += count_structuring_fallbacks(&sem.body) as u64;
+                    if facts.void_return_demoted {
+                        s.void_return_demotions += 1;
+                    }
                     if recovered_convention_is_useful(facts.convention.as_ref()) {
                         s.typed_signatures += 1;
                     }
@@ -567,6 +592,7 @@ fn lift_one(f: &Function, ctx: &LiftCtx<'_>) -> LiftOutcome {
         simplify: simplify_stats,
         canonical_signature,
         inferred_return,
+        void_return_demoted: false,
     });
     LiftOutcome::Real { ssa, sem, facts }
 }
@@ -852,6 +878,22 @@ pub(crate) enum InferredReturn {
     Width64,
 }
 
+/// Final per-function return-type inference verdict the annotation
+/// channel consumes (B3.34 follow-up to B3.29's `InferredReturn`).
+///
+/// Carries the per-function width-derived inference *plus* the
+/// whole-callgraph void-return demote bit so the `.annot.json` sidecar
+/// can either render the original width (the function's return is
+/// observed by at least one caller) or report the demote with an
+/// honest explanation pointing at the callgraph pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReturnInferenceVerdict {
+    pub width: InferredReturn,
+    /// Set by [`apply_void_return_inference`]; mirrors
+    /// [`RecoveryFacts::void_return_demoted`].
+    pub demoted: bool,
+}
+
 impl InferredReturn {
     /// C-canonical type spelling consumed by
     /// [`dac_backend_c::Recovered::inferred_return`]. The C backend
@@ -1032,6 +1074,251 @@ fn source_op_width(ssa: &SsaFunction, op: &dac_ir::ssa::SsaOp) -> Option<u16> {
             }
         }
         _ => None,
+    }
+}
+
+/// Whole-callgraph void-return inference (B3.34, FR-21).
+///
+/// Walks every `Real` outcome's SSA looking for direct calls
+/// ([`dac_ir::ssa::SsaOp::Call`] with a resolved `target`), and for
+/// each callee records whether at least one observed caller consumes
+/// the returned register. After the scan, every analyzed function for
+/// which no caller observes the return value has its
+/// [`RecoveryFacts::void_return_demoted`] flag set to `true`.
+///
+/// The C backend's [`dac_backend_c::Recovered::void_return_demoted`]
+/// channel then forces the function's declarator to `void` and drops
+/// the value side of `Return { value: Some(_) }`, so the body stays
+/// well-formed C even when the SSA-level Return still carries a value
+/// operand. The canonical-signature override (B3.28) sits *above* this
+/// channel in [`dac_backend_c::pick_return_type`], so curated entry
+/// points such as `main` keep their catalogued return spelling even
+/// when the callgraph pass demotes them.
+///
+/// "Observed by a caller" is conservative: an indirect call (no
+/// resolvable `target`), a call whose `dst` is `None` (the caller
+/// already chose to drop the return), and any call whose return-value
+/// SSA `ValueId` has zero non-trivial uses in the caller all count as
+/// *non*-observations. A call whose `dst` has any [`UseSite`] entry
+/// in [`dac_analysis::dataflow::DependeUseChains`] counts as an
+/// observation and is enough to keep the callee's return type.
+///
+/// Functions that no analyzed function calls — exported entry points
+/// such as `_init`, `_fini`, `register_tm_clones`, … in the
+/// `hello-x86_64` fixture — are demoted by vacuous truth: "every
+/// observed caller drops the return" is trivially satisfied when no
+/// caller was observed at all. This is the path the B3.34 done-when
+/// list rests on, and the canonical-signature override above keeps
+/// `main` rendering as `int` even when it falls in the same bucket.
+///
+/// Stubs ([`LiftOutcome::Stub`]) are skipped — there is no SSA to
+/// observe.
+///
+/// Determinism: the pass is `Pure`. It walks the outcomes slice in its
+/// existing address-sorted order, scans each SSA's blocks /
+/// instructions in source order, and stores per-callee state in a
+/// [`BTreeMap`] keyed by VA. Two runs on the same input mutate the
+/// outcomes slice into the same byte-stable shape (NFR-9).
+pub(crate) fn apply_void_return_inference(outcomes: &mut [LiftOutcome]) {
+    use dac_analysis::dataflow::{compute_def_use, DefUseChains, UseSite};
+    use dac_ir::ssa::{SsaOp, SsaTerminator, ValueId};
+    use std::collections::BTreeSet;
+
+    // Index every analyzed function by its address so the pass can
+    // look up whose return value it should mark observed when it
+    // walks a Call instruction.
+    let mut analyzed: BTreeMap<u64, usize> = BTreeMap::new();
+    for (i, o) in outcomes.iter().enumerate() {
+        if let LiftOutcome::Real { ssa, .. } = o {
+            analyzed.insert(ssa.function_address, i);
+        }
+    }
+
+    // Per-function def-use chains, keyed by function VA. Cached
+    // outside the fixpoint loop so the repeated escape walks below
+    // don't recompute them.
+    let mut def_use_table: BTreeMap<u64, DefUseChains> = BTreeMap::new();
+    for o in outcomes.iter() {
+        if let LiftOutcome::Real { ssa, .. } = o {
+            def_use_table.insert(ssa.function_address, compute_def_use(ssa));
+        }
+    }
+
+    // `observed[F]` = true once we've concluded F's return value
+    // reaches a sink visible to the analyzed callgraph.
+    //
+    // Bootstrap: functions whose canonical-signature override pinned
+    // a concrete (non-void) return type are seeded as observed —
+    // their return spelling is fixed by curated knowledge, so the
+    // callgraph pass must not contradict it. `main` on the
+    // `hello-x86_64` fixture rides this seed.
+    let mut observed: BTreeMap<u64, bool> = analyzed.keys().map(|&va| (va, false)).collect();
+    for (&va, &idx) in &analyzed {
+        if let LiftOutcome::Real { facts, .. } = &outcomes[idx] {
+            let bootstrapped = facts
+                .canonical_signature
+                .as_ref()
+                .and_then(|c| c.return_type.as_ref())
+                .is_some_and(|ty| !matches!(ty, CType::Void));
+            if bootstrapped {
+                observed.insert(va, true);
+            }
+        }
+    }
+
+    // Fixpoint loop. Each pass walks every direct call site in every
+    // analyzed function and decides whether the call's `dst` reaches
+    // a sink that escapes the caller. The two transitive cases are:
+    //
+    // - the value flows through phis and Moves into the caller's
+    //   `Return` operand. If the caller is itself observed, the value
+    //   escapes; otherwise the use is deferred.
+    // - the value reaches a "hard" sink (Store value, Call arg,
+    //   Branch condition, arithmetic / compare / load address, …).
+    //   These count as observations unconditionally.
+    //
+    // Convergence: every iteration either flips at least one entry
+    // from `false` to `true` or the loop exits. The lattice has
+    // monotone-rising values bounded by the number of analyzed
+    // functions, so the worklist terminates in O(N) iterations
+    // (NFR-9 deterministic).
+    loop {
+        let mut changed = false;
+        for o in outcomes.iter() {
+            let LiftOutcome::Real { ssa, .. } = o else {
+                continue;
+            };
+            let caller_addr = ssa.function_address;
+            let caller_observed = *observed.get(&caller_addr).unwrap_or(&false);
+            let Some(def_use) = def_use_table.get(&caller_addr) else {
+                continue;
+            };
+            for block in &ssa.blocks {
+                for ins in &block.instructions {
+                    let SsaOp::Call {
+                        target: Some(target),
+                        ..
+                    } = &ins.op
+                    else {
+                        continue;
+                    };
+                    if !analyzed.contains_key(target) {
+                        continue;
+                    }
+                    let Some(dst) = ins.dst else {
+                        continue;
+                    };
+                    // Already known observed — skip the walk.
+                    if observed.get(target).copied().unwrap_or(false) {
+                        continue;
+                    }
+                    let mut visiting: BTreeSet<ValueId> = BTreeSet::new();
+                    if value_escapes(ssa, def_use, dst, caller_observed, &mut visiting) {
+                        if let Some(slot) = observed.get_mut(target) {
+                            if !*slot {
+                                *slot = true;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // Demote every function whose entry stayed `false`. The
+    // per-function `inferred_return` channel is left untouched so the
+    // annotation channel can still attribute the original width
+    // observation; the void declarator is published through the new
+    // `void_return_demoted` flag, which the C backend's
+    // `pick_return_type` consults below the canonical override.
+    for o in outcomes.iter_mut() {
+        let LiftOutcome::Real { ssa, facts, .. } = o else {
+            continue;
+        };
+        if matches!(observed.get(&ssa.function_address), Some(false)) {
+            facts.void_return_demoted = true;
+        }
+    }
+
+    /// Transitive escape predicate.
+    ///
+    /// Returns `true` if `v` (or any value transitively reachable
+    /// through phi / Move propagation) reaches a sink other than a
+    /// `Return` whose enclosing function's return is itself
+    /// unobserved. The `visiting` cache breaks phi cycles by
+    /// short-circuiting recursion when a value is already on the
+    /// stack.
+    fn value_escapes(
+        ssa: &dac_ir::ssa::SsaFunction,
+        def_use: &DefUseChains,
+        v: ValueId,
+        caller_observed: bool,
+        visiting: &mut BTreeSet<ValueId>,
+    ) -> bool {
+        if !visiting.insert(v) {
+            // Already on the recursion stack — break the cycle. The
+            // value has no novel escape contribution along this path;
+            // any non-phi escape would have been detected at the
+            // originating site.
+            return false;
+        }
+        for site in def_use.uses(v) {
+            if site_escapes(ssa, def_use, *site, caller_observed, visiting) {
+                visiting.remove(&v);
+                return true;
+            }
+        }
+        visiting.remove(&v);
+        false
+    }
+
+    fn site_escapes(
+        ssa: &dac_ir::ssa::SsaFunction,
+        def_use: &DefUseChains,
+        site: UseSite,
+        caller_observed: bool,
+        visiting: &mut BTreeSet<ValueId>,
+    ) -> bool {
+        match site {
+            UseSite::Terminator { block } => match &ssa.block(block).terminator {
+                SsaTerminator::Return { .. } => caller_observed,
+                // Branch condition observes the value regardless of
+                // the caller's return-observation status.
+                _ => true,
+            },
+            UseSite::Phi {
+                block, phi: idx, ..
+            } => {
+                // A phi propagates: the incoming value is observed
+                // iff the phi's result is observed somewhere
+                // downstream.
+                let phi = &ssa.block(block).phis[idx as usize];
+                value_escapes(ssa, def_use, phi.dst, caller_observed, visiting)
+            }
+            UseSite::Instruction { block, index } => {
+                let instr = &ssa.block(block).instructions[index as usize];
+                match &instr.op {
+                    // Move propagates verbatim. Trace the dst.
+                    SsaOp::Move { .. } => {
+                        if let Some(dst) = instr.dst {
+                            value_escapes(ssa, def_use, dst, caller_observed, visiting)
+                        } else {
+                            true
+                        }
+                    }
+                    // Every other op (Store value, Load address,
+                    // Call args, Compare, Add, Sub, And, Or, Xor,
+                    // Shl, Shr, Opaque, …) treats v as a hard sink.
+                    // Demoting the callee's return would erase a
+                    // contribution the body actually depends on.
+                    _ => true,
+                }
+            }
+        }
     }
 }
 
@@ -1535,6 +1822,7 @@ mod tests {
             simplify: SimplifyStats::default(),
             canonical_signature: None,
             inferred_return: InferredReturn::Void,
+            void_return_demoted: false,
         }
     }
 
@@ -2441,6 +2729,258 @@ mod tests {
             InferredReturn::Width64.to_c_type(),
             CType::Named("long".into()),
         );
+    }
+
+    // ---- B3.34 whole-callgraph void-return inference ---------------
+
+    /// SSA function with no calls — a leaf that returns a value.
+    /// Used as a callee target to verify the demote-when-unobserved
+    /// path fires.
+    fn b334_leaf_ssa(addr: u64) -> SsaFunction {
+        SsaFunction {
+            function_address: addr,
+            function_name: Some(format!("fn_{:x}", addr)),
+            blocks: vec![dac_ir::ssa::SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions: vec![],
+                terminator: IrSsaTerminator::Return {
+                    value: Some(Operand::Const(0)),
+                },
+            }],
+            entry: 0,
+            variables: vec![dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            }],
+            values: vec![],
+            evidence: dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+                layer: dac_core::IrLayer::Ssa,
+                id: 0,
+            }),
+        }
+    }
+
+    /// SSA function that issues a single direct call to `callee_addr`
+    /// and `use_kind` describes what the caller does with the return:
+    ///
+    /// - `Drop`: instruction's `dst` is `None` — the lifter never
+    ///   materialised the return slot.
+    /// - `Unused`: `dst` is `Some(v)` but `v` has zero non-terminator
+    ///   uses (def-use sees a 0-use entry).
+    /// - `Returned`: `dst` is `Some(v)` and the SSA terminator returns
+    ///   `v` straight back — feeds the caller's return value.
+    /// - `Escapes`: `dst` is `Some(v)` and `v` is used as a Store's
+    ///   value operand — a hard sink that always counts as observed.
+    enum B334Use {
+        Drop,
+        Unused,
+        Returned,
+        Escapes,
+    }
+
+    fn b334_caller_ssa(caller_addr: u64, callee_addr: u64, use_kind: B334Use) -> SsaFunction {
+        use dac_ir::ssa::{SsaOp as Op, ValueDef, ValueSource};
+        let dst = match use_kind {
+            B334Use::Drop => None,
+            _ => Some(0u32),
+        };
+        let mut instructions = vec![dac_ir::ssa::SsaInstruction {
+            dst,
+            op: Op::Call {
+                target: Some(callee_addr),
+                args: vec![],
+            },
+        }];
+        let mut values = vec![];
+        if let Some(v) = dst {
+            values.push(ValueDef {
+                id: v,
+                variable: 0,
+                source: ValueSource::Instruction { block: 0, index: 0 },
+            });
+        }
+        let terminator = match use_kind {
+            B334Use::Returned => IrSsaTerminator::Return {
+                value: Some(Operand::Value(0)),
+            },
+            B334Use::Escapes => {
+                // A Store whose `value` operand consumes the call's
+                // dst — observed sink.
+                instructions.push(dac_ir::ssa::SsaInstruction {
+                    dst: None,
+                    op: Op::Store {
+                        address: Operand::Const(0x100),
+                        value: Operand::Value(0),
+                        width: 8,
+                    },
+                });
+                IrSsaTerminator::Return { value: None }
+            }
+            _ => IrSsaTerminator::Return { value: None },
+        };
+        SsaFunction {
+            function_address: caller_addr,
+            function_name: Some(format!("fn_{:x}", caller_addr)),
+            blocks: vec![dac_ir::ssa::SsaBlock {
+                id: 0,
+                predecessors: vec![],
+                phis: vec![],
+                instructions,
+                terminator,
+            }],
+            entry: 0,
+            variables: vec![dac_ir::ssa::Variable {
+                id: 0,
+                name: "rax".into(),
+                width_bits: 64,
+            }],
+            values,
+            evidence: dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+                layer: dac_core::IrLayer::Ssa,
+                id: 0,
+            }),
+        }
+    }
+
+    fn b334_real_outcome(ssa: SsaFunction) -> LiftOutcome {
+        let sem = SemFunction {
+            function_address: ssa.function_address,
+            function_name: ssa.function_name.clone(),
+            body: SemBlock::empty(),
+            evidence: dac_core::EvidenceGraph::new().add_node(dac_core::EvidenceNode::IrNode {
+                layer: dac_core::IrLayer::Semantic,
+                id: 0,
+            }),
+            stats: dac_ir::sem::StructuringStats::default(),
+        };
+        let facts = Box::new(facts_default());
+        LiftOutcome::Real { ssa, sem, facts }
+    }
+
+    /// A callee whose only direct caller drops the return register
+    /// (the lifter emitted `Call { dst: None }`) demotes to `void`.
+    #[test]
+    fn b3_34_demotes_when_every_caller_drops_dst() {
+        let caller = b334_caller_ssa(0x2000, 0x1000, B334Use::Drop);
+        let callee = b334_leaf_ssa(0x1000);
+        let mut outcomes = vec![b334_real_outcome(caller), b334_real_outcome(callee)];
+        apply_void_return_inference(&mut outcomes);
+        // Both demote — the caller's own return is also unobserved.
+        for o in &outcomes {
+            let LiftOutcome::Real { facts, .. } = o else {
+                unreachable!()
+            };
+            assert!(facts.void_return_demoted, "every outcome should demote");
+        }
+    }
+
+    /// A callee whose only direct caller materialises the return slot
+    /// but never reads it (`dst = Some(v)` with zero uses) still
+    /// demotes — the def-use chain reports `use_count(v) == 0`.
+    #[test]
+    fn b3_34_demotes_when_caller_dst_is_unused() {
+        let caller = b334_caller_ssa(0x2000, 0x1000, B334Use::Unused);
+        let callee = b334_leaf_ssa(0x1000);
+        let mut outcomes = vec![b334_real_outcome(caller), b334_real_outcome(callee)];
+        apply_void_return_inference(&mut outcomes);
+        let LiftOutcome::Real { facts, .. } = &outcomes[1] else {
+            unreachable!()
+        };
+        assert!(
+            facts.void_return_demoted,
+            "callee should demote when the only caller's call-dst is unused",
+        );
+    }
+
+    /// A callee whose caller's return is observed — bootstrapped via
+    /// the canonical signature override — stays non-void when the
+    /// caller's body feeds the call's dst straight into its own
+    /// `Return` operand.
+    #[test]
+    fn b3_34_keeps_return_when_caller_is_observed_and_passes_through() {
+        let caller_ssa = b334_caller_ssa(0x2000, 0x1000, B334Use::Returned);
+        let callee_ssa = b334_leaf_ssa(0x1000);
+        let mut caller = b334_real_outcome(caller_ssa);
+        // Bootstrap the caller as observed by attaching a canonical
+        // signature pinning a non-void return type — mirrors what
+        // `apply_canonical_entry` does for `main`.
+        if let LiftOutcome::Real { facts, .. } = &mut caller {
+            facts.canonical_signature = Some(SynthesizedSignature {
+                return_type: Some(CType::Named("int".into())),
+                params: vec![],
+            });
+        }
+        let callee = b334_real_outcome(callee_ssa);
+        let mut outcomes = vec![caller, callee];
+        apply_void_return_inference(&mut outcomes);
+        let LiftOutcome::Real {
+            facts: caller_facts,
+            ..
+        } = &outcomes[0]
+        else {
+            unreachable!()
+        };
+        let LiftOutcome::Real {
+            facts: callee_facts,
+            ..
+        } = &outcomes[1]
+        else {
+            unreachable!()
+        };
+        assert!(
+            !caller_facts.void_return_demoted,
+            "canonical-signature seed must keep the caller's return live",
+        );
+        assert!(
+            !callee_facts.void_return_demoted,
+            "callee's return flows into observed caller's return — must stay live",
+        );
+    }
+
+    /// The escape predicate catches "hard sinks": a Store whose
+    /// `value` operand consumes the call's dst observes the value
+    /// regardless of the caller's own demote status.
+    #[test]
+    fn b3_34_store_value_use_keeps_callee_return_live() {
+        let caller = b334_caller_ssa(0x2000, 0x1000, B334Use::Escapes);
+        let callee = b334_leaf_ssa(0x1000);
+        let mut outcomes = vec![b334_real_outcome(caller), b334_real_outcome(callee)];
+        apply_void_return_inference(&mut outcomes);
+        let LiftOutcome::Real {
+            facts: callee_facts,
+            ..
+        } = &outcomes[1]
+        else {
+            unreachable!()
+        };
+        assert!(
+            !callee_facts.void_return_demoted,
+            "callee should stay live when the call's dst flows into a Store value",
+        );
+    }
+
+    /// `Stub` outcomes have no SSA to walk and must be left alone —
+    /// the pass touches neither their (non-existent) `facts` nor any
+    /// surrounding outcome's state in response to seeing a stub.
+    #[test]
+    fn b3_34_skips_stub_outcomes() {
+        let mut outcomes = vec![
+            LiftOutcome::Stub {
+                reason: "no end address".into(),
+            },
+            b334_real_outcome(b334_leaf_ssa(0x1000)),
+        ];
+        apply_void_return_inference(&mut outcomes);
+        // Stub stays a stub; the real leaf with no observed callers
+        // demotes by vacuous truth.
+        assert!(matches!(&outcomes[0], LiftOutcome::Stub { .. }));
+        let LiftOutcome::Real { facts, .. } = &outcomes[1] else {
+            unreachable!()
+        };
+        assert!(facts.void_return_demoted);
     }
 
     /// Stays-untouched: `wmain` and `WinMain` are recognised the

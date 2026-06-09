@@ -65,7 +65,9 @@ use dac_core::{Confidence, EdgeKind, EvidenceGraph, EvidenceId, EvidenceNode, Ir
 use dac_hints::{FunctionHint, Hints};
 use dac_recovery::{FunctionSet, SourceMask, PLT_BINDING_CONFIDENCE, SYMBOL_CONFIDENCE};
 
-use crate::lift::{InferredReturn, RETURN_INFERENCE_CONFIDENCE, USER_HINT_CONFIDENCE};
+use crate::lift::{
+    InferredReturn, ReturnInferenceVerdict, RETURN_INFERENCE_CONFIDENCE, USER_HINT_CONFIDENCE,
+};
 
 /// Top-level annotation document.
 #[derive(Debug, Clone)]
@@ -175,7 +177,8 @@ impl AnnotationDoc {
     ///
     /// `inferred_returns` is a parallel slice indexed by position in
     /// `functions.functions`: entry `i` carries the B3.29 width-derived
-    /// return-type inference for the `i`-th function, or `None` when no
+    /// return-type inference for the `i`-th function plus the B3.34
+    /// whole-callgraph void-return demote bit, or `None` when no
     /// inference is available (the unsupported-arch path, or any
     /// function the orchestrator skipped). When `None`, the annotation
     /// channel degrades to the pre-B3.29 "no inference yet" shape with
@@ -189,7 +192,7 @@ impl AnnotationDoc {
         functions: &FunctionSet,
         graph: &EvidenceGraph,
         hints: &Hints,
-        inferred_returns: &[Option<InferredReturn>],
+        inferred_returns: &[Option<ReturnInferenceVerdict>],
     ) -> Self {
         let preds = predecessor_index(graph);
         let evidence = summarize_graph(graph);
@@ -202,13 +205,13 @@ impl AnnotationDoc {
             // populated by `register_hints` (lift.rs) before
             // `AnnotationDoc::build` runs.
             let hint = hints.find_function(f.address, f.name.as_deref());
-            let inferred_return = inferred_returns.get(i).copied().flatten();
+            let verdict = inferred_returns.get(i).copied().flatten();
             function_annotations.push(FunctionAnnotation {
                 address: f.address,
                 end: f.end,
                 signals: f.sources,
                 name: annotate_name(f, format_label, graph, &preds, hint),
-                return_type: annotate_return_type(hint, inferred_return),
+                return_type: annotate_return_type(hint, verdict),
             });
         }
         let mut notes = Vec::new();
@@ -303,7 +306,7 @@ fn annotate_name(
 
 fn annotate_return_type(
     hint: Option<&FunctionHint>,
-    inferred_return: Option<InferredReturn>,
+    verdict: Option<ReturnInferenceVerdict>,
 ) -> FactAnnotation {
     // B3.19: when a `[[function]]` hint pinned `return`, the C
     // backend's `pick_return_type` consults the hint-seeded TypeMap
@@ -322,16 +325,39 @@ fn annotate_return_type(
             };
         }
     }
+    // B3.34: when the whole-callgraph void-return demote fired, the
+    // sidecar reports `void` with the demote explanation so a reader
+    // can distinguish it from B3.29's width-derived `Void` ("no writes
+    // to the return register observed"). The width-derived inference
+    // signal is preserved verbatim in the explanation tail so the
+    // pre-demote observation remains visible.
+    if let Some(v) = verdict {
+        if v.demoted {
+            let trail = match v.width {
+                InferredReturn::Void => String::new(),
+                _ => format!("; pre-demote width inference: {}", v.width.label()),
+            };
+            return FactAnnotation {
+                value: "void".to_string(),
+                confidence: Confidence::new(RETURN_INFERENCE_CONFIDENCE, Source::Derived),
+                explanation: format!(
+                    "no observed caller consumes the return register across the analyzed \
+                     callgraph (whole-callgraph void-return inference){trail}",
+                ),
+                evidence: Vec::new(),
+            };
+        }
+    }
     // B3.29: the per-function width-derived inference shares its
     // verdict with the C backend's `pick_return_type` so the sidecar's
     // `return_type` matches the emitted declarator. When no inference
     // is available (unsupported-arch path, orchestrator skipped),
     // degrade to the pre-B3.29 `void` placeholder.
-    if let Some(inferred) = inferred_return {
+    if let Some(v) = verdict {
         return FactAnnotation {
-            value: inferred.label().to_string(),
+            value: v.width.label().to_string(),
             confidence: Confidence::new(RETURN_INFERENCE_CONFIDENCE, Source::Derived),
-            explanation: inferred.explanation().to_string(),
+            explanation: v.width.explanation().to_string(),
             evidence: Vec::new(),
         };
     }
@@ -1063,7 +1089,7 @@ mod tests {
     /// concrete explanation the inference produced (B3.29).
     #[test]
     fn b3_29_inferred_return_threads_into_annotation_channel() {
-        use crate::lift::{InferredReturn, RETURN_INFERENCE_CONFIDENCE};
+        use crate::lift::{InferredReturn, ReturnInferenceVerdict, RETURN_INFERENCE_CONFIDENCE};
         let mut model = base_model();
         model.symbols.push(text_symbol("f", 0x1000, 0x10));
         let mut graph = EvidenceGraph::new();
@@ -1077,7 +1103,10 @@ mod tests {
             &set,
             &graph,
             &Hints::new(),
-            &[Some(InferredReturn::Width32)],
+            &[Some(ReturnInferenceVerdict {
+                width: InferredReturn::Width32,
+                demoted: false,
+            })],
         );
         let f = doc
             .functions
@@ -1101,7 +1130,7 @@ mod tests {
     /// explanation, not the unavailable-inference placeholder.
     #[test]
     fn b3_29_inferred_void_renders_with_observed_no_writes_explanation() {
-        use crate::lift::InferredReturn;
+        use crate::lift::{InferredReturn, ReturnInferenceVerdict};
         let mut model = base_model();
         model.symbols.push(text_symbol("f", 0x1000, 0x10));
         let mut graph = EvidenceGraph::new();
@@ -1115,7 +1144,10 @@ mod tests {
             &set,
             &graph,
             &Hints::new(),
-            &[Some(InferredReturn::Void)],
+            &[Some(ReturnInferenceVerdict {
+                width: InferredReturn::Void,
+                demoted: false,
+            })],
         );
         let f = doc
             .functions
@@ -1128,6 +1160,54 @@ mod tests {
                 .explanation
                 .contains("no writes to the return register"),
             "expected B3.29 void explanation, got: {}",
+            f.return_type.explanation,
+        );
+    }
+
+    /// B3.34: when the verdict carries `demoted = true`, the sidecar
+    /// reports `void` with the whole-callgraph explanation (not the
+    /// B3.29 "no writes" string), and the pre-demote width inference
+    /// is preserved as a trailing context note so a reader can see
+    /// what the per-function pass observed before the demote fired.
+    #[test]
+    fn b3_34_demoted_verdict_renders_with_callgraph_explanation() {
+        use crate::lift::{InferredReturn, ReturnInferenceVerdict};
+        let mut model = base_model();
+        model.symbols.push(text_symbol("f", 0x1000, 0x10));
+        let mut graph = EvidenceGraph::new();
+        let set = discover_functions(&model, &vec![0u8; 0x100], &NullDecoder, &mut graph);
+        let (tool, input, settings) = stamp_pair();
+        let doc = AnnotationDoc::build(
+            tool,
+            input,
+            settings,
+            &model,
+            &set,
+            &graph,
+            &Hints::new(),
+            &[Some(ReturnInferenceVerdict {
+                width: InferredReturn::Width64,
+                demoted: true,
+            })],
+        );
+        let f = doc
+            .functions
+            .iter()
+            .find(|f| f.address == 0x1000)
+            .expect("function at 0x1000");
+        assert_eq!(f.return_type.value, "void");
+        assert!(
+            f.return_type
+                .explanation
+                .contains("whole-callgraph void-return inference"),
+            "expected B3.34 callgraph explanation, got: {}",
+            f.return_type.explanation,
+        );
+        assert!(
+            f.return_type
+                .explanation
+                .contains("pre-demote width inference: long"),
+            "expected pre-demote width context, got: {}",
             f.return_type.explanation,
         );
     }
