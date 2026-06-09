@@ -41,6 +41,7 @@ use dac_backend_c::ast::{
     Item as CItem, Param as CParam, Stmt as CStmt, TranslationUnit,
 };
 use dac_backend_c::{
+    canonical_extern_signature as c_canonical_extern_signature,
     default_includes as c_default_includes, emit as c_emit,
     lower_function_with_options as c_lower_function_with_options, LowerOptions as CLowerOptions,
     LoweredFunction, NameResolver as CNameResolver, Recovered as CRecovered,
@@ -523,6 +524,13 @@ fn render_c_unit(
     // (and the golden tests) can rely on.
     let mut extern_items: Vec<CItem> = Vec::new();
     let mut function_items: Vec<CItem> = Vec::with_capacity(functions.functions.len());
+    // B3.33: accumulate extra `#include` directives the canonical
+    // extern table requires. A `BTreeSet` keeps the include list
+    // deterministic across runs regardless of the order PLT stubs are
+    // visited; the canonical-extern table emits entries like
+    // `<sys/types.h>` for `ssize_t` and `<unistd.h>` for `write`.
+    let mut required_headers: std::collections::BTreeSet<&'static str> =
+        std::collections::BTreeSet::new();
     for (i, f) in functions.functions.iter().enumerate() {
         let outcome = lift_outcomes.and_then(|os| os.get(i));
         let annot = annotations
@@ -530,7 +538,11 @@ fn render_c_unit(
             .iter()
             .find(|a| a.address == f.address);
         if let dac_recovery::FunctionKind::PltStub { import } = &f.kind {
-            extern_items.push(CItem::ExternDecl(lower_plt_stub_extern(f, import, debug)));
+            let lowered = lower_plt_stub_extern(f, import, debug);
+            for h in lowered.required_headers {
+                required_headers.insert(h);
+            }
+            extern_items.push(CItem::ExternDecl(lowered.extern_decl));
             continue;
         }
         // B3.30: `--hide-crt` collapses every CRT-tagged body (whether
@@ -560,6 +572,12 @@ fn render_c_unit(
     items.extend(typedefs.into_values().map(CItem::StructDecl));
     items.extend(function_items);
     let mut includes = c_default_includes();
+    // B3.33: append the canonical-extern table's required headers
+    // after the stdint / stddef baseline. `BTreeSet` iteration is
+    // ordered, so the include block stays byte-deterministic.
+    for h in &required_headers {
+        includes.push(format!("#include {h}"));
+    }
     includes.insert(
         0,
         format!(
@@ -712,12 +730,52 @@ fn lower_one_c_function(
     }
 }
 
+/// Outcome of [`lower_plt_stub_extern`]: the rendered `extern` decl
+/// plus the headers its typedefs require (B3.33). The caller merges
+/// the headers from every recovered PLT stub into a deduplicated
+/// include set before emitting the translation unit.
+struct PltStubLowered {
+    extern_decl: CExternDecl,
+    /// Standard headers (e.g. `<sys/types.h>`) the canonical-extern
+    /// table requires; empty when the lattice-driven fallback fires.
+    required_headers: Vec<&'static str>,
+}
+
 /// Lower a PLT-bound stub function (B3.23) to a C `extern` forward
-/// declaration. Looks the import up in the `dac-knowledge` API
-/// catalogue: when matched, the recovered signature drives the
-/// rendered `return_type` and `params`; otherwise the declaration
-/// falls back to `int64_t name(void)` so callers compile.
-fn lower_plt_stub_extern(f: &dac_recovery::Function, import: &str, debug: bool) -> CExternDecl {
+/// declaration.
+///
+/// The lowering consults two catalogues in order:
+///
+/// 1. [`dac_backend_c::canonical_extern_signature`] — B3.33's
+///    canonical C-side spelling table. When it matches, the extern's
+///    return type and parameters use POSIX / libc typedefs (`ssize_t`,
+///    `size_t`, `int`, `const void *`, …) and the required system
+///    headers are reported so the translation unit gains the matching
+///    `#include` directives.
+/// 2. [`dac_knowledge::lookup_api_signature`] — the lattice-typed
+///    catalogue. When the canonical table misses but the lattice
+///    catalogue hits, the extern's types fall back to the stdint
+///    spelling (`int64_t`, `uint64_t`, `void *`, …).
+/// 3. Otherwise the extern degrades to `int64_t name(void);` so
+///    callers compile.
+fn lower_plt_stub_extern(f: &dac_recovery::Function, import: &str, debug: bool) -> PltStubLowered {
+    if let Some(canon) = c_canonical_extern_signature(import) {
+        let extern_decl = CExternDecl {
+            name: sanitize_c_identifier(import),
+            return_type: canon.return_type,
+            params: canon
+                .params
+                .into_iter()
+                .map(|(name, ty)| CParam { name, ty })
+                .collect(),
+            is_variadic: canon.is_variadic,
+            leading_comment: Some(plt_stub_leading_comment(f, import, true, debug)),
+        };
+        return PltStubLowered {
+            extern_decl,
+            required_headers: canon.headers,
+        };
+    }
     let signature = dac_knowledge::lookup_api_signature(import);
     let return_type = signature
         .and_then(|s| dac_backend_c::map_ir_type(&s.return_ty))
@@ -752,12 +810,15 @@ fn lower_plt_stub_extern(f: &dac_recovery::Function, import: &str, debug: bool) 
         signature.is_some(),
         debug,
     ));
-    CExternDecl {
-        name: sanitize_c_identifier(import),
-        return_type,
-        params,
-        is_variadic,
-        leading_comment,
+    PltStubLowered {
+        extern_decl: CExternDecl {
+            name: sanitize_c_identifier(import),
+            return_type,
+            params,
+            is_variadic,
+            leading_comment,
+        },
+        required_headers: Vec::new(),
     }
 }
 
@@ -1644,51 +1705,50 @@ mod tests {
         }
     }
 
-    /// A PLT stub whose import lives in the `dac-knowledge` catalogue
-    /// surfaces the recovered signature: the return type and each
-    /// positional parameter come from the catalogue entry, so the
-    /// rendered declaration reads like the libc / Win32 header.
+    /// A PLT stub whose import lives in the canonical-extern table
+    /// (B3.33) surfaces the POSIX-typedef spellings — `ssize_t`,
+    /// `int`, `const void *`, `size_t` — so the rendered declaration
+    /// matches the system header verbatim. The lowering also reports
+    /// the required headers (`<sys/types.h>`, `<unistd.h>`) for the
+    /// translation-unit include accumulator.
     #[test]
     fn b3_23_lower_plt_stub_extern_uses_dac_knowledge_signature() {
         let f = plt_stub_function("write", 0x1030);
-        let e = lower_plt_stub_extern(&f, "write", false);
+        let lowered = lower_plt_stub_extern(&f, "write", false);
+        let e = &lowered.extern_decl;
         assert_eq!(e.name, "write");
-        // `write` in dac-knowledge returns `ssize_t` (int64_t in C),
-        // and takes (int fd, void *buf, size_t n).
-        assert!(matches!(
-            e.return_type,
-            CType::Int {
-                width_bits: 64,
-                signed: true
-            }
-        ));
+        // B3.33: canonical spelling is `ssize_t write(int fd,
+        // const void *buf, size_t n)`.
+        assert_eq!(e.return_type, CType::Named("ssize_t".into()));
         assert_eq!(e.params.len(), 3);
         assert_eq!(e.params[0].name, "fd");
-        assert!(matches!(
-            e.params[0].ty,
-            CType::Int {
-                width_bits: 32,
-                signed: true
-            }
-        ));
-        assert!(matches!(e.params[1].ty, CType::Ptr(_)));
-        assert!(matches!(
-            e.params[2].ty,
-            CType::Int {
-                width_bits: 64,
-                signed: false
-            }
-        ));
+        assert_eq!(e.params[0].ty, CType::Named("int".into()));
+        assert_eq!(e.params[1].name, "buf");
+        assert_eq!(
+            e.params[1].ty,
+            CType::Const(Box::new(CType::Ptr(Box::new(CType::Void))))
+        );
+        assert_eq!(e.params[2].name, "n");
+        assert_eq!(e.params[2].ty, CType::Named("size_t".into()));
         assert!(!e.is_variadic);
+        // The canonical-table hit propagates required headers.
+        assert!(
+            lowered.required_headers.contains(&"<sys/types.h>"),
+            "expected <sys/types.h> in {:?}",
+            lowered.required_headers
+        );
     }
 
     /// An import the catalogue doesn't know about degrades visibly
     /// (I-6): a single `int64_t name(void);` declaration and a
     /// leading-comment marker so a reader sees the fallback fired.
+    /// The canonical-extern table (B3.33) reports no extra headers
+    /// in that case.
     #[test]
     fn b3_23_lower_plt_stub_extern_falls_back_for_unknown_imports() {
         let f = plt_stub_function("__nosuch_runtime_helper", 0x2000);
-        let e = lower_plt_stub_extern(&f, "__nosuch_runtime_helper", false);
+        let lowered = lower_plt_stub_extern(&f, "__nosuch_runtime_helper", false);
+        let e = &lowered.extern_decl;
         assert_eq!(e.name, "__nosuch_runtime_helper");
         assert!(matches!(
             e.return_type,
@@ -1699,21 +1759,27 @@ mod tests {
         ));
         assert!(e.params.is_empty());
         assert!(!e.is_variadic);
-        let comment = e.leading_comment.expect("leading comment present");
+        let comment = e
+            .leading_comment
+            .as_deref()
+            .expect("leading comment present");
         assert!(
             comment.contains("unknown — fell back to int64_t(void)"),
             "missing fallback marker: {comment:?}"
         );
+        assert!(lowered.required_headers.is_empty());
     }
 
     /// Variadic catalog entries (`printf`) propagate `is_variadic`
     /// into the rendered declaration so the emitter writes
-    /// `extern int32_t printf(... , ...);`.
+    /// `extern int printf(const char *fmt, ...);` — and the
+    /// canonical-extern table (B3.33) requires `<stdio.h>`.
     #[test]
     fn b3_23_lower_plt_stub_extern_propagates_variadic_flag() {
         let f = plt_stub_function("printf", 0x3000);
-        let e = lower_plt_stub_extern(&f, "printf", false);
-        assert!(e.is_variadic);
+        let lowered = lower_plt_stub_extern(&f, "printf", false);
+        assert!(lowered.extern_decl.is_variadic);
+        assert!(lowered.required_headers.contains(&"<stdio.h>"));
     }
 
     /// The `--debug` knob appends a `signal: PLT` row to the leading
@@ -1725,15 +1791,30 @@ mod tests {
         let e_default = lower_plt_stub_extern(&f, "write", false);
         let e_debug = lower_plt_stub_extern(&f, "write", true);
         assert!(!e_default
+            .extern_decl
             .leading_comment
             .as_deref()
             .unwrap()
             .contains("signal: PLT"));
         assert!(e_debug
+            .extern_decl
             .leading_comment
             .as_deref()
             .unwrap()
             .contains("signal: PLT"));
+    }
+
+    /// A canonical-extern hit (B3.33) requires the matching system
+    /// headers so the rendered translation unit gets a `#include
+    /// <sys/types.h>` (etc.) at the top. Without that include, a
+    /// downstream `cc -x c -` round-trip on the emitted source would
+    /// fail to find `ssize_t` / `size_t` / `FILE` definitions.
+    #[test]
+    fn b3_33_lower_plt_stub_extern_reports_required_headers_for_canonical_hit() {
+        let f = plt_stub_function("write", 0x1030);
+        let lowered = lower_plt_stub_extern(&f, "write", false);
+        assert!(lowered.required_headers.contains(&"<sys/types.h>"));
+        assert!(lowered.required_headers.contains(&"<unistd.h>"));
     }
 
     // ---- B3.25 forwarding-thunk lowering ---------------------------

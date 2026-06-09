@@ -3,13 +3,15 @@
    arch:  x86-64 */
 #include <stdint.h>
 #include <stddef.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 /* dac-recovered PLT stub */
 /* address: 0x1030 */
 /* end: 0x1040 */
 /* confidence: 1.00 (Observed) */
 /* import: write (signature: dac-knowledge) */
-extern int64_t write(int32_t fd, void * buf, uint64_t n);
+extern ssize_t write(int fd, const void * buf, size_t n);
 
 /* runtime support (glibc startup) — not user code */
 /* dac-recovered function */

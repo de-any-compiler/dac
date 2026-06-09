@@ -410,6 +410,14 @@ pub enum CType {
     /// `struct` keyword is added, so the typedef must already be
     /// `typedef struct { … } NAME;`-shaped (B3.16).
     Named(String),
+    /// `const`-qualified inner type — emits `const <inner>`. The
+    /// canonical-extern path (B3.33) wraps `Ptr(Void)` with this to
+    /// spell `const void *` in extern declarations for libc APIs like
+    /// `write(int, const void *, size_t)`. The lowering pass treats
+    /// the qualifier as a backend-only spelling; the lattice does not
+    /// model const-ness, so this variant only appears in extern decls
+    /// the canonical-extern table produces.
+    Const(Box<CType>),
     /// Fixed-extent array — emits `<element>` as the prefix and
     /// `<name>[count]` at the declarator site. Used inside
     /// [`StructField`] for the padding members the B3.16 lowering pass
@@ -537,7 +545,19 @@ mod tests {
             | CType::Int { .. }
             | CType::Ptr(_)
             | CType::Named(_)
+            | CType::Const(_)
             | CType::Array { .. } => {}
+        }
+    }
+
+    #[test]
+    fn ctype_const_wraps_inner_type() {
+        let t = CType::Const(Box::new(CType::Ptr(Box::new(CType::Void))));
+        match &t {
+            CType::Const(inner) => {
+                assert_eq!(**inner, CType::Ptr(Box::new(CType::Void)));
+            }
+            _ => panic!("expected Const"),
         }
     }
 }

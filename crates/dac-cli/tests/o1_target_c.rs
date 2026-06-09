@@ -123,6 +123,43 @@ fn b3_32_string_literal_surfaces_in_write_call() {
     );
 }
 
+/// B3.33: PLT-bound libc imports surface as `extern <canonical sig>`
+/// using the POSIX typedef vocabulary instead of the lattice-driven
+/// width-tagged spelling. The done-when for B3.33 is that the
+/// extern declaration for `write` on the `hello-x86_64` fixture
+/// reads `extern ssize_t write(int fd, const void *buf, size_t n);`
+/// — and the translation unit grows the `<sys/types.h>` /
+/// `<unistd.h>` includes the typedef requires.
+#[test]
+fn b3_33_canonical_extern_for_write_uses_posix_typedefs() {
+    let dir = TempDir::new().expect("tempdir");
+    let out = dir.path().join("a.listing");
+    run_o1_c(&out);
+
+    let source = fs::read_to_string(sidecar_with_suffix(&out, ".c")).expect("source sidecar");
+    assert!(
+        source.contains("extern ssize_t write(int fd, const void * buf, size_t n);"),
+        "expected canonical `extern ssize_t write(...)` decl in:\n{source}"
+    );
+    // The stdint spelling must no longer leak — if it does, the
+    // canonical-extern table didn't drive the lowering.
+    assert!(
+        !source.contains("extern int64_t write("),
+        "stale stdint-spelled `extern int64_t write(...)` decl leaked:\n{source}"
+    );
+    // The required-headers accumulator must have prepended both
+    // includes; the canonical-extern table reports them in
+    // declaration order via a deterministic BTreeSet.
+    assert!(
+        source.contains("#include <sys/types.h>"),
+        "missing `<sys/types.h>` include for ssize_t / size_t in:\n{source}"
+    );
+    assert!(
+        source.contains("#include <unistd.h>"),
+        "missing `<unistd.h>` include for write in:\n{source}"
+    );
+}
+
 #[test]
 fn o1_target_c_round_trips_through_system_compiler() {
     // Best-effort: run `cc -x c -c -` on the emitted source. If no

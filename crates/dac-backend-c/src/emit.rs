@@ -317,6 +317,11 @@ fn render_type_prefix(ty: &CType) -> String {
         CType::Int { width_bits, signed } => render_int_type(*width_bits, *signed),
         CType::Ptr(inner) => format!("{} *", render_type_prefix(inner)),
         CType::Named(name) => name.clone(),
+        // `const <inner>`. Used by the canonical-extern table (B3.33)
+        // to spell `const void *` etc. inside extern decls for libc
+        // APIs. Nested `Const(Const(_))` collapses naturally — the
+        // inner render already includes a `const` prefix.
+        CType::Const(inner) => format!("const {}", render_type_prefix(inner)),
         // Arrays only appear inside struct fields; the field-decl
         // path renders them as `<element> name[N]`. Outside that
         // context (parameters, locals) the lowering pass does not
@@ -759,6 +764,24 @@ void f(void) {
         let s = render_expr(&e);
         assert!(!s.contains("*/ bar"));
         assert!(s.contains("foo * / bar"));
+    }
+
+    #[test]
+    fn b3_33_const_renders_with_const_prefix() {
+        // `const void *` from the canonical-extern table (B3.33).
+        let t = CType::Const(Box::new(CType::Ptr(Box::new(CType::Void))));
+        assert_eq!(render_type_prefix(&t), "const void *");
+    }
+
+    #[test]
+    fn b3_33_const_chars_round_trip() {
+        // `const char *` shape that `printf`'s `fmt` and `puts`'s `s`
+        // use under the canonical-extern table.
+        let t = CType::Const(Box::new(CType::Ptr(Box::new(CType::Int {
+            width_bits: 8,
+            signed: true,
+        }))));
+        assert_eq!(render_type_prefix(&t), "const int8_t *");
     }
 
     #[test]

@@ -56,11 +56,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod api_canonical;
 pub mod ast;
 pub mod compile;
 pub mod emit;
 pub mod lower;
 
+pub use api_canonical::{canonical_extern_signature, CanonicalExtern};
 pub use ast::{
     BinaryOp, Block, CType, Expr, ExternDecl, Function, Item, Local, Param, Stmt, SwitchArm,
     TranslationUnit, UnaryOp,

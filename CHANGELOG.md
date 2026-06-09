@@ -6463,6 +6463,189 @@ Closes: B3.32, FR-21 (recovered source readability), FR-23
 (confidence-attributed evidence), FR-25 (unresolved-construct
 reporting).
 
+#### B3.33 — Canonical typedef preservation in extern decls (2026-06-09)
+
+Why this batch existed: the post-B3.32 hello-x86_64 `--target c`
+listing read
+
+```c
+extern int64_t write(int32_t fd, void * buf, uint64_t n);
+```
+
+— a faithful lattice render that nevertheless erased the POSIX
+typedef vocabulary every reverse-engineer expects to see for a
+known libc symbol. The lifter's
+[`dac_ir::Type`](crates/dac-ir/src/ty.rs) lattice is intentionally
+typedef-blind (width-tagged integers and `Ptr<T>` chains) — the
+recovered body has no source-level evidence that `0x3` is "an
+`fd`" versus "an `int32_t` that happens to be 3", so erasing
+that distinction is the right call for the *body*. The extern
+forward declaration for a *known import* is the one place where
+the source-level spelling is fully determined by the API
+contract; rendering it in stdint vocabulary is a readability
+miss, not a fidelity choice. B3.33 separates the two views: the
+lifter / propagation pipeline keeps the lattice unchanged, and
+the backend grows a parallel canonical-extern table keyed by API
+name whose entries spell each signature with the typedefs the
+matching system header uses.
+
+What changed:
+
+- New `CType::Const(Box<CType>)` AST variant in
+  `dac-backend-c::ast` (B3.16 already shipped `CType::Named`, so
+  `ssize_t` / `size_t` / `int` / `FILE` reuse the existing
+  typedef-name slot). The emitter renders `Const(inner)` as
+  `const <inner>` — so the canonical-extern path can spell
+  `const void *` / `const char *` verbatim. The exhaustive-match
+  test in `ast.rs` is extended to include the new arm.
+- New `dac-backend-c::api_canonical` module holds the
+  catalogue. `canonical_extern_signature(name)` returns
+  `CanonicalExtern { return_type, params, is_variadic, headers
+  }` for the libc / POSIX minimal set
+  (`write` / `read` / `open` / `close` / `strlen` /
+  `strcmp` / `strcpy` / `strncpy` / `memcpy` / `memmove` /
+  `memset` / `memcmp` / `malloc` / `calloc` / `realloc` /
+  `free` / `printf` / `puts` / `fopen` / `fclose` / `fread` /
+  `fwrite` / `exit` / `abort` / `getenv`). Each entry carries
+  the system headers its typedefs need (`<sys/types.h>` for
+  `ssize_t` / `size_t`, `<stdio.h>` for `FILE *`, etc.); the
+  bundle is per-entry deduplicated. Case-sensitive name match;
+  Win32 names (`WriteFile` etc.) fall through and stay on the
+  lattice-driven path until a follow-up batch needs them.
+- `lower_plt_stub_extern` in `dac-cli::main` now consults the
+  canonical-extern table first. On hit, the rendered
+  `CExternDecl` uses the canonical spellings and the function
+  returns a `PltStubLowered { extern_decl, required_headers }`
+  so the caller can fold the headers into the translation
+  unit's include set. On miss, the existing lattice-driven
+  fallback fires (preserving the I-6 visible-degradation
+  contract for unknown imports — leading comment still reads
+  "unknown — fell back to int64_t(void)"). The CLI accumulates
+  required headers across every PLT stub in a `BTreeSet<&str>`
+  so the include block stays byte-deterministic regardless of
+  PLT-stub visit order.
+- The hello-x86_64 fixture's extern decl now reads
+
+  ```c
+  #include <stdint.h>
+  #include <stddef.h>
+  #include <sys/types.h>
+  #include <unistd.h>
+  /* import: write (signature: dac-knowledge) */
+  extern ssize_t write(int fd, const void * buf, size_t n);
+  ```
+
+  The lattice path's `int64_t` / `int32_t` / `void *` / `uint64_t`
+  spellings no longer appear in this slot.
+
+The compile round-trip gate stays green. The call site continues
+to type-erase through the function-pointer cast
+`((long long(*)(long long, …))write)(…)` the lattice already
+emits, so passing the `(int64_t)("hello\n")` argument to the
+declared `const void *buf` slot never hits gcc's `-Wint-conversion`
+classifier — gcc only sees the cast's all-`long long` shape.
+
+Why a backend-side table instead of widening the lattice: the
+lattice's typedef-blind vocabulary is a deliberate invariant
+([`ARCHITECTURE.md`](./ARCHITECTURE.md) I-1 / I-3) — recovered
+facts carry width and pointer-ness because that is what the
+binary observably commits to. Adding typedef tags to the lattice
+would either flow into the body (lying — `ssize_t` is not
+observable from the bytes alone) or live as a no-op annotation
+the lifter ignores. The canonical-extern table puts the typedef
+choice where it belongs: a rendering decision the backend makes
+for the one declaration where the API contract fixes the
+spelling.
+
+Why a separate table instead of widening
+`dac_knowledge::api::ApiSignature`: the existing catalogue feeds
+the type-propagation pass which consumes `dac_ir::Type` — adding
+canonical C spellings there would force the lattice to carry
+typedef vocabulary it cannot model (`size_t` vs `uint64_t`
+collapse to the same lattice point). A parallel
+`dac-backend-c`-side table keeps the C spellings out of the
+lattice while letting the two catalogues evolve independently
+when a follow-up batch (e.g., Win32 typedefs for B3.35's i386 PE
+work) needs to extend just the canonical side.
+
+Tests:
+
+- `crates/dac-backend-c/src/api_canonical.rs` ships 9 unit
+  tests covering the libc minimal set, the
+  POSIX-correct `read` / `write` const-ness asymmetry, variadic
+  flag propagation through `printf`, the `FILE *` typedef shape
+  for `fopen`, case-sensitive matching, unknown-name fallback,
+  and per-entry header deduplication.
+- `crates/dac-backend-c/src/ast.rs` gains
+  `ctype_const_wraps_inner_type` plus the
+  `Const(_)` arm in
+  `ctype_variants_are_exhaustively_matchable`.
+- `crates/dac-backend-c/src/emit.rs` adds
+  `b3_33_const_renders_with_const_prefix` and
+  `b3_33_const_chars_round_trip` covering the new render arm
+  for `const void *` and `const char *` shapes.
+- `crates/dac-cli/src/main.rs` updates the existing B3.23 PLT
+  stub tests to the new `PltStubLowered` return shape and
+  adds `b3_33_lower_plt_stub_extern_reports_required_headers_for_canonical_hit`
+  asserting the `<sys/types.h>` / `<unistd.h>` accumulation.
+  The variadic-flag test now also asserts `<stdio.h>` lands in
+  the required-headers list.
+- `crates/dac-cli/tests/o1_target_c.rs` gains
+  `b3_33_canonical_extern_for_write_uses_posix_typedefs`
+  asserting the exact line
+  `extern ssize_t write(int fd, const void * buf, size_t n);`
+  appears, the stale `extern int64_t write(` does not, and both
+  POSIX headers (`<sys/types.h>` / `<unistd.h>`) land in the
+  include block. The existing
+  `o1_target_c_round_trips_through_system_compiler` test guards
+  the compile gate.
+
+Done-when verification (from PLAN.md B3.33):
+
+```text
+extern ssize_t write(int fd, const void *buf, size_t n);
+```
+
+End-to-end probe:
+
+```bash
+./target/debug/dac -O1 --target c tests/fixtures/hello-x86_64 \
+  2>/dev/null | grep -E '#include|^extern'
+```
+
+emits (verbatim):
+
+```
+#include <stdint.h>
+#include <stddef.h>
+#include <sys/types.h>
+#include <unistd.h>
+extern ssize_t write(int fd, const void * buf, size_t n);
+```
+
+modulo the existing pointer-style space convention
+(`void * buf` consistent with `void * v1 = ((void *)(0LL));`
+elsewhere in the same fixture). The
+`o1_target_c_round_trips_through_system_compiler` test
+confirms gcc 16 accepts the result.
+
+Goldens refreshed: `tests/golden/hello-elf-o1-c/source.c` and
+`tests/golden/hello-elf-o1-c-hints/source.c` (extern decl line
+plus `<sys/types.h>` / `<unistd.h>` includes). PE / syscall /
+cpp / libsample / stripped goldens are unchanged — they have no
+PLT-bound libc imports the canonical table covers.
+
+CI verification: `cargo xtask ci` green — fmt + clippy +
+757 tests pass (was 743 at B3.32, +14 net new for B3.33: 9
+api_canonical unit tests, 2 ast tests for the Const variant
+and exhaustive-match, 2 emit tests for the new render arm,
+1 CLI unit test for required-header accumulation, plus the
+end-to-end `b3_33_canonical_extern_for_write_uses_posix_typedefs`
+integration test); 32 goldens across 12 cases match after the
+two affected `source.c` files were re-baselined.
+
+Closes: B3.33, FR-21 (recovered source readability).
+
 ### Milestone 4 — Human-oriented reconstruction
 *(not started)*
 

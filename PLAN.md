@@ -49,38 +49,20 @@ disassembly-style listing.
 
 Goal: dac is genuinely useful to a reverse engineer.
 
-B3.1 – B3.22, B3.23 – B3.31, and B3.32 are complete — see
-[CHANGELOG.md](./CHANGELOG.md). B3.33 – B3.35 are the remaining
+B3.1 – B3.22, B3.23 – B3.31, B3.32, and B3.33 are complete — see
+[CHANGELOG.md](./CHANGELOG.md). B3.34 – B3.35 are the remaining
 polish-wave batches that lift the most visible non-residue gaps
-before M3 closes: canonical typedef preservation in extern decls,
-void-return inference for runtime helpers, and i386 dispatch
-wiring. The "B3 residue shelf" further down tracks heavier
-residue items that stay deferred past M3 and are sized as
+before M3 closes: void-return inference for runtime helpers and
+i386 dispatch wiring. The "B3 residue shelf" further down tracks
+heavier residue items that stay deferred past M3 and are sized as
 separate milestones rather than numbered batches.
 
 ### Sequencing
 
-Within the remaining B3.33 – B3.35 wave, B3.33 (typedef
-preservation in extern decls) is independent of the others. B3.34
-(void-return inference) is also independent of B3.33. B3.35 (i386
-dispatch wiring) unblocks the GOTHIC.EXE-class of PE fixtures and
-is independent of the other two but lower-priority for
-hello-fixture polish.
-
-### B3.33 — Canonical typedef preservation in extern decls
-
-- `CType::Typedef(name, underlying)` and `CType::Const(Box<CType>)`
-  variants added so the C printer can render `ssize_t`, `size_t`,
-  `const void *`, etc., verbatim instead of collapsing to
-  `int64_t` / `uint64_t` / `void *`.
-- The lowering pass consults `dac-knowledge` for known API
-  signatures and opts the extern decl into the canonical typedefs.
-- Adds `#include <sys/types.h>` (or equivalent) when the rendered
-  decl uses a typedef outside `stddef.h` / `stdint.h`.
-- **Done when:** the extern declaration for `write` on the
-  `hello-x86_64` fixture reads exactly
-  `extern ssize_t write(int fd, const void *buf, size_t n);` and
-  the emitted source still compiles round-trip. (FR-21)
+Within the remaining B3.34 – B3.35 wave, B3.34 (void-return
+inference) is independent of B3.35. B3.35 (i386 dispatch wiring)
+unblocks the GOTHIC.EXE-class of PE fixtures and is independent
+of B3.34 but lower-priority for hello-fixture polish.
 
 ### B3.34 — Void-return inference for unobserved-rax helpers
 
