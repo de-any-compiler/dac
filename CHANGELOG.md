@@ -7000,7 +7000,180 @@ Closes: B3.35, FR-3 (multi-format pipeline reach), FR-21
 (recovered source readability).
 
 ### Milestone 4 — Human-oriented reconstruction
-*(not started)*
+
+#### B4.1 — AI adapter trait + offline default (2026-06-09)
+
+*Motivation.* `dac-ai` shipped as an empty crate from B0.1 onward;
+the rest of M3 was authored against a deterministic-pipeline-only
+world (I-4). M4 needs the AI adapter trait, the `Delta` enum, and
+the `EvidenceBundle` builder in place before B4.2 can wire a real
+local model or B4.3 can verify proposals. B4.1 lands that substrate
+with two offline-only providers (`NullProvider`, `EchoProvider`) so
+the rest of M4 can be authored end-to-end without ever touching a
+network.
+
+*Design notes.*
+- **`AiProvider` trait** lives in `dac-ai::provider`. Three methods:
+  `name() -> &str` for manifest / log attribution, `is_local() -> bool`
+  for the B4.6 `--deterministic` gate, and
+  `propose(&Prompt, &EvidenceBundle) -> ProviderResult<Vec<Delta>>`
+  for the actual call. `Send + Sync + Debug` bounds make it usable
+  behind `Box<dyn AiProvider>` (the B4.5 orchestrator stores
+  providers that way) and `tracing::field`-loggable.
+- **`Delta` enum** mirrors ARCHITECTURE §9's closed set:
+  `RenameSymbol`, `RetypeSlot`, `SuggestStructLayout`,
+  `SuggestIdiom`, `AnnotateRegion`. Each variant carries a
+  `DeltaMetadata` whose fields (`confidence`, `prompt_hash`,
+  `model_id`, `seed`, `evidence`) are `pub(crate)` — the only way to
+  construct one is through the `Delta::rename_symbol` /
+  `Delta::retype_slot` / … helpers, which reject I-3 violations
+  (`Confidence::source() != Speculative`) and I-2 violations (empty
+  `EvidenceBundle`) at the type level. `assert_speculative` re-checks
+  at CLI ingress as defence in depth for M5 deserialisation paths.
+- **`EvidenceBundle` builder** in `dac-ai::bundle` is a thin
+  insertion-ordered wrapper around `Vec<EvidenceId>` with
+  `FromIterator` + `Extend` impls. Bundles are pure references into
+  the existing `dac_core::EvidenceGraph` — the bundle never re-hosts
+  payloads, so the source-of-truth invariant on the graph stays
+  intact.
+- **`Prompt` digest.** Every delta records the 32-byte content hash
+  of the prompt it was conditioned on (FR-37). Implemented as four
+  FNV-1a 64 streams seeded with distinct IVs and folded over
+  `PromptKind::tag` + a `0x1f` separator + the prompt text. FNV-1a
+  is deterministic across builds and targets and that is the only
+  property FR-37 needs (the threat model is reproducibility, not
+  adversarial integrity). Constants are pinned so future digest
+  rewrites are observable in the artifact.
+- **`NullProvider`** always returns `Ok(Vec::new())`. It is the
+  default the CLI dispatches to whenever `--no-ai` is set, when
+  `--ai-provider` is absent, or when an unrecognised provider name
+  is passed (with a one-shot `tracing::warn!`). The I-4 corridor
+  stays trivially intact: the deterministic pipeline runs to
+  completion without AI by construction.
+- **`EchoProvider`** is the test fixture. It wraps a `Vec<Delta>`
+  and returns a clone of it on every `propose` call; the provider
+  name is configurable so tests can verify how `model_id` propagates
+  through the manifest in B4.2 / B4.5. Strictly offline.
+- **`select_provider(no_ai, requested)`** is the dispatch table:
+  `(true, _) → Null/Disabled`,
+  `(false, None) → Null/Default`,
+  `(false, "null"|"none") → Null/Selected`,
+  `(false, other) → Null/Fallback`. Returns a
+  `ProviderSelection { provider, reason, requested }` so the
+  orchestrator can decide whether to warn (Fallback) or stay silent
+  (Selected / Default / Disabled), and what name to surface in the
+  manifest.
+
+*CLI integration.* `dac-cli` gains a `run_ai_proposal_pass(&Args)`
+helper that runs once per pipeline invocation between `build_manifest`
+and `pick_backend`. It:
+1. Resolves the CLI flags through `select_provider`.
+2. Logs the selection at `INFO` (or `WARN` for `Fallback`) with
+   stable `provider`, `requested`, `reason` fields suitable for
+   `--json` log scraping.
+3. Calls `provider.propose(&Prompt, &EvidenceBundle::new())` with a
+   stable "dac pipeline summary" prompt — exercises the full trait
+   path without coupling the call site to recovery-pass details.
+4. Logs the returned proposal count.
+
+The deterministic-pipeline corridor stays intact because the chosen
+provider is always `NullProvider` at this batch; the call is
+unconditional but observably a no-op. Manifest output is unchanged
+(the existing `ai.provider` field already mirrored `--ai-provider`),
+so no golden refresh was needed.
+
+*What's out of scope.* No `Delta` is ever applied to the IR — the
+apply path lands with `dac-verify` (B4.3) plus the `-O3`
+orchestrator (B4.5). The `report.rs` row that surfaces proposal
+counts in `--emit-report` is held back until B4.2 produces non-zero
+proposals; adding a `;; ai: proposals=0` row today would have
+forced a corpus-wide report-golden refresh for no observable gain.
+
+*Per-file changes.*
+- `crates/dac-ai/Cargo.toml`: pulls in `dac-core` (for `EvidenceId`,
+  `Confidence`, `Source`).
+- `crates/dac-ai/src/lib.rs`: module declarations + the public
+  re-export surface (`AiProvider`, `Delta`, `DeltaBuildError`,
+  `DeltaMetadata`, `EchoProvider`, `EvidenceBundle`, `NullProvider`,
+  `Prompt`, `PromptKind`, `ProposerContext`, `ProviderError`,
+  `ProviderResult`, `ProviderSelection`, `RegionRef`, `SelectionReason`,
+  `SlotRef`, `StructFieldSuggestion`, `SymbolRef`,
+  `assert_speculative`, `prompt_digest`, `select_provider`).
+- `crates/dac-ai/src/bundle.rs`: `EvidenceBundle` builder + tests.
+- `crates/dac-ai/src/delta.rs`: `Delta` enum, `DeltaMetadata`,
+  `DeltaBuildError`, `ProposerContext`, `StructFieldSuggestion`,
+  `SymbolRef` / `SlotRef` / `RegionRef`, `assert_speculative`,
+  `Delta::*` constructors + tests.
+- `crates/dac-ai/src/error.rs`: `ProviderError` (`Unavailable`,
+  `Transport`, `Refused`) + kebab-case `kind()` tag + tests.
+- `crates/dac-ai/src/prompt.rs`: `Prompt`, `PromptKind`,
+  `prompt_digest` (deterministic 32-byte FNV-1a-derived hash) +
+  tests.
+- `crates/dac-ai/src/provider.rs`: `AiProvider` trait,
+  `NullProvider`, `EchoProvider`, `ProviderSelection`,
+  `SelectionReason`, `select_provider` dispatch table + tests.
+- `crates/dac-cli/Cargo.toml`: depends on `dac-ai`.
+- `crates/dac-cli/src/main.rs`: imports + `run_ai_proposal_pass`
+  helper wired into `run_pipeline`.
+- `crates/dac-cli/tests/cli.rs`: five new B4.1 integration tests
+  for default / `--no-ai` / `--ai-provider null` / unknown provider
+  / `--no-ai` + `--ai-provider` combination.
+- `Cargo.toml` (workspace) was already listing `dac-ai` as a
+  workspace member from B0.1, so no manifest change was needed.
+
+*End-to-end verification.*
+
+```
+./target/debug/dac --json tests/fixtures/hello-x86_64 \
+  | grep -E '"selected ai provider"|"ai provider returned proposals"'
+```
+
+emits:
+```
+{"level":"INFO","fields":{"message":"selected ai provider",
+ "provider":"null","requested":"","reason":"default"}, ...}
+{"level":"INFO","fields":{"message":"ai provider returned proposals",
+ "provider":"null","proposals":0}, ...}
+```
+
+and `--ai-provider local:llama` (no `--no-ai`) surfaces:
+```
+{"level":"WARN","fields":{"message":
+ "requested ai provider is not available; routed to null",
+ "provider":"null","requested":"local:llama","reason":"fallback"}, ...}
+```
+
+so the dispatch table, the trait, and the FR-37 logging surface all
+run end-to-end on every binary in the corpus with zero real model
+calls.
+
+*Tests.* +36 net new vs B3.35:
+- `dac-ai::bundle` — 5 tests (empty bundle, insertion order, FromIterator
+  parity, duplicates preserved, order-sensitive equality).
+- `dac-ai::delta` — 6 tests (provenance round-trip,
+  kind_tag distinctness, non-Speculative reject, empty-bundle reject,
+  `assert_speculative` happy path, `DeltaBuildError` Display).
+- `dac-ai::error` — 3 tests (per-variant `kind()` tag,
+  Display prefix, `Send + Sync + 'static`).
+- `dac-ai::prompt` — 6 tests (tag distinctness, digest determinism,
+  digest changes with text / kind, separator blocks tag-text blending,
+  all four IV words filled).
+- `dac-ai::provider` — 11 tests (NullProvider advertise + empty
+  proposals + empty-bundle case, EchoProvider replay + custom name,
+  `select_provider` × 4 dispatch arms, dyn-compatibility check,
+  SelectionReason tag distinctness).
+- `dac-cli::cli` — 5 B4.1 integration tests (default, `--no-ai`,
+  `--ai-provider null`, unknown provider, `--no-ai` overrides
+  `--ai-provider`).
+
+**813 tests pass total (was 777 at B3.35).** All 32 goldens across
+12 cases match unchanged (no golden refresh needed — the AI
+dispatch lives entirely in `tracing::info!` / `tracing::warn!`
+fields, which are stripped from stdout in the non-`--json` path the
+goldens use).
+
+Closes: B4.1, FR-32 (AI-assisted naming substrate), FR-35
+(provider abstraction), ARCHITECTURE §9.
 
 ### Milestone 5 — Ecosystem
 *(not started)*

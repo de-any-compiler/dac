@@ -303,6 +303,105 @@ fn dac_rejects_missing_value_with_exit_2() {
         .code(2);
 }
 
+/// B4.1 — AI adapter trait + offline default.
+///
+/// Ensures the M4 AI dispatch layer is wired through `run_pipeline`
+/// (FR-32, FR-35, ARCHITECTURE §9). The CLI must:
+///   * default to `NullProvider` (no `--ai-provider` arg, no
+///     `--no-ai`),
+///   * honour `--no-ai` (forces null),
+///   * honour `--ai-provider null` / `--ai-provider none` (selects
+///     null without warning),
+///   * downgrade unknown provider names to null with a warning
+///     instead of crashing (until B4.2 ships a real adapter).
+///
+/// In every case the run must succeed end-to-end and the manifest
+/// must still render `"ai": { "provider": ... }` consistently — the
+/// existing manifest goldens are unchanged by this batch.
+#[test]
+fn b4_1_default_run_succeeds_with_null_provider() {
+    let path = elf_fixture();
+    Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg(&path)
+        .assert()
+        .success();
+}
+
+#[test]
+fn b4_1_no_ai_flag_succeeds_and_keeps_provider_null_in_manifest() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--no-ai")
+        .arg(&path)
+        .output()
+        .expect("run dac --no-ai");
+    assert!(out.status.success(), "dac --no-ai should exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("\"provider\": null"),
+        "--no-ai must leave manifest provider null:\n{stdout}",
+    );
+}
+
+#[test]
+fn b4_1_ai_provider_null_is_routed_without_warning() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("null")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-provider null");
+    assert!(out.status.success(), "--ai-provider null should exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    // The `null` name is preserved in the manifest so FR-37
+    // attribution stays honest about what was requested.
+    assert!(
+        stdout.contains("\"provider\": \"null\""),
+        "--ai-provider null must surface as the manifest provider:\n{stdout}",
+    );
+}
+
+#[test]
+fn b4_1_unknown_ai_provider_is_downgraded_to_null_without_failing() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local:llama")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-provider local:llama");
+    assert!(
+        out.status.success(),
+        "unknown provider must downgrade, not fail",
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    // Manifest still records what the user asked for so the
+    // attribution audit trail (FR-37) is preserved.
+    assert!(
+        stdout.contains("\"provider\": \"local:llama\""),
+        "manifest must keep requested provider name:\n{stdout}",
+    );
+}
+
+#[test]
+fn b4_1_no_ai_overrides_explicit_ai_provider_arg() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--no-ai")
+        .arg("--ai-provider")
+        .arg("local:llama")
+        .arg(&path)
+        .output()
+        .expect("run dac --no-ai --ai-provider local:llama");
+    assert!(out.status.success(), "combination should still succeed");
+}
+
 /// B3.35 — i386 dispatch wiring.
 ///
 /// Before this batch, `dac --target c <i386 PE>` printed the

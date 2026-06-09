@@ -32,6 +32,11 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use dac_ai::{
+    select_provider, EvidenceBundle as AiEvidenceBundle, Prompt as AiPrompt,
+    PromptKind as AiPromptKind, ProviderSelection as AiProviderSelection,
+    SelectionReason as AiSelectionReason,
+};
 use dac_analysis::cfg::{build_cfgs, render_dot_all};
 use dac_analysis::{build_call_graph, build_xref_index, render_callgraph_dot, resolve_subject};
 use dac_arch::{Architecture as _, InstructionDecoder, InstructionLifter, RegisterFile};
@@ -169,6 +174,15 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     let input_label = path.to_string_lossy().into_owned();
     let manifest = build_manifest(&input_label, &model, args);
     let manifest_json = render_manifest_json(&manifest);
+
+    // B4.1: resolve `--no-ai` / `--ai-provider` to a concrete
+    // `AiProvider` and exercise a single offline propose call so the
+    // adapter trait, the delta protocol, and the dispatch table
+    // (`dac_ai::select_provider`) all run end-to-end on every input.
+    // `NullProvider` is the default at this batch — real model
+    // adapters land in B4.2 / B4.6 — so the call returns zero deltas
+    // and the determinism corridor (I-4, NFR-9) stays intact.
+    run_ai_proposal_pass(args);
 
     let hints = match args.hints.as_deref() {
         Some(p) => Hints::load_from_path(p).map_err(hints_error_to_core)?,
@@ -1391,6 +1405,61 @@ fn sanitize_dot_ident(s: &str) -> String {
             }
         })
         .collect()
+}
+
+/// B4.1: resolve the CLI's `--no-ai` / `--ai-provider` flags onto an
+/// [`dac_ai::AiProvider`] and exercise a single propose call to prove
+/// the dispatch table, prompt + bundle types, and delta enum are
+/// reachable end-to-end. Until B4.2 the only real provider is
+/// `NullProvider`, so the call always returns zero deltas; we log the
+/// outcome (`reason`, `requested`, `proposals`) via `tracing::info!`
+/// so the auditor can see the chosen provider in `--debug` runs and
+/// in the `--json` log without affecting stdout / golden manifests.
+///
+/// `Fallback` requests (e.g. `--ai-provider local:llama` before B4.2)
+/// are surfaced with `tracing::warn!` so the user knows their
+/// requested provider was downgraded. The deterministic corridor
+/// stays intact because the actual provider is still `NullProvider`.
+fn run_ai_proposal_pass(args: &Args) {
+    let selection: AiProviderSelection = select_provider(args.no_ai, args.ai_provider.as_deref());
+    if selection.reason == AiSelectionReason::Fallback {
+        tracing::warn!(
+            provider = selection.provider.name(),
+            requested = selection.requested.as_deref().unwrap_or(""),
+            reason = selection.reason.tag(),
+            "requested ai provider is not available; routed to null"
+        );
+    } else {
+        tracing::info!(
+            provider = selection.provider.name(),
+            requested = selection.requested.as_deref().unwrap_or(""),
+            reason = selection.reason.tag(),
+            "selected ai provider"
+        );
+    }
+    // A stable pipeline-summary prompt + empty evidence bundle is
+    // enough to exercise the trait. Future batches (B4.5) will issue
+    // per-function prompts with non-empty bundles; this call site is
+    // the dispatch point those batches grow from.
+    let prompt = AiPrompt::new(AiPromptKind::Annotation, "dac pipeline summary");
+    let bundle = AiEvidenceBundle::new();
+    match selection.provider.propose(&prompt, &bundle) {
+        Ok(deltas) => {
+            tracing::info!(
+                provider = selection.provider.name(),
+                proposals = deltas.len(),
+                "ai provider returned proposals"
+            );
+        }
+        Err(err) => {
+            tracing::warn!(
+                provider = selection.provider.name(),
+                kind = err.kind(),
+                error = %err,
+                "ai provider rejected the prompt"
+            );
+        }
+    }
 }
 
 fn build_manifest(input_path: &str, model: &BinaryModel, args: &Args) -> Manifest {

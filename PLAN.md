@@ -94,13 +94,6 @@ above.
 
 Goal: `-O3` with AI assistance, review mode, and strict mode.
 
-### B4.1 — AI adapter trait + offline default
-- `dac-ai`: `AiProvider` trait, `Delta` enum, `EvidenceBundle` builder
-  (ARCHITECTURE §9, FR-32, FR-35).
-- A "null" provider that always returns no deltas (default).
-- An "echo" provider for tests.
-- **Done when:** AI plumbing exists end-to-end with zero real model calls.
-
 ### B4.2 — Local model provider (llama.cpp / ollama)
 - Adapter to a local provider (FR-35, NFR-21, NFR-22).
 - Prompt templates versioned alongside passes (spec §13.8).

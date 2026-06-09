@@ -85,6 +85,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "dac-ai"
 version = "0.1.0-pre"
+dependencies = [
+ "dac-core",
+]
 
 [[package]]
 name = "dac-analysis"
@@ -161,6 +164,7 @@ name = "dac-cli"
 version = "0.1.0-pre"
 dependencies = [
  "assert_cmd",
+ "dac-ai",
  "dac-analysis",
  "dac-arch",
  "dac-arch-x86",
