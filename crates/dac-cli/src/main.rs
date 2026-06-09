@@ -59,7 +59,7 @@ use dac_binfmt::{load_from_bytes, Architecture, BinaryModel};
 use dac_core::{init_tracing, EvidenceGraph, EvidenceNode};
 use dac_hints::{HintError, Hints};
 use dac_recovery::{detect_thunks, discover_functions, FunctionSet, FunctionTaxonomy};
-use dac_verify::{verify_delta, KnownFacts, VerifyMode, VerifyOutcome};
+use dac_verify::{render_review, verify_delta, KnownFacts, ReviewLog, VerifyMode, VerifyOutcome};
 
 use crate::annotations::{
     render_annotations_json, render_function_debug_block, AnnotationDoc, FunctionAnnotation,
@@ -124,6 +124,7 @@ fn main() -> ExitCode {
         no_ai = args.no_ai,
         ai_provider = ?args.ai_provider,
         ai_strict = args.ai_strict,
+        ai_review = args.ai_review,
         threads = ?args.threads,
         arch = ?args.arch,
         output = ?args.output,
@@ -188,7 +189,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
     // determinism corridor (I-4, NFR-9) stays intact because every
     // shipping backend is content-addressed and the proposals are not
     // yet applied (`dac-verify` gates application in B4.3).
-    run_ai_proposal_pass(args, &input_label, &model);
+    let review_text = run_ai_proposal_pass(args, &input_label, &model);
 
     let hints = match args.hints.as_deref() {
         Some(p) => Hints::load_from_path(p).map_err(hints_error_to_core)?,
@@ -398,6 +399,7 @@ fn run_pipeline(path: &Path, args: &Args) -> dac_core::Result<()> {
         callgraph_text.as_deref(),
         xrefs_text.as_deref(),
         annotations_text.as_deref(),
+        review_text.as_deref(),
     )
 }
 
@@ -1434,7 +1436,13 @@ fn sanitize_dot_ident(s: &str) -> String {
 /// rule-based local provider has something to cite. Proposals are
 /// logged but **not applied** — delta verification (B4.3) and the
 /// review-mode + `-O3` paths (B4.4 / B4.5) gate application.
-fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) {
+///
+/// B4.4 (spec §13.6, FR-33): when `--ai-review` is set, every judged
+/// delta is recorded in a [`ReviewLog`] and returned to the caller as
+/// a rendered side artifact. The artifact is informational only — no
+/// proposal is applied either way; review mode just makes the
+/// verifier's verdict legible to a human reviewer.
+fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) -> Option<String> {
     let selection: AiProviderSelection = select_provider(args.no_ai, args.ai_provider.as_deref());
     if selection.reason == AiSelectionReason::Fallback {
         tracing::warn!(
@@ -1475,7 +1483,7 @@ fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) {
             // condition and skip the propose call so the pipeline
             // continues to run normally.
             tracing::warn!("missing prompt template `pipeline-summary`; skipping ai proposal pass");
-            return;
+            return None;
         }
     };
     let mut graph = EvidenceGraph::new();
@@ -1497,12 +1505,20 @@ fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) {
         VerifyMode::Lenient
     };
     let world = KnownFacts::new();
+    // B4.4: build a review log on every run so the recording path
+    // matches the active path; we only render + return it when the
+    // user asked for `--ai-review`. The unused-log case is cheap (an
+    // empty `Vec`) and keeps the code path symmetric so the verifier
+    // sees exactly the same delta stream regardless of review mode.
+    let mut review = ReviewLog::new(selection.provider.name(), mode);
     match selection.provider.propose(&prompt, &bundle) {
         Ok(deltas) => {
             let mut accepted = 0u32;
             let mut rejected = 0u32;
             for d in &deltas {
-                match verify_delta(d, &world, mode) {
+                let outcome = verify_delta(d, &world, mode);
+                review.record(d, &world, &outcome);
+                match outcome {
                     VerifyOutcome::Accept => accepted += 1,
                     VerifyOutcome::Reject(reason) => {
                         rejected += 1;
@@ -1522,6 +1538,7 @@ fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) {
                 accepted,
                 rejected,
                 mode = mode.tag(),
+                review = args.ai_review,
                 template = "pipeline-summary",
                 "ai provider returned proposals"
             );
@@ -1534,6 +1551,11 @@ fn run_ai_proposal_pass(args: &Args, input_label: &str, model: &BinaryModel) {
                 "ai provider rejected the prompt"
             );
         }
+    }
+    if args.ai_review {
+        Some(render_review(&review))
+    } else {
+        None
     }
 }
 
@@ -1593,6 +1615,7 @@ fn emit_outputs(
     callgraph: Option<&str>,
     xrefs: Option<&str>,
     annotations: Option<&str>,
+    review: Option<&str>,
 ) -> dac_core::Result<()> {
     match output {
         None => {
@@ -1625,6 +1648,10 @@ fn emit_outputs(
                 h.write_all(b"\n;; ---- annotations (FR-19, FR-23, FR-25) ----\n")?;
                 h.write_all(a.as_bytes())?;
             }
+            if let Some(rv) = review {
+                h.write_all(b"\n;; ---- ai review (FR-33) ----\n")?;
+                h.write_all(rv.as_bytes())?;
+            }
             Ok(())
         }
         Some(path) => {
@@ -1654,6 +1681,10 @@ fn emit_outputs(
             if let Some(a) = annotations {
                 let annot_path = sidecar(path, ".annot.json");
                 write_file(&annot_path, a)?;
+            }
+            if let Some(rv) = review {
+                let review_path = sidecar(path, ".review.txt");
+                write_file(&review_path, rv)?;
             }
             Ok(())
         }
@@ -1771,6 +1802,12 @@ struct Args {
     /// than letting the confidence lattice silently shadow it
     /// (ARCHITECTURE §13).
     ai_strict: bool,
+    /// B4.4: collect every AI proposal into a side artifact (spec §13.6,
+    /// FR-33) without applying it. The rendered review log lands as a
+    /// `.review.txt` sidecar (or under a `;; ---- ai review` delimiter
+    /// on stdout) so a reviewer can inspect what the provider proposed
+    /// without trusting the model to mutate the IR.
+    ai_review: bool,
     deterministic: bool,
     threads: Option<u32>,
     json: bool,
@@ -1811,6 +1848,7 @@ where
             "--no-ai" => args.no_ai = true,
             "--ai-provider" => args.ai_provider = Some(take_value("--ai-provider", &mut it)?),
             "--ai-strict" => args.ai_strict = true,
+            "--ai-review" => args.ai_review = true,
             "--deterministic" => args.deterministic = true,
             "--threads" => {
                 let raw = take_value("--threads", &mut it)?;

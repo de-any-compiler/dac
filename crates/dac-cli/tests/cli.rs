@@ -563,6 +563,164 @@ fn b4_3_ai_strict_works_with_default_provider() {
     );
 }
 
+/// B4.4 — `--ai-review` adds a review-mode side artifact (spec §13.6,
+/// FR-33). The block contains the verifier's verdict for every
+/// provider proposal as a before/after diff. The world model is still
+/// empty at this batch, so every proposal renders as
+/// `reject:unknown-target` and the `-` side is `(unknown target)`.
+/// The flag is behavioural — the manifest stays unchanged.
+#[test]
+fn b4_4_ai_review_emits_review_block_on_stdout() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-review")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-review --ai-provider local");
+    assert!(
+        out.status.success(),
+        "--ai-review --ai-provider local should exit 0",
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains(";; ---- ai review (FR-33) ----"),
+        "review block delimiter must appear on stdout:\n{stdout}",
+    );
+    assert!(
+        stdout.contains(";; dac --ai-review (spec §13.6)"),
+        "review block must include the spec-§13.6 header:\n{stdout}",
+    );
+    assert!(
+        stdout.contains(";; provider: local:stub"),
+        "review block must cite the resolved provider name:\n{stdout}",
+    );
+    assert!(
+        stdout.contains(";; mode:     lenient"),
+        "default mode must render as lenient:\n{stdout}",
+    );
+    // Local stub returns exactly one delta against the empty world.
+    assert!(
+        stdout.contains(";; deltas:   total=1 accepted=0 rejected=1"),
+        "review block must summarise total/accepted/rejected:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("reject:unknown-target"),
+        "review block must surface the unknown-target rejection tag:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("-   (unknown target)"),
+        "diff `-` side must mark the unknown target:\n{stdout}",
+    );
+}
+
+/// B4.4 — `--ai-review` is omitted by default. No review block, no
+/// `.review.txt` sidecar, no manifest churn.
+#[test]
+fn b4_4_review_block_absent_without_flag() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-provider local");
+    assert!(out.status.success(), "default run should still exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        !stdout.contains(";; ---- ai review"),
+        "review block must not appear without --ai-review:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains(";; dac --ai-review"),
+        "review header must not appear without --ai-review:\n{stdout}",
+    );
+}
+
+/// B4.4 — `--ai-review --ai-strict` composes: strict mode flips the
+/// header without changing the side-artifact shape.
+#[test]
+fn b4_4_review_renders_strict_header_when_strict_is_set() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-review")
+        .arg("--ai-strict")
+        .arg(&path)
+        .output()
+        .expect("run dac --ai-review --ai-strict --ai-provider local");
+    assert!(out.status.success(), "combination should still exit 0");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains(";; mode:     strict"),
+        "strict mode must surface in the review header:\n{stdout}",
+    );
+}
+
+/// B4.4 — review block is stable across two runs against the same
+/// input (deterministic side artifact — spec §13.6 "human-readable
+/// and stable").
+#[test]
+fn b4_4_review_block_is_stable_across_two_runs() {
+    let path = elf_fixture();
+    let first = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-review")
+        .arg(&path)
+        .output()
+        .expect("first run");
+    let second = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--ai-provider")
+        .arg("local")
+        .arg("--ai-review")
+        .arg(&path)
+        .output()
+        .expect("second run");
+    assert!(first.status.success());
+    assert!(second.status.success());
+    let a = String::from_utf8(first.stdout).expect("utf-8 stdout");
+    let b = String::from_utf8(second.stdout).expect("utf-8 stdout");
+    let extract = |s: &str| -> String {
+        let marker = ";; ---- ai review";
+        let pos = s.find(marker).expect("review block present");
+        s[pos..].to_string()
+    };
+    assert_eq!(
+        extract(&a),
+        extract(&b),
+        "review block must be byte-identical across two runs",
+    );
+}
+
+/// B4.4 — with `--no-ai`, review mode has nothing to record but must
+/// still produce a side artifact with `total=0`, so a reviewer can
+/// see "review mode was on, no proposals were returned".
+#[test]
+fn b4_4_review_block_renders_empty_under_no_ai() {
+    let path = elf_fixture();
+    let out = Command::cargo_bin("dac")
+        .expect("dac binary present")
+        .arg("--no-ai")
+        .arg("--ai-review")
+        .arg(&path)
+        .output()
+        .expect("run dac --no-ai --ai-review");
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains(";; deltas:   total=0 accepted=0 rejected=0"),
+        "empty review block must still summarise zero counts:\n{stdout}",
+    );
+}
+
 /// B3.35 — i386 dispatch wiring.
 ///
 /// Before this batch, `dac --target c <i386 PE>` printed the

@@ -3,7 +3,7 @@
 //! Part of the dac workspace. See `ARCHITECTURE.md` §9 in the workspace
 //! root.
 //!
-//! ## Status (B4.3)
+//! ## Status (B4.3 + B4.4)
 //!
 //! - [`verify_delta`] judges a single [`dac_ai::Delta`] against a
 //!   [`KnownFacts`] snapshot and returns a structured
@@ -27,8 +27,12 @@
 //! - [`KnownFacts`] is the world model the orchestrator populates from
 //!   recovered state before judging deltas. Empty by default; an empty
 //!   world rejects every proposal as [`UnknownTarget`](DeltaRejection::UnknownTarget),
-//!   which is the safe default until B4.4 / B4.5 wire the world from
-//!   real recovered facts.
+//!   which is the safe default until B4.5 wires the world from real
+//!   recovered facts.
+//! - [`ReviewLog`] + [`render_review`] (B4.4, spec §13.6) collect every
+//!   judged delta as a before/after diff record without applying it.
+//!   The CLI wires this to the new `--ai-review` flag and emits the
+//!   rendered block as a `.review.txt` sidecar (FR-33).
 //!
 //! ## Invariants this crate is responsible for
 //!
@@ -46,8 +50,13 @@
 
 #![forbid(unsafe_code)]
 
+mod review;
 mod verify;
 mod world;
 
+pub use review::{
+    render_review, CurrentState, ProposedChange, ProposedField, ReviewEntry, ReviewLog,
+    ReviewOutcome, TargetDescriptor,
+};
 pub use verify::{verify_delta, DeltaRejection, TargetKind, VerifyMode, VerifyOutcome};
 pub use world::{KnownFacts, KnownRegion, KnownSlot, KnownSymbol, SlotType};

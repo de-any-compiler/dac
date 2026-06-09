@@ -94,12 +94,6 @@ above.
 
 Goal: `-O3` with AI assistance, review mode, and strict mode.
 
-### B4.4 — Review mode
-- `--ai-review` collects deltas as a side artifact without applying them
-  (FR-33, spec §13.6).
-- Diff renderer for proposed changes.
-- **Done when:** review-mode output is human-readable and stable.
-
 ### B4.5 — `-O3` semantic reconstruction
 - AI is consulted only at `-O3` and only after deterministic passes complete
   (spec §5).

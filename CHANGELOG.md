@@ -7001,6 +7001,125 @@ Closes: B3.35, FR-3 (multi-format pipeline reach), FR-21
 
 ### Milestone 4 — Human-oriented reconstruction
 
+#### B4.4 — Review mode (`--ai-review`) (2026-06-09)
+
+*Motivation.* B4.3 promoted `dac-verify` into the gate every AI delta
+must walk through before any IR mutation, but the verifier's verdict
+was only visible as a tracing field. Spec §13.6 ("a review mode
+should show proposed improvements without applying them") and FR-33
+("the system shall allow AI-assisted semantic summarization") ask
+for the verdict to surface as a structured, human-readable side
+artifact a reviewer can actually consult. B4.4 ships that artifact
+without changing the apply path — review mode is informational only,
+and proposals still don't reach the IR.
+
+*Design notes.*
+- **`dac-verify::review` module.** New `ReviewLog` accumulator and
+  `render_review` text renderer. `ReviewLog::record` is the single
+  recording entry: it takes the original [`Delta`], the verifier's
+  [`VerifyOutcome`], and the [`KnownFacts`] world, snapshots the
+  target's current state at append time, and stores a
+  closed-shape `ReviewEntry`. The renderer is then a pure function
+  of the log — no second world consult, no I/O, no time reads
+  (NFR-9). Repeated runs against the same pipeline produce
+  byte-identical output, which is what spec §13.6's "human-readable
+  and stable" criterion locks in.
+- **Side-artifact shape.** Plain UTF-8, `;;`-comment header so the
+  block embeds naturally next to the existing listing / report /
+  CFG / annotation blocks. Format:
+  - Header: `provider`, `mode` (lenient / strict), and a
+    `total/accepted/rejected` line. Renders even on an empty log
+    so the reader can distinguish "review mode was active, no
+    proposals returned" from "review mode was off".
+  - One block per delta: `kind`, target descriptor (`SymbolRef(n)`,
+    `SlotRef(n)`, `RegionRef(n)`), confidence (value + source),
+    evidence handles, and a single-line outcome (`accept` or
+    `reject:<tag> — <detail>`).
+  - Body: a tiny diff with `-` (current world state, or
+    `(unknown target)` if the target isn't in the world) and `+`
+    (proposed change, kind-specific). Rename and retype show the
+    matching field; struct layout enumerates `+   <name>: <ty> @
+    <offset>` per field; idiom and annotation use a one-line `+`.
+- **CLI surface.** `--ai-review` is a behavioural flag — does not
+  appear on the manifest (matches `--ai-strict` precedent). When
+  set, the orchestrator's existing `run_ai_proposal_pass` builds a
+  `ReviewLog` alongside the existing accept/reject counts, renders
+  it via `dac_verify::render_review`, and returns the block to
+  `run_pipeline`. `emit_outputs` grows a new `review:
+  Option<&str>` parameter; the block lands either on stdout under
+  the `;; ---- ai review (FR-33) ----` delimiter or, with
+  `--output <path>`, as a `<path>.review.txt` sidecar.
+- **Tracing.** The existing `pipeline-summary` info event grows a
+  `review = bool` field so `--debug` users can see whether review
+  mode was active without parsing stdout.
+- **Verifier reach.** `run_ai_proposal_pass` now always builds a
+  log even when `--ai-review` is off — the per-delta verifier loop
+  has identical code under either branch, so a reviewer can trust
+  that turning on the flag does not change which deltas the
+  verifier sees or how it scores them.
+- **World model.** Still empty at B4.4. The artifact reports every
+  delta as `reject:unknown-target` until B4.5 wires `KnownFacts`
+  from the recovered state. The decision keeps B4.4 strictly to
+  the rendering substrate plus CLI plumbing; B4.5 is the batch
+  that populates real-world targets so accept/reject mixes become
+  meaningful.
+
+*Done-when verification (spec §13.6 + FR-33).*
+- **Human-readable.** The rendered block uses `;;`-comments,
+  `before/after` diff conventions, and stable kebab-case tags.
+  Sample on the `hello-x86_64` fixture:
+  ```
+  ;; ---- ai review (FR-33) ----
+  ;; dac --ai-review (spec §13.6)
+  ;; provider: local:stub
+  ;; mode:     lenient
+  ;; deltas:   total=1 accepted=0 rejected=1
+
+  ;; delta 1: annotate-region on RegionRef(12090277791620424960)
+  ;;   confidence: 0.35 (speculative)
+  ;;   evidence:   [id=1]
+  ;;   outcome:    reject:unknown-target — region not in world
+  -   (unknown target)
+  +   comment: dac local-stub annotation [prompt a7c94b982d546500] kind=annotation
+  ```
+- **Stable.** Two runs against the same input produce a
+  byte-identical review block. Locked in by both the
+  `render_is_deterministic_across_two_runs` unit test in
+  `dac-verify::review` and the
+  `b4_4_review_block_is_stable_across_two_runs` CLI integration
+  test.
+
+*Tests added.*
+- **`dac-verify::review`** (13 unit tests): empty-log header
+  rendering, accept-rename before/after diff, unknown-target
+  rendering, retype with `SlotType` tag on the `-` side, struct
+  layout per-field rendering, idiom and annotation diff lines,
+  accept/reject counters, two-run determinism, outcome tag
+  matches rejection tag, target-descriptor kind matches
+  `TargetKind`, evidence renders as bracketed id list, strict
+  mode flips the header. (`dac-verify` total: 49 tests, was 36 at
+  B4.3.)
+- **`dac-cli` integration tests** (5 new): review block appears
+  on stdout under `--ai-review`, is absent without the flag,
+  carries `mode: strict` when `--ai-strict` is co-set, is stable
+  across two runs, and renders a `total=0` body under `--no-ai`.
+
+*Out of scope (deferred to later batches).*
+- **World-model population from recovered state.** The verifier
+  still sees an empty world, so every delta surfaces as
+  `unknown-target`. B4.5 wires `KnownFacts` from the recovery
+  output as part of `-O3` reconstruction.
+- **Apply path.** Review mode is purely informational. The
+  orchestrator does not yet apply accepted deltas; the apply
+  surface lands with B4.5 alongside the world wiring.
+- **`--ai-review` interaction with golden artifacts.** No goldens
+  exercise `--ai-review` today; the deterministic-corpus runner
+  doesn't set the flag, and the manifest stays unchanged so
+  every existing golden remains byte-identical.
+
+Closes: B4.4, FR-33, NFR-9, I-5, ARCHITECTURE §9,
+ARCHITECTURE §13, spec §13.6.
+
 #### B4.3 — Delta verification (`dac-verify`) (2026-06-09)
 
 *Motivation.* B4.1 and B4.2 shipped the AI adapter substrate plus
